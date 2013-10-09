@@ -58,11 +58,11 @@ Variational lower bound:
 \begin{eqnarray}
  \mathcal L(\mb,V)		&\leq& \log p(\yb)\\
 				&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)
-					+\sum_{n} \E_{q(\xb)}[p(y_n\vert \eta_n)]
+					+\sum_{n} \E_{q(\xb)}[\log p(y_n\vert \eta_n)]
 \end{eqnarray}
-For Poisson with exp link function we can compute $\E_{q(\xb)}[p(y_n\vert \eta_n)]$, otherwise (eg for Bernoulli observations) use a local variational lower bound on the integrated likelihood:
+For Poisson with exp link function we can compute $\E_{q(\xb)}[\log p(y_n\vert \eta_n)]$, otherwise (eg for Bernoulli observations) use a local variational lower bound on the integrated likelihood:
 \begin{eqnarray}
- \E_{q(\xb)}[p(y_n\vert \eta_n)]	&=& 	-f_n(\overline m_n,\overline v_n)\\
+ \E_{q(\xb)}[\log p(y_n\vert \eta_n)]	&=& 	-f_n(\overline m_n,\overline v_n)\\
  f_n(\overline m_n,\overline v_n)	&=&	-y_n\overline m_n+\exp(\overline m_n+\overline v_n/2)\\
  \overline \mb				&:=&	W\mb\\
  \overline{ \mathbf{v}}_n		&:=&	\diag(WVW^\top)
@@ -106,6 +106,10 @@ Use gradient based methods:
 \begin{eqnarray*}
  \nabla_\lambda		&=&		W\Sigma W^\top (\lambda-\yb)-W\mu+\log\lambda-\frac{1}{2}\diag(WA^{-1}_\lambda W^\top)\\
 			&=&		\underbrace{W\Sigma W \lambda}_{O(N)}+\underbrace{\log\lambda}_{O(N)}-\frac{1}{2}\diag(\underbrace{WA^{-1}_\lambda W^\top}_{O(N)})-\underbrace{W(\Sigma W^\top\yb+\mu)}_{\mbox{pre-compute}}
+\end{eqnarray*}
+Hessian:
+\begin{eqnarray*}
+ H_\lambda		&=&		\diag(\lambda)^{-1}+W\Sigma W^\top + (WA^{-1}_\lambda W^\top)\circ(WA^{-1}_\lambda W^\top)
 \end{eqnarray*}
 Iterate:
 \begin{eqnarray*}
