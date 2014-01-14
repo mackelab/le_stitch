@@ -1,0 +1,11 @@
+addpath /Users/evan/Desktop/RUSTDATA/v1data_Rust_Neuron2005/
+addpath /home/pillowlab/v1data_Rust_Neuron2005
+addpath Kalman_Code/
+addpath Kalman_Code/Kalman/
+addpath Kalman_Code/KPMstats/
+addpath Kalman_Code/KPMtools/
+addpath ~/pillowlab/lib/minFunc_2012/
+addpath ~/pillowlab/lib/minFunc_2012/minFunc/
+addpath ~/pillowlab/lib/minFunc_2012/minFunc/compiled/
+addpath ~/pillowlab/ncclabcode/
+addpath NlinStimDep/
