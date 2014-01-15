@@ -18,6 +18,7 @@ assignopts(who,varargin);
 
 yDim       = size(seq(1).y,1);                                                                           
 Trials     = numel(seq);
+params.algorithmic.initMethod = initMethod;
 params     = PLDSsetDefaultParameters(params,xDim,yDim);  % set standard parameter values
 
 
@@ -38,11 +39,10 @@ switch initMethod
    case 'ExpFamPCA'     % this should replace the FA initializer from the previous verions...
    	% !!! also package all parameters into PLDSsetDefaultParameters
    	disp('Initializing PLDS parameters using exponential family PCA')
-	warning('Still to implement, doing hacky shit');
-
-	dt = 10;
-	Y = [seq.y];
-	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt);     
+	
+	dt = params.algorithmic.ExpFamPCA.dt;
+	Y  = [seq.y];
+	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.algorithmic.ExpFamPCA.lam,'options',params.algorithmic.ExpFamPCA.options);     
 	params.C = Cpca;
 	params.d = dpca-log(dt);				% compensate for rebinning
 	Tpca = size(Xpca,2);
@@ -58,7 +58,7 @@ switch initMethod
 	params.A  = Tpi*params.A/Tpi;
 	params.Q  = eye(xDim)-params.A*params.A';		% set innovation covariance Q such that stationary dist is white
 	[Uq Sq Vq] = svd(params.Q);				% ensure that Q is pos def
-	params.Q = Uq*diag(max(diag(Sq),1e-3))*Uq';
+	params.Q  = Uq*diag(max(diag(Sq),1e-3))*Uq';
 	params.x0 = zeros(xDim,1);
 	params.Q0 = dlyap(params.A,params.Q);			% set initial distribution to stationary distribution, this could prob be refined
 

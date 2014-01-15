@@ -11,7 +11,15 @@ function [C, X, d] = ExpFamPCA(Y,xDim,varargin)
 dt  = 10;    % rebin factor %!!! this is very much dependent on the firing rates
 lam = 1e-4;  % penalizer
 
+options.display     = 'none';
+options.MaxIter     = 10000;
+options.maxFunEvals = 50000;
+options.Method      = 'lbfgs';
+options.progTol     = 1e-9;
+options.optTol      = 1e-5;
+
 assignopts(who,varargin);
+
 
 seqDum.y = Y;
 seqDum = rebinRaster(seqDum,dt);
@@ -27,13 +35,6 @@ Xinit = zeros(xDim,T);
 dinit = zeros(yDim,1);
 
 CXdinit = [vec([Cinit; Xinit']); dinit];
-
-%options.display     = 'none';
-options.MaxIter     = 10000;
-options.maxFunEvals = 50000;
-options.Method      = 'lbfgs';
-options.progTol	    = 1e-9;
-options.optTol	    = 1e-5;
 
 CXdOpt = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam*sqrt(yDim*T));
 
