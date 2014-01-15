@@ -35,7 +35,7 @@
 
 \begin{eqnarray}
  p(\xb)				&=&	\Normal(\xb\vert \mu,\Sigma)\\
- p(\yb\vert \xb)		&=&	\prod_{n}	p(y_n\vert \eta_n), \ \ \ \ \eta:=W\xb
+ p(\yb\vert \xb)		&=&	\prod_{n}	p(y_n\vert \eta_n), \ \ \ \ \eta:=W\xb+\overline{\db}
 \end{eqnarray}
 For latent dynamical system we know that $\Lambda:=\Sigma^{-1}$ is tri-diagonal, and $W$ block-diagonal:
 \begin{eqnarray}
@@ -57,21 +57,21 @@ Gaussian variational approximation:
 Variational lower bound:
 \begin{eqnarray}
  \mathcal L(\mb,V)		&\leq& \log p(\yb)\\
-				&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)
+ \mathcal L(\mb,V)		&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)
 					+\sum_{n} \E_{q(\xb)}[\log p(y_n\vert \eta_n)]
 \end{eqnarray}
 For Poisson with exp link function we can compute $\E_{q(\xb)}[\log p(y_n\vert \eta_n)]$, otherwise (eg for Bernoulli observations) use a local variational lower bound on the integrated likelihood:
 \begin{eqnarray}
- \E_{q(\xb)}[\log p(y_n\vert \eta_n)]	&=& 	-f_n(\overline m_n,\overline v_n)\\
+ \E_{q(\xb)}[\log p(y_n\vert \eta_n)]	&\geq& 	-f_n(\overline m_n,\overline v_n)\\
  f_n(\overline m_n,\overline v_n)	&=&	-y_n\overline m_n+\exp(\overline m_n+\overline v_n/2)\\
- \overline \mb				&:=&	W\mb\\
- \overline{ \mathbf{v}}_n		&:=&	\diag(WVW^\top)
+ \overline \mb				&:=&	W\mb+\overline\db\\
+ \overline{ \mathbf{v}}			&:=&	\diag(WVW^\top)
 \end{eqnarray}
 The bound then reads:
 \begin{eqnarray}
  \mathcal L(\mb,V)	&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)
-					-\sum_{n} f_n(\overline m_n,\overline v_n)\\
-			&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-\Vert\mb-\mu\Vert^2_{\Sigma^{-1}}    \right)-\sum_{n} f_n(\overline m_n,\overline v_n)
+				-\sum_{n} f_n(\overline m_n,\overline v_n)
+%\\			&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-\Vert\mb-\mu\Vert^2_{\Sigma^{-1}}    \right)-\sum_{n} f_n(\overline m_n,\overline v_n)
 \end{eqnarray}
 For convex $f_n$ (true for exp-PLDS): strictly concave optimization in $\mb,V$\\
 Possible optimization strategies:
@@ -86,25 +86,24 @@ Possible optimization strategies:
 \section{Variational inference via dual optimization}
 \subsection{Optimization to solve}
 Dual problem:
-\begin{eqnarray*}
- \begin{array}{ll} 	\argmin_{\lambda}	&	\frac{1}{2} (\lambda-\yb)^\top W\Sigma W^\top(\lambda-\yb)-\mu^\top W^\top(\lambda-\yb)-\frac{1}{2}\log\vert A_\lambda\vert+\sum_nf^\ast(\lambda_n)\\~\\
-			\mbox{s.t.}		&	\lambda_i>0
- \end{array}
-\end{eqnarray*}
+\begin{eqnarray}
+ \min_{\lambda}		&&	\frac{1}{2} (\lambda-\yb)^\top W\Sigma W^\top(\lambda-\yb)-(W\mu+\overline{\db})^\top(\lambda-\yb)-\frac{1}{2}\log\vert A_\lambda\vert+\sum_nf^\ast(\lambda_n)\\
+ \mbox{subject to}	&&	\lambda_i>0 \nonumber
+\end{eqnarray}
 where 
-\begin{eqnarray*}
+\begin{eqnarray}
  f^\ast(\lambda_i)	&:=&		\lambda_i(\log\lambda_i-1)\\
  A_\lambda		&:=&		\Sigma^{-1}+W^\top \diag(\lambda)W
-\end{eqnarray*}
+\end{eqnarray}
 The optimal variational parameters for $q(\xb)=\Normal(\xb\vert\mb^\ast,V^\ast)$ are given by:
-\begin{eqnarray*}
+\begin{eqnarray}
  \mb^\ast		&=&		\mu-\Sigma W^\top(\lambda^\ast-\yb)\\
- V^\ast			&=&		(\Sigma^{-1}+W^\top \diag(\lambda)W)^{-1}=A_{\lambda^\ast}^{-1}
-\end{eqnarray*}
+ V^\ast			&=&		(\Sigma^{-1}+W^\top \diag(\lambda^\ast)W)^{-1}=A_{\lambda^\ast}^{-1}
+\end{eqnarray}
 \subsection{How to optimize?}
 Use gradient based methods:
 \begin{eqnarray*}
- \nabla_\lambda		&=&		W\Sigma W^\top (\lambda-\yb)-W\mu+\log\lambda-\frac{1}{2}\diag(WA^{-1}_\lambda W^\top)\\
+ \nabla_\lambda		&=&		W\Sigma W^\top (\lambda-\yb)-W\mu-\overline{\db}+\log\lambda-\frac{1}{2}\diag(WA^{-1}_\lambda W^\top)\\
 			&=&		\underbrace{W\Sigma W \lambda}_{O(N)}+\underbrace{\log\lambda}_{O(N)}-\frac{1}{2}\diag(\underbrace{WA^{-1}_\lambda W^\top}_{O(N)})-\underbrace{W(\Sigma W^\top\yb+\mu)}_{\mbox{pre-compute}}
 \end{eqnarray*}
 Hessian:
@@ -115,35 +114,61 @@ Iterate:
 \begin{eqnarray*}
  \mb^k			&=&		\mu+\Sigma W^\top\yb-\Sigma W^\top\lambda^k\\
  A^k			&=&		\Sigma^{-1}+W^\top \diag(\lambda^k)W\\
- \nabla^k		&=&		\log\lambda^k-W\mb^k-\frac{1}{2}\diag(W(A^k)^{-1}W^\top)\\
+ \nabla^k		&=&		\log\lambda^k-W\mb^k-\overline{\db}-\frac{1}{2}\diag(W(A^k)^{-1}W^\top)\\
  \lambda^{k+1}		&=&		\lambda^{k}-\nu \nabla^k
 \end{eqnarray*}
 Computing the block-diagonal elements of $A^k$ is equivalent to Kalman smoothing and requires a forward-backward pass through the data which costs $O(Td^3)$.\\
 What's the relation to Laplace approximation?
 \begin{eqnarray*}
- \nabla^k		&=&		-\Sigma^{-1}(\xb-\mu)+W^\top(\yb-\exp(W\xb)) \\
- H^k			&=&		-(\Sigma^{-1}+W^\top \diag(\exp(W\xb))W)
+ \nabla^k		&=&		-\Sigma^{-1}(\xb-\mu)+W^\top(\yb-\exp(W\xb+\overline{\db})) \\
+ H^k			&=&		-(\Sigma^{-1}+W^\top \diag(\exp(W\xb+\overline{\db}))W)
 \end{eqnarray*}
 
-\subsection{Derivation}
+
+\subsection{Kalman smoothing}
+The matrix $A_\lambda$ equals exactly the precision matrix of a LDS with dynamics given by $A,Q$ and observations sampled from $\Normal(C\xb_t,\diag(\lambda_t))$.
+Hence, calculating the block-diagonal of $A^{-1}_\lambda$ is exactly equivalent to calculating the smoothed posterior covariance of this LDS.
+Let $P_{t\vert t}$ denote the filtered covariance, $P_{t+1\vert t}$ the one-step-ahead covariance and $P_{t\vert T}$ the smoothed covariance of this model.
+\begin{eqnarray}
+ (A^{-1}_\lambda)_{(t-1)d+1:td,(t-1)d+1:td}	&\stackrel{!}{=}&	P_{t\vert T}
+\end{eqnarray}
+We use the Kalman smoother recursions. The forward pass reads:
+\begin{eqnarray}
+ P_{t+1\vert t}		&=&	AP_{t\vert t}A^\top+Q\\
+ P_{t+1\vert t+1}	&=&	\(P_{t+1\vert t}^{-1}+C^\top\diag(\lambda_t)C\)^{-1}\\
+			&=&	\(I+P_{t+1\vert t}C^\top\diag(\lambda_t)C\)\backslash P_{t+1\vert t}\\
+ P_{0\vert 0}		&=&	Q_0
+\end{eqnarray}
+The backward pass is given by:
+\begin{eqnarray}
+ C_t			&=&	P_{t\vert t}A^\top/P_{t+1\vert t}\\
+ P_{t\vert T}		&=&	P_{t\vert t}+C_t\( P_{t+1\vert T}- P_{t+1\vert t}\)C_t^\top
+\end{eqnarray}
+The initialization for the backward pass $P_{T\vert T}$ is calculated the last step of the forward pass.
+
+
+
+
+\clearpage
+\section{Appendix}
+\subsection{Derivation of dual optimization}
 Original primal problem:
 \begin{eqnarray*}
- \begin{array}{ll} 	\argmax_{\mb,V}	&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-\Vert\mb-\mu\Vert^2_{\Sigma^{-1}}    \right)-\sum_{n} f_n(\overline m_n,\overline v_n)\\
-			\mbox{s.t.}				&	V\in S^{++}
- \end{array}
+\max_{\mb,V}	&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-\Vert\mb-\mu\Vert^2_{\Sigma^{-1}}    \right)-\sum_{n} f_n(\overline m_n,\overline v_n)\\
+\mbox{s.t.}	&	V\in S^{++}
 \end{eqnarray*}
 Expanded primal problem:
 \begin{eqnarray*}
  \begin{array}{ll} 	\argmax_{\mb,V,\rho,h}	&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-\Vert\mb-\mu\Vert^2_{\Sigma^{-1}}    \right)-\sum_{n} f_n(h_n,\rho_n)\\
 			\mbox{s.t.}		&	V\in S^{++}\\
-						&	h=W\mb\\
+						&	h=W\mb+\overline{\db}\\
 						&	\rho=\diag(WVW^\top)
  \end{array}
 \end{eqnarray*}
 Lagrangian:
 \begin{eqnarray*}
   \mathcal L(\mb,V,h,\rho,\alpha,\lambda)	&:=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-\Vert\mb-\mu\Vert^2_{\Sigma^{-1}}    \right)-\sum_{n} f_n(h_n,\rho_n)\\
-						&&	+\alpha^\top(h-W\mb)+\frac{1}{2}\lambda^\top(\rho-\diag(WVW^\top))
+						&&	+\alpha^\top(h-W\mb+\overline{\db})+\frac{1}{2}\lambda^\top(\rho-\diag(WVW^\top))
 \end{eqnarray*}
 Dual
 \begin{eqnarray*}
@@ -154,16 +179,13 @@ Dual
 \end{eqnarray*}
 Final reduced dual problem:
 \begin{eqnarray*}
- \begin{array}{ll} 	\argmin_{\lambda}	&	\frac{1}{2} (\lambda-\yb)^\top W\Sigma W(\lambda-\yb)-\mu^\top(\lambda-\yb)-\frac{1}{2}\log\vert A_\lambda\vert+\sum_nf^\ast(\lambda_n)\\
+ \begin{array}{ll} 	\argmin_{\lambda}	&	\frac{1}{2} (\lambda-\yb)^\top W\Sigma W(\lambda-\yb)-(\overline\db+W\mu)^\top(\lambda-\yb)-\frac{1}{2}\log\vert A_\lambda\vert+\sum_nf^\ast(\lambda_n)\\
 			\mbox{s.t.}		&	\lambda_i>0
  \end{array}
 \end{eqnarray*}
 
 
-
-
-\clearpage
-\section{Duality basics}
+\subsection{Duality basics}
 Primal problem with optimal values $p^\ast$:
 \begin{eqnarray*}
  \begin{array}{ll} 	\mbox{min}	&	f(x)\\
@@ -207,175 +229,3 @@ The dual $f^\ast$ of a function $f$ is defined as:
 
 
 \end{document}
-
-
-
-\section{Motivation}
-
-\begin{itemize}
- \item It would be great if we could statistically characterize the activity dynamics of neural subpopulations, such as excitatory and inhibitory (EI) populations and their interactions based on data from modern population recording techniques (Ca imaging, electrode array recordings).
- \item However, cell labels (= subpopulation memberships, e.g.\ if a given cell is E or I) are often not known, e.g.\ in multi-electrode array recordings.
- \item Here we try to jointly infer the dynamics and the cell labels from data in an unsupervised way; we specialize on EI populations.
- \item If successful, this could help to characterize stimulus-response and dynamical properties of different subpopulations.
- \item For array recordings, we can somewhat validate the inferred labels based on the spike wave-form.
-\end{itemize}
-
-
-
-\section{The model}
-The model is defined in the following way:
-\begin{itemize}
- \item We treat the activities of the subpopulation as latent variables and put a LDS prior over them.
- \item We observe the latent dynamics via Bernoulli neurons.
- \item Each neuron belongs to exactly one subpopulation and is only influenced by the corresponding latent variables.
-\end{itemize}
-In detail: Let $\xb^e_t$, $\xb^i_t$ (of dimensions $d^e,d^i$) denote the latent variables describing the unobserved activity of the excitatory and inhibitory populations respectively.
-\begin{eqnarray}
-  \xb_t= \begin{pmatrix}\xb^e_t\\\xb^i_t \end{pmatrix}	&=& A\xb_{t-1}+\eta_t=	\begin{pmatrix} A^{ee}&A^{ei}\\A^{ie}&A^{ii}\end{pmatrix}\begin{pmatrix}\xb^e_{t-1}\\\xb^i_{t-1} \end{pmatrix}+\eta_t
-\end{eqnarray}
-with iid noise $\eta_t\sim\Normal(0,Q)$ and $A^{ab}\in\mathbb R^{d^a\times d^b}$ for $a,b\in \{i,e\}$. We put elementwise constraints on $A$:
-\begin{eqnarray}
- A^{ee},A^{ie}	&\geq&	0 \\
- A^{ei},A^{ii}	&\leq&	0 
-\end{eqnarray}
-Let $z_k\in\{i,e\}$ (or equivalently $z_k\in\{0,1\}$) be a binary variable indicating if cell $k$ is inhibitory or excitatory.
-We observe the latent variables $\xb_t$ at time $t$ through spikes $y_{kt}\in\{0,1\}$ of $N$ cells which are concatenated into $\yb_t:=(y_{1t},\ldots,y_{Nt})^\top$.
-\begin{eqnarray}
- p(y_{kt}\vert \xb_t,z_k)	&:=&	\Bernoulli\left(y_{kt}\left\vert C^{z_k}_{k:}\xb^{z_k}_t+b_k \right.\right)
-%\\v^a_{kt}			&:=&	C^a_{k:}\xb(t)+b_k
-\end{eqnarray}
-$\Bernoulli(x\vert a)$ denotes the Bernoulli distribution over $x$ with natural parameter $a$.
-Here $C^{z_k}_{k:}\in\mathbb R^{d^{z_k}}$ is the $k$-th row of the loading matrix $C^{z_k}$; the model has a loading matrix $C^e$, $C^i$ for each subpopulation. $b_k$ is a bias term.
-This observation model can be generalised to include external stimuli and spike history filters. We put an iid.\ Bernoulli prior over the indicator variables $\zb$:
-\begin{eqnarray}
- p(z_k)		&:=&	\Bernoulli(z_k\vert \phi_0)
-\end{eqnarray}
-We put elementwise constraints on $C$:
-\begin{eqnarray}
- C^{e},C^{i}	&\geq&	0
-\end{eqnarray}
-
-
-\section{Inference and parameter estimation}
-
-We do variational inference over $\xb, \zb$ and point estimates of the model parameters:
-\begin{eqnarray}
-q(\xb,\zb)	&=&	q(\xb)q(\zb)\\
-q(\xb)		&=&	\Normal(\xb\vert\mb,V)
-%q(\xb_t)	&=&	\Normal(\xb\vert\mb_t,V_t)
-\end{eqnarray}
-It turns out that the inverse of the optimal covariance ${V^\ast}^{-1}$ is also tri-block-diagonal due to the Markovian prior and the factorizing likelihood.
-We can use local variational bounds to get around the problem that the Bernoulli likelihood cannot be analytical integrated over a Gaussian density. Alternatively, we can
-also resort to 1d numerical integration. 
-
-
-
-%\end{document}
-
-\section{Appendix}
-
-Variational lower bound:
-\begin{eqnarray}
- \log p(\yb)	&\geq&	\mathcal L\\
-\mathcal L	&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)\\
-		&&	-D_\mathrm{KL}[q(\zb)\Vert p(\zb)]+\sum_k\sum_t \E_q[\log p(y_{kt}\vert\xb,\zb)]
-\end{eqnarray}
-Local variational bound (LVB) on the likelihood:
-\begin{eqnarray}
- \E_{q(\xb)}[\log p(y_{kt}\vert\xb_t,\zb_k=a)]		&\geq&	f_{kt}(\overline m^a_k,\overline{v}^a_k)\\
- f_{kt}(\overline m^a_{kt},\overline{ v}_{kt}^a) 	&:=&	y_{kt}\overline m^a_{kt}-\log\left(1+\exp(\overline m^a_{kt}+\overline v^a_{kt}/2)\right)\\
- \overline \mb_t^a				&:=&	C^a\mb_t\\
- \overline{\mathbf v}_t^a				&:=&	\operatorname{diag}(C^aV_t (C^a)^\top)
-\end{eqnarray}
-Hence the new lower bound reads:
-\begin{eqnarray}
- \mathcal L	&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)\\
-		&&	-D_\mathrm{KL}[q(\zb)\Vert p(\zb)]+\sum_{k,t} \E_{q(\zb)}[f_{kt}(\overline m^{z_k}_{kt},\overline{ v}_{kt}^{z_k})]
-\end{eqnarray}
-
-
-
-\subsection{Update over $q(\zb)$}
-\begin{eqnarray}
- \frac{\delta \mathcal L}{\delta q}	&=&	0\\
- q(\zb)					&=&	\prod_{k}q(z_k)\\
- q(z_k)					&=&	\Bernoulli(z_k\vert\phi_k)
-\end{eqnarray}
-\begin{eqnarray}
- \phi_k					&=&	\phi_0+\sum_t\left(f_{kt}(\overline m^1_{kt},\overline{ v}_{kt}^1)-f_{kt}(\overline m^0_{kt},\overline{ v}_{kt}^0)\right)\\
- p_k^a					&:=&	\sigma(\phi_k)
-\end{eqnarray}
-
-
-\subsection{Update over $q(\xb)$}
-There are multiple options of how to do the optimization over the variational parameters of $q(x)$:
-\begin{itemize}
- \item Laplace approximation; however does not increase a lower bound
- \item Optimization of the dual; but as usually $N\geq d^2$, probably not worth the effort [Khan et al, ICML2013]
- \item Direct optimization
-\end{itemize}
-
-
-\paragraph{Dual optimization:}
-\begin{eqnarray}
- \min_{\lambda\in(0,1)^{2TN}} 	&& 	\frac{1}{2}(\lambda-\psi)^\top\overline \Sigma(\lambda-\psi)-\overline\mu^\top (\lambda-\psi)\\	
-				&&	-\frac{1}{2}\log\vert A_\lambda\vert+\sum_{akt}p^a_kf^{\ast a}_{kt}(\lambda^a_{kt}/p_k^a)
-\end{eqnarray}
-where:
-\begin{eqnarray}
- f^{\ast a}_{kt}(x)		&:=&	x\log x-(1-x)\log(1-x)	\\
- A_\lambda			&:=&	\Sigma^{-1}+\overline C^\top\diag(\lambda)\overline C\\
- \overline \Sigma		&:=&	\overline C \Sigma \overline C^\top\\
- \overline \mu			&:=&	\overline C \mu
-\end{eqnarray}
-
-
-
-\subsubsection*{Derivation}
-
-Define:
-\begin{eqnarray}
- \overline C^a			&:=&	\diag\underbrace{(C^a,\ldots,C^a)}_{T-\mbox{times}}\\
- \overline C			&:=&	\begin{pmatrix}\overline C^1\\\overline C^0\end{pmatrix}\\
- \psi^a_{kt}			&:=&	p_k^ay_{ky}\\
- \psi^a_t			&:=&	\begin{pmatrix}\psi^a_{1t}\\\vdots\\ \psi^a_{Nt}\end{pmatrix}\\
- \psi^a				&:=&	\begin{pmatrix}\psi^a_{1}\\\vdots\\ \psi^a_{T}\end{pmatrix}\\
- \psi				&:=&	\begin{pmatrix}\psi^1\\ \psi^0\end{pmatrix}
-\end{eqnarray}
-
-We maximize:
-\begin{eqnarray}
- \argmax_{\mb,V} \mathcal L(\mb,V)
-\end{eqnarray}
-
-\begin{eqnarray}
- \mathcal L(\mb,V)	&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)\\
-			&&	+\sum_{a=0,1}\sum_{k,t}p_k^a f_{kt}(\overline m^{a}_{kt},\overline{ v}_{kt}^{a})
-\end{eqnarray}
-Rewrite:
-\begin{eqnarray}
- \mathcal L(\mb,V,h,\rho)	&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)\\
-				&&	+\sum_{a=0,1}\sum_{k,t}p_k^a f_{kt}(h^{a}_{kt},\rho_{kt}^{a})\\
-\mbox{subject to}		&&	\hb^a=C^a\mb, \ \rho^a=\diag(C^aV{C^a}^\top)
-\end{eqnarray}
-Lagrange multiplier:
-\begin{eqnarray}
-  \mathcal L(\mb,V,h,\rho,\alpha,\lambda)	&=&	\frac{1}{2}\left(\log\vert V\vert-\tr[\Sigma^{-1}V]-(\mb-\mu)^\top \Sigma^{-1}(\mb-\mu)     \right)\\
-				&&	+\sum_{a=0,1}\sum_{k,t}p_k^a f_{kt}(h^{a}_{kt},\rho_{kt}^{a})\\
-				&&	+\sum_a {\alpha^a}^\top (\hb^a-C^a\mb)+\frac{1}{2}{\lambda^a}^\top(\rho^a-\diag(C^aV{C^a}^\top))
-\end{eqnarray}
-Strong duality? Optimize over $\mb,V$
-\begin{eqnarray}
- \mb_\ast			&=&	\mu-\sum_a\Sigma{\overline C^a}^\top\alpha^a\\
- V_{\ast}			&=&	A_\lambda^{-1}=\left(\Sigma^{-1}+\sum_a{\overline C^a}^\top\diag(\lambda^a)\overline C^a\right)^{-1}
-\end{eqnarray}
-Reduced dual problem:
-\begin{eqnarray}
- \min_{\lambda}			&=&	
-\end{eqnarray}
-
-	
-
-
-
-
