@@ -5,7 +5,7 @@ close all
 xDim   = 5;
 yDim   = 100;
 T      = 100;
-Trials = 10;
+Trials = 3;
 
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim);
@@ -16,10 +16,16 @@ tp = trueparams;
 Y = [seq.y];
 
 params    = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA');
-params.algorithmic.EMIterations.maxIter = 2;
+params.algorithmic.EMIterations.maxIter = 10;
+iparams = params;
 [params varBound] = PLDSEM(params,seq);
+tparams = iparams;
+tparams.algorithmic.TransformType = '2';
+[tparams tvarBound] = PLDSEM(tparams,seq);
 
-tparams = LDSTransformParams(params,'TransformType','1'); 
+
+
+%tparams = LDSTransformParams(params,'TransformType','1'); 
 
 
 %%%%%% different diagnostics if parameter transformation is equivalent
@@ -33,6 +39,10 @@ sort(eig(tparams.A))
 tparams.C'*tparams.C 
 
 dlyap(tparams.A,tparams.Q)
+
+
+
+%{
 
 seq  = PLDSVariationalInference(params,Oseq);
 tseq = PLDSVariationalInference(tparams,Oseq);
@@ -56,3 +66,4 @@ plot(vec(tparams.C*tparams.Q0*tparams.C'),vec(params.C*params.Q0*params.C'),'xr'
 
 figure
 plot(tparams.C*tparams.x0,params.C*params.x0,'xr')
+%}

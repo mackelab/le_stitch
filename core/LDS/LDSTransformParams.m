@@ -2,6 +2,7 @@ function [params] = LDSTransformParams(params,varargin)
 %
 %  Pi := dlyap(params.A,params.Q)   stationary distribution
 %
+% 0: do nothing
 % 1: C'*C = eye		&&		Pi = diag    [default]
 % 2: C'*C = diag 	&& 		Pi = eye
 % 3: not implemented / tested yet
@@ -21,6 +22,10 @@ assignopts(who,varargin);
 xDim = size(params.A,1);
 
 switch TransformType
+
+  case '0'
+ 
+	% do nothing
 
   case '1'
 

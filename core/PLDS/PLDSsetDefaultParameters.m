@@ -1,6 +1,6 @@
 function params = PLDSsetDefaultParameters(params,xDim,yDim)
 %
-%
+% params = PLDSsetDefaultParameters(params,xDim,yDim)
 %
 
 
@@ -51,6 +51,7 @@ params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithm
 
 %%%% set parameters for EM iterations %%%%%%%%       
 
+params.algorithmic = touchField(params.algorithmic,'TransformType','1');                                        % transform LDS parameters after each MStep to canonical form?
 params.algorithmic = touchField(params.algorithmic,'EMIterations');
 params.algorithmic.EMIterations = touchField(params.algorithmic.EMIterations,'maxIter',100);			% max no of EM iterations
 params.algorithmic.EMIterations = touchField(params.algorithmic.EMIterations,'progTolvarBound',1e-6);     	% progress tolerance on var bound per data time bin
