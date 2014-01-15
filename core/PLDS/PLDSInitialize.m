@@ -48,20 +48,25 @@ switch initMethod
 	Tpca = size(Xpca,2);
 	params.Pi = (Xpca*Xpca')/Tpca;				% set stationary covariance to the empirical one
 
-	params.A = Xpca(:,2:end)/Xpca(:,1:end-1);
-	params.A = diag(diag(params.A).^(1/dt));		% undo rebinning
+	[Upi Spi Vpi] = svd(params.Pi);                         % whiten latent space
+        Tpi = diag(1./sqrt(diag(Spi)))*Upi';
 	
-	[Upi Spi Vpi] = svd(params.Pi);				% whiten latent space
-	Tpi = diag(1./sqrt(diag(Spi)))*Upi';
-	params.Pi = Tpi*params.Pi*Tpi';
-	params.C  = params.C/Tpi;
-	params.A  = Tpi*params.A/Tpi;
+	if cond(Tpi)>1e2
+	   warning('Trying to rescale latent dimensions with a ill-conditioned transformation')
+	end
+
+        params.Pi = Tpi*params.Pi*Tpi';
+        params.C  = params.C/Tpi;
+	Xpca      = Tpi*Xpca;
+	
+	params.A  = Xpca(:,2:end)/Xpca(:,1:end-1);
+	params.A  = diag(min(max((diag(abs(params.A))).^(1/dt),0.5),0.98));
 	params.Q  = eye(xDim)-params.A*params.A';		% set innovation covariance Q such that stationary dist is white
 	[Uq Sq Vq] = svd(params.Q);				% ensure that Q is pos def
 	params.Q  = Uq*diag(max(diag(Sq),1e-3))*Uq';
 	params.x0 = zeros(xDim,1);
-	params.Q0 = dlyap(params.A,params.Q);			% set initial distribution to stationary distribution, this could prob be refined
-
+	params.Q0 = eye(xDim);			% set initial distribution to stationary distribution, this could prob be refined
+	
 
    otherwise
 	warning('Unknown PLDS initialization method')

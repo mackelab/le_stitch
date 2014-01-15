@@ -36,7 +36,8 @@ dinit = zeros(yDim,1);
 
 CXdinit = [vec([Cinit; Xinit']); dinit];
 
-CXdOpt = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam*sqrt(yDim*T));
+%CXdOpt = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam*sqrt(yDim*T));
+CXdOpt = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam); 
 
 d  = CXdOpt(end-yDim+1:end);
 CX = reshape(CXdOpt(1:end-yDim),yDim+T,xDim);
