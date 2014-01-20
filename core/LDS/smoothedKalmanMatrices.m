@@ -1,28 +1,37 @@
 function [Vsm VVsm F0 F1] = smoothedKalmanMatrices(params,CRinvC)
 %
+% [Vsm VVsm F0 F1] = smoothedKalmanMatrices(params,CRinvC)
+%
+% 
+% computes posterior covariances by Kalman smoothing
+%
 % INPUT:
 %
-%  - CRinvC is a array of dimension (xDIM*T) x (xDim) where
-%    CRinvC((t-1)*xDim+1:t*xDim) = C'*R*C where R is observation noise
-%    cov and C is loading matrix
+%  - CRinvC is a array of dimension (xDim*T) x (xDim) where
+%    CRinvC((t-1)*xDim+1:t*xDim) = C'/Rt*C where Rt is observation noise
+%    covariance matrix at time t and C is loading matrix
 %
 %  - params with fields
 %    - A
 %    - Q
 %
 %
-% OUTPUT: all matrices are of dimension (xDim*T) x (xDim)
+% OUTPUT: all matrices but VVsm are of dimension (xDim*T) x (xDim)
 %
 % the t-th block of dimension (xDim) x (xDim) is defined as:
-% F0   = predictive cov = Cov(x_t|y_{1:t-1})
-% F1   = filtering cov  = Cov(x_t|y_{1:t})
-% Vsm  = smoothed cov   = Cov(x_t|y_{1:T})
-% VVsm = smoothed cov   = Cov(x_{t+1},x_t}|y_{1:T})
+% F0   = predictive cov Cov(x_t|y_{1:t-1})
+% F1   = filtering cov  Cov(x_t|y_{1:t})
+% Vsm  = smoothed cov   Cov(x_t|y_{1:T})
+%
+% VVsm is of dimension (xDim*(T-1)) x (xDim)
+%
+% VVsm = smoothed cov   Cov(x_{t+1},x_t}|y_{1:T})
 % 
 %
 %
-% (c) Lars Buesing 2013
+% (c) Lars Buesing 2013,2014
 %
+
 
 xDim = size(params.A,1);
 T    = round(size(CRinvC,1)/xDim);
@@ -37,12 +46,12 @@ F1   = zeros(xDim*T,xDim);
 F0(1:xDim,1:xDim) = params.Q0;
 for t=1:(T-1)
   xidx = ((t-1)*xDim+1):(t*xDim);
-  %F1(xidx,:) = pinv(eye(xDim)+F0(xidx,:)*CRinvC(xidx,:))*F0(xidx,:);
+  %F1(xidx,:) = pinv(eye(xDim)+F0(xidx,:)*CRinvC(xidx,:))*F0(xidx,:);  % debug line, do not use
   F1(xidx,:) = (eye(xDim)+F0(xidx,:)*CRinvC(xidx,:))\F0(xidx,:);
   F0(xidx+xDim,:) = params.A*F1(xidx,:)*params.A'+params.Q;
 end
 t=T;xidx = ((t-1)*xDim+1):(t*xDim);
-F1(xidx,:) = pinv(pinv(F0(xidx,:))+CRinvC(xidx,:));
+F1(xidx,:) = eye(xDim)/(eye(xDim)/(F0(xidx,:))+CRinvC(xidx,:));
 
 
 % backward pass using Rauch–Tung–Striebel smoother

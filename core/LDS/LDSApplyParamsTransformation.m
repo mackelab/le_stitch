@@ -4,7 +4,7 @@ function [params] = LDSApplyParamsTransformation(M,params,varargin)
 %
 % Applies M from left and inv(M)/M' from the right
 %
-% to A,Q,Qo,xo,B,C
+% to A,Q,Q0,x0,B,C
 
 assignopts(who,varargin); 
 

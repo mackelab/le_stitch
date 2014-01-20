@@ -1,69 +1,61 @@
 clear all
 close all
 
+addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/core_lds')
+addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/util')
 
-xDim   = 5;
+
+xDim   = 10;
 yDim   = 100;
-T      = 100;
-Trials = 3;
+
+T      = 200;  % also check if the transformed systems have the same liklihood, sensitive test;
+Trials = 3;    
 
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim);
-trueparams.PiY = trueparams.C*dlyap(trueparams.A,trueparams.Q)*trueparams.C';
-seq = PLDSsample(trueparams,T,Trials); Oseq = seq;
+trueparams = generateLDS('xDim',xDim,'yDim',yDim);
+seqOrig    = sampleLDS(trueparams,T,Trials)
+
 tp = trueparams;
+tp.PiY = tp.C*tp.Pi*tp.C';
+tp.notes.forceEqualT = true;
+tp.notes.useB = false;
+tp.notes.useD = false;
+tp.notes.type = 'LDS';
 
-Y = [seq.y];
+%%%%%%%%% test parameter transformation
 
-params    = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA');
-params.algorithmic.EMIterations.maxIter = 10;
-iparams = params;
-[params varBound] = PLDSEM(params,seq);
-tparams = iparams;
-tparams.algorithmic.TransformType = '2';
-[tparams tvarBound] = PLDSEM(tparams,seq);
+% random transformation works!
+
+[params] = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),tp);
+[params] = LDSTransformParams(params,'TransformType','2');
+
+params.PiY = params.C*params.Pi*params.C';
+
+figure
+plot(vec(tp.PiY),vec(params.PiY),'rx');
+
+figure    
+plot(vec(tp.C*tp.A*tp.Pi*tp.C'),vec(params.C*params.A*params.Pi*params.C'),'rx');
+
+figure
+plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q0*params.C'),'rx');
+
+figure
+plot(vec(tp.C*tp.x0),vec(params.C*params.x0),'rx');
 
 
+subspace(tp.C,params.C)
 
-%tparams = LDSTransformParams(params,'TransformType','1'); 
-
-
-%%%%%% different diagnostics if parameter transformation is equivalent
-% works
-
-subspace(tparams.C,params.C)
-
+sort(eig(tp.A))
 sort(eig(params.A))
-sort(eig(tparams.A))
-
-tparams.C'*tparams.C 
-
-dlyap(tparams.A,tparams.Q)
 
 
+tp.xo = tp.x0;tp.Qo = tp.Q0;
+params.xo = params.x0;params.Qo = params.Q0;
+[tpseq, tpLL] = exactInferenceLDS(seqOrig, tp,'getLL',true);
+[seq,   LL]   = exactInferenceLDS(seqOrig, params,'getLL',true);
 
-%{
+sum(abs(tpLL-LL))./sum(abs(tpLL))
 
-seq  = PLDSVariationalInference(params,Oseq);
-tseq = PLDSVariationalInference(tparams,Oseq);
-
-for tr=1:Trials
-    abs(seq(tr).posterior.varBound-tseq(tr).posterior.varBound)./abs(seq(tr).posterior.varBound)
-
-end
-
-tparams.Pi = dlyap(tparams.A,tparams.Q);
-params.Pi = dlyap(params.A,params.Q);
-figure
-plot(vec(tparams.C*tparams.Pi*tparams.C'),vec(params.C*params.Pi*params.C'),'xr')
-
-figure
-plot(vec(tparams.C*tparams.A*tparams.Pi*tparams.C'),vec(params.C*params.A*params.Pi*params.C'),'xr')
-
-
-figure
-plot(vec(tparams.C*tparams.Q0*tparams.C'),vec(params.C*params.Q0*params.C'),'xr')
-
-figure
-plot(tparams.C*tparams.x0,params.C*params.x0,'xr')
-%}
+params.C'*params.C
+dlyap(params.A,params.Q)

@@ -2,10 +2,10 @@ clear all
 close all
 
 
-xDim   = 5;
+xDim   = 10;
 yDim   = 100;
 T      = 100;
-Trials = 50;
+Trials = 150;
 
 
 %%%% generate data
@@ -18,13 +18,15 @@ tp = trueparams;
 
 %%% initialize with exponential family PCA
 
-params = PLDSInitialize(seq,xDim,'params',params,'initMethod','ExpFamPCA');
+params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA');
+%params = PLDSInitialize(seq,xDim,'initMethod','params');
 subspace(tp.C,params.C)
 
 
 %%% do 10 EM iterations
 
-params.algorithmic.EMIterations.maxIter = 10;
+params.startParams = params;
+params.algorithmic.EMIterations.maxIter = 5;
 [params varBound] = PLDSEM(params,seq);
 subspace(tp.C,params.C)
 
@@ -33,6 +35,9 @@ subspace(tp.C,params.C)
 
 %plotMatrixSpectrum(tp.A);
 %plotMatrixSpectrum(params.A);
+
+sort(eig(tp.A))
+sort(eig(params.A))
 
 tp.Pi = dlyap(tp.A,tp.Q);
 params.Pi = dlyap(params.A,params.Q);

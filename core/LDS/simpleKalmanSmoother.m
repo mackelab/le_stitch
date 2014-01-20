@@ -17,9 +17,8 @@ T           = size(seq(1).y,2);
 Lambda = buildPriorPrecisionMatrixFromLDS(params,T); % prior precision
 LambdaPost = Lambda;                                 % posterior precision
 
-CRC = zeros(xDim*T,xDim);
-CRCsmall = params.C'*params.R*params.C;
-CRinvC   = params.C'*pinv(params.R)*params.C;
+CRC    = zeros(xDim*T,xDim);
+CRinvC = params.C'*pinv(params.R)*params.C;
 for t=1:T
   xidx = ((t-1)*xDim+1):(t*xDim);
   CRC(xidx,:) = CRinvC;

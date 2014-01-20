@@ -32,8 +32,8 @@ for i=1:numel(Pidx)
   plot(1:T,xsm(pidx,:),'r','linewidth',2)
   ylabel('x(t)');  
   if i==numel(Pidx);xlabel('t');end
-  figSize = {14,10};
-  figuresize(figSize{:},'centimeters')
+  %figSize = {14,10};
+  %figuresize(figSize{:},'centimeters')
 end
 
 if isfield(seq(1).posterior,'phi')
@@ -41,7 +41,7 @@ try
   figure
   plot(seq(1).posterior.phi,'rx','MarkerSize',10,'linewidth',2)
   xlabel('neuron no');ylabel('phi')
-  figSize = {14,10};
-  figuresize(figSize{:},'centimeters')
+  %figSize = {14,10};
+  %figuresize(figSize{:},'centimeters')
 end
 end

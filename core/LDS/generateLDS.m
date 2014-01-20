@@ -10,7 +10,7 @@ Aspec    = 0.99;
 Arand    = 0.03;
 Q0max    = 0.3;
 Rmin     = 0.1;
-Rmax     = 1;
+Rmax     = 0.1;
 
 
 T        = 100;
@@ -45,4 +45,4 @@ params.x0   = x0;
 params.C    = C;
 params.d    = d;
 params.R    = R;
-
+params.Pi   = dlyap(params.A,params.Q);
