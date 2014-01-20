@@ -2,47 +2,31 @@ clear all
 close all
 
 xDim   = 10;
-yDim   = 25;
-T      = 150;
-Trials = 50;
+yDim   = 50;
+T      = 50;
+Trials = 5000;
 
 params = generateLDS('xDim',xDim,'yDim',yDim);
-seq = sampleLDS(params,T,Trials);
-
-
-%%%%%%%%%%%%%%%%%5 test Kalman smoother %%%%%%%%%%%%%%%%
-% ---> works
-
-[seq Lambda LambdaPost] = simpleKalmanSmoother(params,seq);
-plotPosterior(seq,1,params)
-
-Sig = pinv(full(LambdaPost));
-VsmFull = zeros(xDim*T,xDim);
-
-for t=1:T
-    xidx = ((t-1)*xDim+1):(t*xDim);
-    VsmFull(xidx,:) = Sig(xidx,xidx);
-end
-
-
-max(abs(vec(VsmFull-seq(1).posterior.Vsm)))
-figure
-imagesc([VsmFull seq(1).posterior.Vsm])
-figure
-imagesc([VsmFull])
-figure
-imagesc([seq(1).posterior.Vsm])
+params = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),params);
+seq    = sampleLDS(params,T,Trials);
+seq    = simpleKalmanSmoother(params,seq);
 
 
 %%%%%%%%%%%%%%%%%%% test LDS Mstep %%%%%%%%%%%%%%%%%%
-% --> works!
 
-ESTparams = MStepLDS(params,seq);
 
+ESTparams = LDSMStep(params,seq);
+
+figure
+plot(params.A,ESTparams.A,'xr')
 figure
 imagesc([params.A ESTparams.A])
 figure
-imagesc([params.Q ESTparams.Q]) 
+plot(params.Q,ESTparams.Q,'xr')
+figure
+imagesc([params.Q ESTparams.Q])
+figure
+plot(params.Q0,ESTparams.Q0,'xr')
 figure
 imagesc([params.Q0 ESTparams.Q0])
 figure

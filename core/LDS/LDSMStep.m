@@ -50,7 +50,7 @@ S00 = (S00+S00')/2;
 S11 = (S11+S11')/2;
 
 params.A  = S01'/S00;
-params.Q  = (S11+params.A*S00*params.A'-S01'*params.A'-params.A*S01)./(sum(Tall)-Trials);  % !!! dont understand my own update step!
+params.Q  = (S11+params.A*S00*params.A'-S01'*params.A'-params.A*S01)./(sum(Tall)-Trials);
 params.Q  = (params.Q+params.Q')/2;
 
 params.x0 = mean(x0,2);
