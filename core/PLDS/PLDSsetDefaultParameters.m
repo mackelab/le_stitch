@@ -80,7 +80,7 @@ switch params.algorithmic.initMethod
 
    	params.algorithmic = touchField(params.algorithmic,'ExpFamPCA');
 	params.algorithmic.ExpFamPCA = touchField(params.algorithmic.ExpFamPCA,'dt',10);				% rebinning factor, choose such that roughly E[y_{kt}] = 1 forall k,t
-	params.algorithmic.ExpFamPCA = touchField(params.algorithmic.ExpFamPCA,'lam',1);		  		% regularization coeff for ExpFamPCA
+	params.algorithmic.ExpFamPCA = touchField(params.algorithmic.ExpFamPCA,'lam',10);		  		% regularization coeff for ExpFamPCA
 	params.algorithmic.ExpFamPCA = touchField(params.algorithmic.ExpFamPCA,'options');				% options for minFunc
 	params.algorithmic.ExpFamPCA.options = touchField(params.algorithmic.ExpFamPCA.options,'display','none');
 	params.algorithmic.ExpFamPCA.options = touchField(params.algorithmic.ExpFamPCA.options,'MaxIter',10000);

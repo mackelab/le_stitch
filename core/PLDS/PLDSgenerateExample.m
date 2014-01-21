@@ -30,7 +30,7 @@ Q0 = O*diag(rand(xDim,1)*Q0max)*O'/3;
 x0 = randn(xDim,1)/3;
 
 C  = randn(yDim,xDim)./sqrt(3*xDim);
-d  = zeros(yDim,1)+doff;
+d  = 0.3*doff*randn(yDim,1)+doff;
 
 params.A    = A;
 params.Q    = Q;

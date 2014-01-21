@@ -4,25 +4,24 @@ close all
 
 xDim   = 5;
 yDim   = 100;
-T      = 200;
-Trials = 20;
+T      = 100;
+Trials = 40;
 
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim);
-trueparams.PiY = trueparams.C*dlyap(trueparams.A,trueparams.Q)*trueparams.C';
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);
 seq = PLDSsample(trueparams,T,Trials);
-tp = trueparams;
+mean(vec([seq.y]))
+tp  = trueparams;
 
-params = PLDSInitialize(seq,xDim);
+params = [];
+params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA','params',params);
+% [params varBound] = PLDSEM(params,seq);
 
+subspace(tp.C,params.C)
+sort(abs(eig(tp.A)))
+sort(abs(eig(params.A)))
 
-[params varBound] = PLDSEM(params,seq);
-
-
-plotMatrixSpectrum(tp.A);
-plotMatrixSpectrum(params.A);
-
-tp.Pi = dlyap(tp.A,tp.Q);
+tp.Pi     = dlyap(tp.A,tp.Q);
 params.Pi = dlyap(params.A,params.Q);
 figure
 plot(vec(tp.C*tp.Pi*tp.C'),vec(params.C*params.Pi*params.C'),'xr')
@@ -30,13 +29,15 @@ plot(vec(tp.C*tp.Pi*tp.C'),vec(params.C*params.Pi*params.C'),'xr')
 figure
 plot(vec(tp.C*tp.A*tp.Pi*tp.C'),vec(params.C*params.A*params.Pi*params.C'),'xr')
 
-
 figure
-plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q*params.C'),'xr')
+plot(tp.d,params.d,'rx');
 
-figure
-plot(tp.C*tp.x0,params.C*params.x0,'xr')
+%% useless
+%figure
+%plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q*params.C'),'xr')
 
-subspace(tp.C,params.C)
+%figure
+%plot(tp.C*tp.x0,params.C*params.x0,'xr')
+
 
 

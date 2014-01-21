@@ -1,6 +1,6 @@
 function seq = PLDSsample(params,T,Trials)
 %
-% sampleLDS(params,T,Trials)
+% seq = PLDSsample(params,T,Trials)
 %
 
 if numel(T)==1
