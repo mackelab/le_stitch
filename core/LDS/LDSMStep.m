@@ -4,7 +4,6 @@ function params = MStepLDS(params,seq)
 %
 % to do:
 %
-% 	- debug! works without B, Jan 3rd 2014
 %	- stimulus drive B 
 %
 % Parameters to update: A,Q,Q0,x0,B(? erst mal nicht)

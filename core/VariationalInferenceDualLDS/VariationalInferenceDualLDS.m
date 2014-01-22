@@ -47,16 +47,11 @@ for tr = 1:Trials
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamInit')
     lamInit = seq(tr).posterior.lamInit;
   else
-    lamInit = zeros(yDim*T,1)+mean(vec(seq(tr).y));
-    %lamInit = 0.01+repmat(mean(seq(tr).y,2),T,1); % doesn't work that well
+    lamInit = zeros(yDim*T,1)+mean(vec(seq(tr).y))+1e-3;
   end
   % warm start inference if possible
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamOpt')
-    [~, ~, LlamOpt]  = VariationalInferenceDualCost(seq(tr).posterior.lamOpt,VarInfparams);
-    [~, ~, LlamInit] = VariationalInferenceDualCost(lamInit,VarInfparams);
-    %if LlamOpt>LlamInit;                      % this criterion prob doesn't make sense, as we're comparing upper bounds 
-      lamInit = seq(tr).posterior.lamOpt; 
-    %end
+    lamInit = seq(tr).posterior.lamOpt; 
   end
   
   lamOpt = minFunc(@VariationalInferenceDualCost,lamInit,optparams.minFuncOptions,VarInfparams);
@@ -66,13 +61,13 @@ for tr = 1:Trials
 
   seq(tr).posterior.xsm        = reshape(m_ast,xDim,T);	      % posterior mean   E[x(t)|y(1:T)]
   seq(tr).posterior.Vsm        = Vsm;			      % posterior covariances Cov[x(t),x(t)|y(1:T)]
-  seq(tr).posterior.VVsm       = VVsm;			      % posterior covariances ...
+  seq(tr).posterior.VVsm       = VVsm;			      % posterior covariances Cov[x(t+1),x(t)|y(1:T)]
   seq(tr).posterior.lamOpt     = lamOpt;		      % optimal value of dual variable
   seq(tr).posterior.lamInit    = lamInit;
   seq(tr).posterior.varBound   = varBound;		      % variational lower bound for trial
   seq(tr).posterior.DualCost   = DualCost;
   seq(tr).posterior.over_m     = over_m;		      % C*xsm+d
-  seq(tr).posterior.over_v     = over_v;		      % C*Vsm*C'
+  seq(tr).posterior.over_v     = over_v;		      % diag(C*Vsm*C')
   
   
 end

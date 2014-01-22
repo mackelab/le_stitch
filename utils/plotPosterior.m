@@ -3,7 +3,7 @@ function plotPosterior(seq,trId,params)
 %
 %
 
-[xDim T] = size(seq(1).posterior.xsm);
+[xDim T] = size(seq(trId).posterior.xsm);
 
 try
 	Pidx = [1 1+params.dE];

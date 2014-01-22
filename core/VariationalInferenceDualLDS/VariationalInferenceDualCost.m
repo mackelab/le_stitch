@@ -17,12 +17,12 @@ function [f, df, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v] = Variati
 % OUTPUT:
 % f        = dual cost
 % df       = gradient of dual cost wrt lam
-% varBound = variational lower bound to marignal likelihood p(y)
+% varBound = variational lower bound to marignal log-likelihood log p(y)
 % m_ast    = variational posterior mean xDim x T
 % invV_ast = variational posterior precision
-% Vsm	   = var smoothed cov Cov[x(t),x(t)]
-% VVsm	   = var smoothed cov Cov[x(t+1),x(t)]
-% over_m   = W*m_ast
+% Vsm	   = var smoothed cov Cov[x(t),x(t)|y_{1:T}]
+% VVsm	   = var smoothed cov Cov[x(t+1),x(t)|y_{1:T}]
+% over_m   = W*m_ast+d
 % over_v   = diag(W/invV_ast*W)
 %
 % (c) Lars Buesing, 2013 
@@ -32,23 +32,23 @@ xDim     = size(VarInfparams.A,1);
 y        = VarInfparams.y; % observed data
 [yDim T] = size(y);
 
-% catch lam<0; take out? prob generalize at some point to generic domains 
+% catch lam<0; take out? prob generalize at some point to generic domains; % !!! generalize to different domains
 if min(lam)<0; f = inf; df = nan(size(lam)); return; end
 
-W  = VarInfparams.W;          % loading matrix, sparse, only blk-diag
-mu = VarInfparams.mu;         % prior mean
+W  = VarInfparams.W;          		     	     % loading matrix, sparse, only blk-diag
+mu = VarInfparams.mu;         			     % prior mean
 if isfield(VarInfparams,'d')
-  d = repmat(VarInfparams.d,T,1); % bias for likelihood
+  d = repmat(VarInfparams.d,T,1);		     % bias for likelihood
 else
   d = zeros(yDim*T,1);
 end
-Lambda = VarInfparams.Lambda;  % precision matrix of prior, assumed to be sparse
+Lambda = VarInfparams.Lambda;			     % precision matrix of LDS prior, assumed to be tri-diagonal
 
-% pre-compute
+% compute quadratric term of cost function  (lam-y)'*W*Sig*W'*(lam-y) 
 
-lamY     = lam - vec(VarInfparams.y);
-WlamY    = W'*lamY;
-SigWlamY = Lambda\WlamY;
+lamY          = lam - vec(VarInfparams.y);
+WlamY         = W'*lamY;
+SigWlamY      = Lambda\WlamY;
 WlamYSigWlamY = WlamY'*SigWlamY;
 
 
@@ -80,13 +80,13 @@ end
 
 % gradient
 
-CRC = zeros(xDim*T,xDim);
+CRinvC = zeros(xDim*T,xDim);
 for t=1:T
   xidx = ((t-1)*xDim+1):(t*xDim);
-  CRC(xidx,:) = VarInfparams.WlamW(xidx,xidx);
+  CRinvC(xidx,:) = VarInfparams.WlamW(xidx,xidx);
 end
 
-[Vsm, VVsm] = smoothedKalmanMatrices(VarInfparams,CRC);
+[Vsm, VVsm] = smoothedKalmanMatrices(VarInfparams,CRinvC);
 lam_con = zeros(yDim*T,1); % equals diag(W/Alam*W')
 for t=1:T
   xidx = ((t-1)*xDim+1):(t*xDim);
@@ -109,10 +109,10 @@ over_v	 = lam_con;
 over_m 	 = reshape(over_m,yDim,T);
 over_v   = reshape(over_v,yDim,T);
 
-varBound = -0.5*logdetAlam-0.5*WlamYSigWlamY-0.5*(xDim*T-lam'*lam_con); %prior contribution
-varBound = varBound - 0.5*logdet(VarInfparams.Q)*(T-1)-0.5*logdet(VarInfparams.Q0)-T*xDim/2*log(2*pi);
+varBound = -0.5*logdetAlam-0.5*WlamYSigWlamY+0.5*lam'*lam_con;                                            %prior contribution
+varBound = varBound - 0.5*logdet(VarInfparams.Q)*(T-1)-0.5*logdet(VarInfparams.Q0);
 
-varBound = varBound-sum(vec(feval(VarInfparams.likeHandle,y,over_m,over_v,VarInfparams.dualParams)));  %likelihood contribution
-if isfield(VarInfparams,'DataBaseMeasure');
+varBound = varBound-sum(vec(feval(VarInfparams.likeHandle,y,over_m,over_v,VarInfparams.dualParams)));     %likelihood contribution
+if isfield(VarInfparams,'DataBaseMeasure');   % !!! put this into PLDSInitialize or smth
    varBound = varBound+VarInfparams.DataBaseMeasure;
 end

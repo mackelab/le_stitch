@@ -1,6 +1,6 @@
 function [seq] = PLDSVariationalInference(params,seq)
 %
-% [seq] = VariationalInferenceDualLDS(params,seq)
+% [seq] = PLDSVariationalInferenceDualLDS(params,seq)
 %
 
 Trials = numel(seq);

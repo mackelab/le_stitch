@@ -10,8 +10,6 @@ function [f, df] = PLDSMStepObservationCost(vecCd,seq,params)
 % to do: 
 %
 %       0) analyze run time
-%	1) Implement for different likelihood handles
-%	2) add regularization term to varBound
 %
 
 

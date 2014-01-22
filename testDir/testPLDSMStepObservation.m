@@ -22,23 +22,14 @@ plotPosterior(seq,1,tp);
 
 
 % do MStep
-params = LDSMStep(tp,seq);
+params = PLDSMStepObservation(tp,seq);
 
 
 % look at some invariant comparison statistics
 
-sort(abs(eig(tp.A)))
-sort(abs(eig(params.A)))
+subspace(tp.C,params.C)
 figure
-plot(vec(tp.A),vec(params.A),'xr')
-
-tp.Pi     = dlyap(tp.A,tp.Q);
-params.Pi = dlyap(params.A,params.Q);
-figure
-plot(vec(tp.Pi),vec(params.Pi),'xr')
+plot(vec(tp.C),vec(params.C),'xr')
 
 figure
-plot(vec(tp.Q0),vec(params.Q),'xr')
-
-figure
-plot(tp.x0,params.x0,'xr')
+plot(tp.d,params.d,'xr')

@@ -2,10 +2,10 @@ clear all
 close all
 
 
-xDim   = 5;
+xDim   = 10;
 yDim   = 100;
 T      = 100;
-Trials = 40;
+Trials = 50;
 
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);
@@ -15,6 +15,9 @@ tp  = trueparams;
 
 params = [];
 params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA','params',params);
+% params = PLDSInitialize(seq,xDim,'initMethod','params','params',params);
+params = PLDSInitialize(seq,xDim,'initMethod','PLDSID','params',params);
+
 % [params varBound] = PLDSEM(params,seq);
 
 subspace(tp.C,params.C)
