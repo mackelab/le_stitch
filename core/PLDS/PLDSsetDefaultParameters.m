@@ -16,10 +16,10 @@ params = touchField(params,'d',zeros(yDim,1)-2.0);
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%
 
-params = touchField(params,'likeHandle',@ExpPoissonHandle);
-params = touchField(params,'dualHandle',@ExpPoissonDualHandle);
-
-
+params = touchField(params,'likeHandle', @ExpPoissonHandle);
+params = touchField(params,'dualHandle', @ExpPoissonDualHandle);
+params = touchField(params,'baseMeasureHandle',@PoissonBaseMeasure);
+params = touchField(params,'domainHandle',@ExpPoissonDomain);
 
 %%%%%%%%%%% set standard algorithmic parameters %%%%%%%%%%%%%%%%%%%%
 

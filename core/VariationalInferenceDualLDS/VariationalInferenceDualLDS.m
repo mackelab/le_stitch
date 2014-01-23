@@ -41,8 +41,8 @@ for tr = 1:Trials
   VarInfparams.WlamW  = sparse(zeros(xDim*T)); %allocate sparse observation matrix
   % fix this: optparams.dualParams{tr} should default to 0
   VarInfparams.dualParams      = optparams.dualParams{tr};   
-  VarInfparams.DataBaseMeasure = -sum(log(gamma(vec(seq(tr).y)+1))); %!!! make this more general
-  
+  VarInfparams.DataBaseMeasure = feval(params.baseMeasureHandle,seq(tr).y);
+
   % init value
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamInit')
     lamInit = seq(tr).posterior.lamInit;

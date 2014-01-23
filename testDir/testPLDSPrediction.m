@@ -22,14 +22,14 @@ seq     = seqOrig;
 params  = tp;
 
 
-%%%% prediction
+%%%% prediction example
 
 y = seq(1).y;
 
 condRange = [50:125];
 predRange = [135:190];
 
-[ypred xpred xpredCov seqInf] = PLDSPredictRange(params,y,condRange,predRange);
+tic; [ypred xpred xpredCov seqInf] = PLDSPredictRange(params,y,condRange,predRange); toc
 
 figure
 imagesc([y(:,predRange) ypred])

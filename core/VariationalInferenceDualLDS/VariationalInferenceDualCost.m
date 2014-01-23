@@ -32,8 +32,8 @@ xDim     = size(VarInfparams.A,1);
 y        = VarInfparams.y; % observed data
 [yDim T] = size(y);
 
-% catch lam<0; take out? prob generalize at some point to generic domains; % !!! generalize to different domains
-if min(lam)<0; f = inf; df = nan(size(lam)); return; end
+% check domain of lam
+if ~feval(VarInfparams.domainHandle,lam); f = inf; df = nan(size(lam)); return; end
 
 W  = VarInfparams.W;          		     	     % loading matrix, sparse, only blk-diag
 mu = VarInfparams.mu;         			     % prior mean
