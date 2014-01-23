@@ -1,51 +1,51 @@
 clear all
 close all
 
+ 
+xDim    = 3;
+yDim    = 30;
+T       = 100;
+Trials  = 100;
+maxIter = 25;
 
-xDim   = 10;
-yDim   = 100;
-T      = 100;
-Trials = 100;
+%%%% ground truth model
 
-
-params = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim);
-
-params.PiY = params.C*dlyap(params.A,params.Q)*params.C';
-
-seq = PLDSsample(params,T,Trials);
-ESTparams = params;
-
-ESTparams.A  = eye(xDim)*0.9;
-ESTparams.Q  = (1-0.9^2)*eye(xDim);
-ESTparams.Q0 = dlyap(ESTparams.A,ESTparams.Q);
-ESTparams.x0 = zeros(xDim,1);
-ESTparams.C  = randn(yDim,xDim)*0.1/sqrt(xDim);
-ESTparams.d  = -1.7*ones(yDim,1);
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);
+seqOrig    = PLDSsample(trueparams,T,Trials);
+tp         = trueparams;
 
 
-[NOWparams varBound] = PLDSEM(params,seq);
+%%%% fitting a model to data
+
+seq    = seqOrig;
+params = [];
+params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA','params',params);
+
+params.algorithmic.EMIterations.maxIter = maxIter;
+tic; [params seq varBound EStepTimes MStepTimes] = PLDSEM(params,seq); toc
 
 
-figure
-plotMatrixSpectrum(params.A)
-figure
-plotMatrixSpectrum(ESTparams.A)
+%%%% compare models
 
-params.Pi = dlyap(params.A,params.Q)
-ESTparams.Pi = dlyap(ESTparams.A,ESTparams.Q)
-figure
-plot(vec(params.C*params.Pi*params.C'),vec(ESTparams.C*ESTparams.Pi*ESTparams.C'),'xr')
+subspace(tp.C,params.C)
 
-figure
-plot(vec(params.C*params.A*params.Pi*params.C'),vec(ESTparams.C*ESTparams.A*ESTparams.Pi*ESTparams.C'),'xr')
+sort(eig(tp.A))
+sort(eig(params.A))
 
+tp.Pi     = dlyap(tp.A,tp.Q);
+params.Pi = dlyap(params.A,params.Q);
 
 figure
-plot(vec(params.C*params.Q0*params.C'),vec(ESTparams.C*ESTparams.Q*ESTparams.C'),'xr')
+plot(vec(tp.C*tp.Pi*tp.C'),vec(params.C*params.Pi*params.C'),'xr')
 
 figure
-plot(params.C*params.x0,ESTparams.C*ESTparams.x0,'xr')
+plot(vec(tp.C*tp.A*tp.Pi*tp.C'),vec(params.C*params.A*params.Pi*params.C'),'xr')
 
-subspace(params.C,ESTparams.C)
+figure
+plot(tp.d,params.d,'rx');
 
+figure
+plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q*params.C'),'xr')
 
+figure
+plot(tp.C*tp.x0,params.C*params.x0,'xr')

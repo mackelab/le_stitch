@@ -2,8 +2,8 @@ clear all
 close all
 
 
-xDim   = 10;
-yDim   = 100;
+xDim   = 3;
+yDim   = 30;
 T      = 100;
 Trials = 100;
 

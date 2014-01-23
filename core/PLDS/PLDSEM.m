@@ -1,28 +1,26 @@
-function [NOWparams varBound] = PLDSEM(params,seq)
+function [NOWparams seq varBound EStepTimes MStepTimes] = PLDSEM(params,seq)
 %
-% params = PLDSEM(params,seq)
+% [NOWparams varBound seq] = PLDSEM(params,seq)
 %
-% to do:
+% !!! to do:
 %
-%	- generalize to different inference methods, eg var inf, laplace etc...
-%	- CPU times for E and M-steps...
+% !!!	- generalize to different inference methods, eg var inf, laplace etc...
+% !!!	- CPU times for E and M-steps...
+% !!!	- backtracking for Laplace
 %
 
 
-Trials = numel(seq);
-
-
-% put these into configuation file!
+Trials          = numel(seq);
 maxIter         = params.algorithmic.EMIterations.maxIter;
 progTolvarBound = params.algorithmic.EMIterations.progTolvarBound;  
-% maxCPUTime = ???
+% maxCPUTime = !!!
 
 InferenceMethod = @PLDSVariationalInference; % !!! generalize here
 
 EStepTimes  = nan(maxIter,1);
 MStepTimes  = nan(maxIter+1,1);
 varBound    = nan(maxIter,1);
-PREVparams  = params;         % params for backtracking!
+PREVparams  = params;			     % params for backtracking!
 NOWparams   = params;
 varBoundMax = -inf;
 
@@ -37,14 +35,14 @@ for ii=1:maxIter
     %%%%%%% E-step: inference
 
     % do inference
-    infTimeBegin = cputime;
+    infTimeBegin   = cputime;
     seq = InferenceMethod(NOWparams,seq);
-    infTimeEnd   = cputime;
+    infTimeEnd     = cputime;
     EStepTimes(ii) = infTimeEnd-infTimeBegin;
 
     % evaluate variational lower bound
     varBound(ii) = 0;
-    for tr=1:Trials; varBound(ii) = varBound(ii)+seq(tr).posterior.varBound;end;
+    for tr=1:Trials; varBound(ii) = varBound(ii)+seq(tr).posterior.varBound; end;
     fprintf('\rIteration: %i     Elapsed time (EStep): %d     Elapsed time (MStep): %d     Variational Bound: %d',ii,EStepTimes(ii),MStepTimes(ii),varBound(ii))
 
     % check termination criteria

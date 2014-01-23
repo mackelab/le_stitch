@@ -43,9 +43,11 @@ params.algorithmic.VarInfX.minFuncOptions = touchField(params.algorithmic.VarInf
 params.algorithmic = touchField(params.algorithmic,'MStepObservation');
 params.algorithmic.MStepObservation = touchField(params.algorithmic.MStepObservation,'minFuncOptions');
 
-params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'maxFunEvals', 500);
-params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'MaxIter',	  50);
+params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'maxFunEvals', 5000);
+params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'MaxIter',	  500);
 params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'Method',	  'lbfgs');
+params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'progTol',     1e-9);
+params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'optTol',      1e-5);
 params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithmic.MStepObservation.minFuncOptions,'display',	  'none');
 
 
