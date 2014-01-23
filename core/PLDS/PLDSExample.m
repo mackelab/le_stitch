@@ -12,7 +12,7 @@ close all
 
 % set parameters for the ground truth model
  
-xDim    = 5;                % latent dimensiom
+xDim    = 10                % latent dimensiom
 yDim    = 100;		    % observed dimension = no of neurons
 T       = 100;		    % no of time bins per trial; here a time step is approx 10ms 
 Trials  = 20;		    % no trials
@@ -20,9 +20,10 @@ maxIter = 25;		    % max no of EM iterations for fitting the model
 
 %%%% ground truth model
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);		% create ground truth model parameters
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);		% create ground truth model parameters
 seqOrig    = PLDSsample(trueparams,T,Trials);								% sample from the model
 tp         = trueparams;										
+hist(mean([seqOrig.y]'))
 
 
 %%%% fitting a model to data
