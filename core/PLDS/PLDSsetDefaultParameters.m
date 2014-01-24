@@ -2,11 +2,14 @@ function params = PLDSsetDefaultParameters(params,xDim,yDim)
 %
 % params = PLDSsetDefaultParameters(params,xDim,yDim)
 %
+%
+% Lars Buesing, Jakob H Macke
+%
 
 
 %%%%%%%%%%% set standard parameters %%%%%%%%%%%%%%%%%%%%
 
-params = touchField(params,'A',0.9*eye(xDim));
+params = touchField(params,'A',0.9*eye(xDim));                                  % these standard settings make sense for data binned at 10ms with average rates of roughly 10Hz
 params = touchField(params,'Q',(1-0.9.^2)*eye(xDim));
 params = touchField(params,'Q0',eye(xDim));
 params = touchField(params,'x0',zeros(xDim,1));
@@ -16,10 +19,11 @@ params = touchField(params,'d',zeros(yDim,1)-2.0);
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%
 
-params = touchField(params,'likeHandle', @ExpPoissonHandle);
-params = touchField(params,'dualHandle', @ExpPoissonDualHandle);
+params = touchField(params,'likeHandle',       @ExpPoissonHandle);
+params = touchField(params,'dualHandle',       @ExpPoissonDualHandle);
+params = touchField(params,'domainHandle',     @ExpPoissonDomain);
 params = touchField(params,'baseMeasureHandle',@PoissonBaseMeasure);
-params = touchField(params,'domainHandle',@ExpPoissonDomain);
+params = touchField(params,'inferenceHandle',  @PLDSVariationalInference);
 
 %%%%%%%%%%% set standard algorithmic parameters %%%%%%%%%%%%%%%%%%%%
 
@@ -56,12 +60,13 @@ params.algorithmic.MStepObservation.minFuncOptions = touchField(params.algorithm
 params.algorithmic = touchField(params.algorithmic,'TransformType','0');                                        % transform LDS parameters after each MStep to canonical form?
 params.algorithmic = touchField(params.algorithmic,'EMIterations');
 params.algorithmic.EMIterations = touchField(params.algorithmic.EMIterations,'maxIter',100);			% max no of EM iterations
+params.algorithmic.EMIterations = touchField(params.algorithmic.EMIterations,'maxCPUTime',1200);		% max CPU time for EM
 params.algorithmic.EMIterations = touchField(params.algorithmic.EMIterations,'progTolvarBound',1e-6);     	% progress tolerance on var bound per data time bin
 
 
 %%%% set parameters for initialization methods %%%%
 
-params.algorithmic = touchField(params.algorithmic,'initMethod','params');
+params.algorithmic = touchField(params.algorithmic,'initMethod','ExpFamPCA');
 
 switch params.algorithmic.initMethod
 

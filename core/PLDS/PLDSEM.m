@@ -13,9 +13,9 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = PLDSEM(params,seq)
 Trials          = numel(seq);
 maxIter         = params.algorithmic.EMIterations.maxIter;
 progTolvarBound = params.algorithmic.EMIterations.progTolvarBound;  
-% maxCPUTime = !!!
+maxCPUTime      = params.algorithmic.EMIterations.maxCPUTime;
 
-InferenceMethod = @PLDSVariationalInference; % !!! generalize here
+InferenceMethod = params.inferenceHandle;
 
 EStepTimes  = nan(maxIter,1);
 MStepTimes  = nan(maxIter+1,1);
@@ -28,6 +28,7 @@ disp('Starting PLDS-EM')
 disp('----------------')
 
 Tall = sum([seq.T]);
+EMbeginTime = cputime;
 
 %%%%%%%%%%% outer EM loop
 for ii=1:maxIter
@@ -56,6 +57,11 @@ for ii=1:maxIter
        fprintf('\nReached progTolvarBound for EM, aborting')
        break
     end	     
+
+    if (cputime-EMbeginTime)>maxCPUTime
+       fprintf('\nReached maxCPUTime for EM, aborting')
+       break
+    end
 
     varBoundMax = varBound(ii);
     PREVparams  = NOWparams;

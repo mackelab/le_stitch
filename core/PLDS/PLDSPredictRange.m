@@ -39,7 +39,7 @@ if numel(lamInit)==(yDim*Tcond)
    seqInf.posterior.lamOpt = lamInit;
 end
 
-seqInf   = PLDSVariationalInference(paramsInf,seqInf);
+seqInf   = params.inferenceHandle(paramsInf,seqInf);
 xpred    = zeros(xDim,Tpred);
 xpredCov = zeros(xDim,xDim,Tpred);
 ypred    = zeros(yDim,Tpred);

@@ -5,7 +5,7 @@ close all
 xDim    = 3;
 yDim    = 30;
 T       = 100;
-Trials  = 100;
+Trials  = 10;
 maxIter = 25;
 
 %%%% ground truth model
@@ -21,7 +21,8 @@ seq    = seqOrig;
 params = [];
 params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA','params',params);
 
-params.algorithmic.EMIterations.maxIter = maxIter;
+params.algorithmic.EMIterations.maxIter    = maxIter;
+params.algorithmic.EMIterations.maxCPUTime = 50;
 tic; [params seq varBound EStepTimes MStepTimes] = PLDSEM(params,seq); toc
 
 
