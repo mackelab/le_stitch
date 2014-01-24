@@ -12,8 +12,8 @@ trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'
 seq = PLDSsample(trueparams,T,Trials);
 
 VarInfparams.y = seq(1).y;
-VarInfparams.A = trueparams.A;
-VarInfparams.C = trueparams.C;
+VarInfparams.A = trueparams.model.A;
+VarInfparams.C = trueparams.model.C;
 Cl = {}; for t=1:T; Cl = {Cl{:} VarInfparams.C}; end
 VarInfparams.W = sparse(blkdiag(Cl{:}));
 VarInfparams.WlamW  = sparse(zeros(xDim*T));

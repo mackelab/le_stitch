@@ -10,7 +10,7 @@ function params = MStepLDS(params,seq)
 %
 
 
-xDim    = size(params.A,1);
+xDim    = size(params.model.A,1);
 Trials  = numel(seq);
 
 
@@ -48,10 +48,10 @@ end
 S00 = (S00+S00')/2;
 S11 = (S11+S11')/2;
 
-params.A  = S01'/S00;
-params.Q  = (S11+params.A*S00*params.A'-S01'*params.A'-params.A*S01)./(sum(Tall)-Trials);
-params.Q  = (params.Q+params.Q')/2;
+params.model.A  = S01'/S00;
+params.model.Q  = (S11+params.model.A*S00*params.model.A'-S01'*params.model.A'-params.model.A*S01)./(sum(Tall)-Trials);
+params.model.Q  = (params.model.Q+params.model.Q')/2;
 
-params.x0 = mean(x0,2);
-x0dev     = bsxfun(@minus,x0,params.x0);
-params.Q0 = (Q0 + x0dev*x0dev')./Trials;
+params.model.x0 = mean(x0,2);
+x0dev     = bsxfun(@minus,x0,params.model.x0);
+params.model.Q0 = (Q0 + x0dev*x0dev')./Trials;

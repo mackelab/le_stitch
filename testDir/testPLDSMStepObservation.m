@@ -2,10 +2,10 @@ clear all
 close all
 
 
-xDim   = 10;
-yDim   = 100;
+xDim   = 3;
+yDim   = 30;
 T      = 100;
-Trials = 20;
+Trials = 5;
 
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);
@@ -27,9 +27,9 @@ params = PLDSMStepObservation(tp,seq);
 
 % look at some invariant comparison statistics
 
-subspace(tp.C,params.C)
+subspace(tp.model.C,params.model.C)
 figure
-plot(vec(tp.C),vec(params.C),'xr')
+plot(vec(tp.model.C),vec(params.model.C),'xr')
 
 figure
-plot(tp.d,params.d,'xr')
+plot(tp.model.d,params.model.d,'xr')

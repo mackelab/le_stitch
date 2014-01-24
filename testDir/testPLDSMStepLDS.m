@@ -5,7 +5,7 @@ close all
 xDim   = 3;
 yDim   = 30;
 T      = 100;
-Trials = 100;
+Trials = 5;
 
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);
@@ -27,18 +27,25 @@ params = LDSMStep(tp,seq);
 
 % look at some invariant comparison statistics
 
-sort(abs(eig(tp.A)))
-sort(abs(eig(params.A)))
-figure
-plot(vec(tp.A),vec(params.A),'xr')
+subspace(tp.model.C,params.model.C)
 
-tp.Pi     = dlyap(tp.A,tp.Q);
-params.Pi = dlyap(params.A,params.Q);
-figure
-plot(vec(tp.Pi),vec(params.Pi),'xr')
+sort(eig(tp.model.A))
+sort(eig(params.model.A))
+
+tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = dlyap(params.model.A,params.model.Q);
 
 figure
-plot(vec(tp.Q0),vec(params.Q),'xr')
+plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
 
 figure
-plot(tp.x0,params.x0,'xr')
+plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
+
+figure
+plot(tp.model.d,params.model.d,'rx');
+
+figure
+plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'xr')
+
+figure
+plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')

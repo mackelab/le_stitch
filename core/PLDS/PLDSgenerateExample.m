@@ -32,20 +32,22 @@ x0 = randn(xDim,1)/3;
 C  = randn(yDim,xDim)./sqrt(3*xDim);
 d  = 0.3*randn(yDim,1)+doff;
 
-params.A    = A;
-params.Q    = Q;
-params.Q0   = Q0;
-params.x0   = x0;
-params.C    = C;
-params.d    = d;
+params.model.A    = A;
+params.model.Q    = Q;
+params.model.Q0   = Q0;
+params.model.x0   = x0;
+params.model.C    = C;
+params.model.d    = d;
 
 
 if BernFlag
-    params.dualHandle = @LogisticBernoulliDualHandle;
-    params.likeHandle = @LogisticBernoulliHandle;
+    params.model.dualHandle = @LogisticBernoulliDualHandle;
+    params.model.likeHandle = @LogisticBernoulliHandle;
 else
-    params.dualHandle = @ExpPoissonDualHandle;
-    params.likeHandle = @ExpPoissonHandle;
+    params.model.dualHandle = @ExpPoissonDualHandle;
+    params.model.likeHandle = @ExpPoissonHandle;
 end
+
+params.model.inferenceHandle = @PLDSVariationalInference;
 
 params = PLDSsetDefaultParameters(params,xDim,yDim);

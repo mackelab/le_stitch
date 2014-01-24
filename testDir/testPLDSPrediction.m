@@ -14,8 +14,8 @@ trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'
 tp         = trueparams;
 
 UA = randn(xDim); UA = (UA-UA')/2;
-tp.A       = expm(0.1*UA)*0.995*eye(xDim)
-eig(tp.A)
+tp.model.A       = expm(0.1*UA)*0.995*eye(xDim);
+eig(tp.model.A)
 
 seqOrig = PLDSsample(tp,T,Trials);
 seq     = seqOrig;

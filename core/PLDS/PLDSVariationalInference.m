@@ -8,6 +8,6 @@ Trials = numel(seq);
 for tr=1:Trials
   optparams.dualParams{tr} = [];
 end
-optparams.minFuncOptions = params.algorithmic.VarInfX.minFuncOptions;
+optparams.minFuncOptions = params.opts.algorithmic.VarInfX.minFuncOptions;
 
 [seq] = VariationalInferenceDualLDS(params,seq,optparams);

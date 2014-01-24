@@ -1,6 +1,6 @@
 function [params] = LDSTransformParams(params,varargin)
 %
-%  Pi := dlyap(params.A,params.Q)   stationary distribution
+%  Pi := dlyap(params.model.A,params.model.Q)   stationary distribution
 %
 % 0: do nothing
 % 1: C'*C = eye		&&		Pi = diag    [default]
@@ -19,7 +19,7 @@ TransformType   = '1';
 
 assignopts(who,varargin);
 
-xDim = size(params.A,1);
+xDim = size(params.model.A,1);
 
 switch TransformType
 
@@ -29,21 +29,21 @@ switch TransformType
 
   case '1'
 
-       [UC,SC,VC]    = svd(params.C,0);
+       [UC,SC,VC]    = svd(params.model.C,0);
        params        = LDSApplyParamsTransformation(SC*VC',params);
 
-       params.Pi     = dlyap(params.A,params.Q);
-       [UPi SPi VPi] = svd(params.Pi);
+       params.model.Pi     = dlyap(params.model.A,params.model.Q);
+       [UPi SPi VPi] = svd(params.model.Pi);
        params        = LDSApplyParamsTransformation(UPi',params);
 
   case '2'  
   
-	params.Pi     = dlyap(params.A,params.Q);
-	[UPi SPi VPi] = svd(params.Pi);
+	params.model.Pi     = dlyap(params.model.A,params.model.Q);
+	[UPi SPi VPi] = svd(params.model.Pi);
 	M    	      = diag(1./sqrt(diag(SPi)))*UPi';
        	params        = LDSApplyParamsTransformation(M,params);    	
 
-        [UC,SC,VC]    = svd(params.C,0);
+        [UC,SC,VC]    = svd(params.model.C,0);
         params        = LDSApplyParamsTransformation(VC',params);  	
 
   otherwise

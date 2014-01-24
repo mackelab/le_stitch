@@ -4,33 +4,33 @@ close all
 xDim   = 10;
 yDim   = 50;
 T      = 50;
-Trials = 5000;
+Trials = 50;
 
-params = generateLDS('xDim',xDim,'yDim',yDim);
-params = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),params);
-seq    = sampleLDS(params,T,Trials);
-seq    = simpleKalmanSmoother(params,seq);
-
+trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim);
+trueparams = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),trueparams);
+seq = LDSsample(trueparams,T,Trials);
+seq = LDSInference(trueparams,seq);
+tp  = trueparams;
 
 %%%%%%%%%%%%%%%%%%% test LDS Mstep %%%%%%%%%%%%%%%%%%
 
 
-ESTparams = LDSMStep(params,seq);
+params = LDSMStepLDS(tp,seq);
 
 figure
-plot(params.A,ESTparams.A,'xr')
+plot(tp.model.A,params.model.A,'xr')
 figure
-imagesc([params.A ESTparams.A])
+imagesc([tp.model.A params.model.A])
 figure
-plot(params.Q,ESTparams.Q,'xr')
+plot(tp.model.Q,params.model.Q,'xr')
 figure
-imagesc([params.Q ESTparams.Q])
+imagesc([tp.model.Q params.model.Q])
 figure
-plot(params.Q0,ESTparams.Q0,'xr')
+plot(tp.model.Q0,params.model.Q0,'xr')
 figure
-imagesc([params.Q0 ESTparams.Q0])
+imagesc([tp.model.Q0 params.model.Q0])
 figure
-plot(params.x0,ESTparams.x0,'xr')
+plot(tp.model.x0,params.model.x0,'xr')
  
 
 

@@ -12,16 +12,16 @@ if cond(M)>1e3
    warning('Attempting LDSApplyParamsTransformation with ill-conditioned transformation')
 end
 
-params.C  =     params.C  / M;
-params.A  = M * params.A  / M;
-params.Q  = M * params.Q  * M';
-params.Q0 = M * params.Q0 * M';
-params.x0 = M * params.x0;
+params.model.C  =     params.model.C  / M;
+params.model.A  = M * params.model.A  / M;
+params.model.Q  = M * params.model.Q  * M';
+params.model.Q0 = M * params.model.Q0 * M';
+params.model.x0 = M * params.model.x0;
 
-if isfield(params,'B')
-  params.B = M*params.B;
+if isfield(params.model,'B')
+  params.model.B = M*params.model.B;
 end
 
-if isfield(params,'Pi')
-   params.Pi = M * params.Pi * M';
+if isfield(params.model,'Pi')
+   params.model.Pi = M * params.model.Pi * M';
 end

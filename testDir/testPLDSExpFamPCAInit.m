@@ -5,53 +5,53 @@ close all
 xDim   = 10;
 yDim   = 100;
 T      = 100;
-Trials = 150;
+Trials = 1500;
 
 
 %%%% generate data
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim);
-trueparams.PiY = trueparams.C*dlyap(trueparams.A,trueparams.Q)*trueparams.C';
+trueparams.model.PiY = trueparams.model.C*dlyap(trueparams.model.A,trueparams.model.Q)*trueparams.model.C';
 seq = PLDSsample(trueparams,T,Trials);
 tp = trueparams;
 
 
 %%% initialize with exponential family PCA
 
-params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA');
-%params = PLDSInitialize(seq,xDim,'initMethod','params');
-subspace(tp.C,params.C)
+params = PLDSInitialize(seq,xDim,'ExpFamPCA',[]);
 
 
 %%% do 10 EM iterations
-
-params.startParams = params;
-params.algorithmic.EMIterations.maxIter = 5;
-[params varBound] = PLDSEM(params,seq);
-subspace(tp.C,params.C)
+%
+%params.startParams = params;
+%params.opts.algorithmic.EMIterations.maxIter = 10;
+%[params varBound] = PLDSEM(params,seq);
 
 
 %%% plot some diagnostics
 
-%plotMatrixSpectrum(tp.A);
-%plotMatrixSpectrum(params.A);
+subspace(tp.model.C,params.model.C)
 
-sort(eig(tp.A))
-sort(eig(params.A))
+sort(eig(tp.model.A))
+sort(eig(params.model.A))
 
-tp.Pi = dlyap(tp.A,tp.Q);
-params.Pi = dlyap(params.A,params.Q);
-figure
-plot(vec(tp.C*tp.Pi*tp.C'),vec(params.C*params.Pi*params.C'),'xr')
+%{
+tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = dlyap(params.model.A,params.model.Q);
 
 figure
-plot(vec(tp.C*tp.A*tp.Pi*tp.C'),vec(params.C*params.A*params.Pi*params.C'),'xr')
-
-
-figure
-plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q0*params.C'),'xr')
+plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
 
 figure
-plot(tp.C*tp.x0,params.C*params.x0,'xr')
+plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
 
+figure
+plot(tp.model.d,params.model.d,'rx');
+
+figure
+plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'xr')
+
+figure
+plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')
+%}
 

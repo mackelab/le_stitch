@@ -16,7 +16,7 @@ function [f, df] = PLDSMStepObservationCost(vecCd,seq,params)
 
 Trials  = numel(seq);
 yDim    = size(seq(1).y,1);
-xDim    = size(params.A,1);
+xDim    = size(params.model.A,1);
 
 
 CdMat   = reshape(vecCd,yDim,xDim+1);

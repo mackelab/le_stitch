@@ -2,65 +2,51 @@ clear all
 close all
 
 
-xDim   = 10;
-yDim   = 100;
+xDim   = 3;
+yDim   = 30;
 T      = 100;
-Trials = 50;
-Iters  = 100;
+Trials = 5;
 
-params = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim);
 
-dlyap(params.A,params.Q)
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);
+trueparams = LDSApplyParamsTransformation(randn(xDim)+eye(xDim)*0.3,trueparams);
+seq = PLDSsample(trueparams,T,Trials);
+tp  = trueparams;
 
-params.PiY = params.C*dlyap(params.A,params.Q)*params.C';
+tic
+seq = PLDSVariationalInference(tp,seq);
+toc
 
-seq = PLDSsample(params,T,Trials);
-ESTparams = params;
+% checking posterior
+plotPosterior(seq,1,tp);
 
-ESTparams.A  = eye(xDim)*0.9;
-ESTparams.Q  = (1-0.9^2)*eye(xDim);
-ESTparams.Q0 = dlyap(ESTparams.A,ESTparams.Q);
-ESTparams.x0 = zeros(xDim,1);
-ESTparams.C  = randn(yDim,xDim)*0.1/sqrt(xDim);
-ESTparams.d  = -1.7*ones(yDim,1);
 
-varBound     = -inf;
-varOld       = -inf;
+% do MStep
+params = PLDSMStep(tp,seq);
 
-for ii=1:Iters
-    seq = PLDSVariationalInference(seq,ESTparams);
-    %plotPosterior(seq,1,params);
-    % works!
-    ESTparams = PLDSMStep(ESTparams,seq);
-    %ESTparams = LDSMStep(ESTparams,seq);
-    %ESTparams = PLDSMStepObservation(ESTparams,seq);
 
-    ESTparams.PiY = ESTparams.C*dlyap(ESTparams.A,ESTparams.Q)*ESTparams.C';
-    varOld   = varBound;
-    varBound = 0;
-    for tr=1:Trials;
-    	varBound = varBound + seq(tr).posterior.varBound;
-    end;
-    fprintf('varBound = %d, Frobenius norm = %d, subspace angle %d \n',varBound,norm(params.PiY-ESTparams.PiY,'fro'),subspace(params.C,ESTparams.C));
-    if varBound<varOld
-       disp('DECREASING!')
-       break
-    end
-end
+% look at some invariant comparison statistics
 
-%figure
-%plot(params.A,ESTparams.A,'xr')
+subspace(tp.model.C,params.model.C)
 
-%figure
-%plot(params.Q,ESTparams.Q,'xr')
+sort(eig(tp.model.A))
+sort(eig(params.model.A))
 
-%figure
-%plot(params.Q0,ESTparams.Q0,'xr')
+tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = dlyap(params.model.A,params.model.Q);
 
-%figure
-%plot(params.x0,ESTparams.x0,'xr')
+figure
+plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
 
-%figure
-%plot(params.C,ESTparams.C,'xr')
+figure
+plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
 
+figure
+plot(tp.model.d,params.model.d,'rx');
+
+figure
+plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'xr')
+
+figure
+plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')
 

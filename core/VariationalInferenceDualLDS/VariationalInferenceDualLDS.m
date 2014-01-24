@@ -9,15 +9,15 @@ function [seq] = VariationalInferenceDualLDS(params,seq,optparams)
 
 
 Trials      = numel(seq);
-[yDim xDim] = size(params.C);
+[yDim xDim] = size(params.model.C);
 
 
 % set up parameters for variational inference
 
-VarInfparams    = params;
+VarInfparams    = params.model;
 VarInfparams.CC = zeros(xDim,xDim,yDim);
 for yy=1:yDim
-  VarInfparams.CC(:,:,yy) = params.C(yy,:)'*params.C(yy,:);
+  VarInfparams.CC(:,:,yy) = params.model.C(yy,:)'*params.model.C(yy,:);
 end
 VarInfparams.CC = reshape(VarInfparams.CC,xDim^2,yDim);
 
@@ -29,11 +29,11 @@ for tr = 1:Trials
   T = size(seq(tr).y,2);
 
   VarInfparams.mu = zeros(xDim,T); %prior mean
-  VarInfparams.mu(:,1) = params.x0;
-  for t=2:T; VarInfparams.mu(:,t) = params.A*VarInfparams.mu(:,t-1); end
+  VarInfparams.mu(:,1) = params.model.x0;
+  for t=2:T; VarInfparams.mu(:,t) = params.model.A*VarInfparams.mu(:,t-1); end
   VarInfparams.mu = vec(VarInfparams.mu);
   
-  Cl = {}; for t=1:T; Cl = {Cl{:} params.C}; end
+  Cl = {}; for t=1:T; Cl = {Cl{:} params.model.C}; end
   VarInfparams.W      = sparse(blkdiag(Cl{:})); %stacked loading matrix
   
   VarInfparams.y      = seq(tr).y;
@@ -41,7 +41,7 @@ for tr = 1:Trials
   VarInfparams.WlamW  = sparse(zeros(xDim*T)); %allocate sparse observation matrix
   % fix this: optparams.dualParams{tr} should default to 0
   VarInfparams.dualParams      = optparams.dualParams{tr};   
-  VarInfparams.DataBaseMeasure = feval(params.baseMeasureHandle,seq(tr).y);
+  VarInfparams.DataBaseMeasure = feval(params.model.baseMeasureHandle,seq(tr).y);
 
   % init value
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamInit')

@@ -3,11 +3,11 @@ function Lambda = buildPriorPrecisionMatrixFromLDS(params,T)
 % Lambda = buildPrecisionMatrixFromLDS(params,T)
 %
 
-xDim   = size(params.A,1);
-invQ   = pinv(params.Q);
-invQ0  = pinv(params.Q0);
-AinvQ  = params.A'*invQ;
-AinvQA = AinvQ*params.A;
+xDim   = size(params.model.A,1);
+invQ   = pinv(params.model.Q);
+invQ0  = pinv(params.model.Q0);
+AinvQ  = params.model.A'*invQ;
+AinvQA = AinvQ*params.model.A;
 
 
 Lambda = zeros(T*xDim,T*xDim);

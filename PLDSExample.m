@@ -12,11 +12,11 @@ close all
 
 % set parameters for the ground truth model
  
-xDim    = 3                % latent dimensiom
-yDim    = 30;		    % observed dimension = no of neurons
-T       = 100;		    % no of time bins per trial; here a time step is approx 10ms 
-Trials  = 5;		    % no trials
-maxIter = 5;		    % max no of EM iterations for fitting the model
+xDim    = 3;			% latent dimensiom
+yDim    = 30;		    	% observed dimension = no of neurons
+T       = 100;		    	% no of time bins per trial; here a time step is approx 10ms 
+Trials  = 5;		    	% no trials
+maxIter = 5;		    	% max no of EM iterations for fitting the model
 
 %%%% ground truth model
 
@@ -30,33 +30,34 @@ hist(mean([seqOrig.y]'))
 
 seq    = seqOrig;
 params = [];
-params = PLDSInitialize(seq,xDim,'initMethod','ExpFamPCA','params',params);				% initialize paramters
+params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 
-params.algorithmic.EMIterations.maxIter = maxIter;
-tic; [params seq varBound EStepTimes MStepTimes] = PLDSEM(params,seq); toc				% EM iterations
+params.opts.algorithmic.EMIterations.maxIter     = maxIter;						%
+params.opts.algorithmic.EMIterations.maxCPUTime  = 600;							% allow for 600s of EM
+tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
 
 
 %%%% compare models
 
-subspace(tp.C,params.C)
+subspace(tp.model.C,params.model.C)
 
-sort(eig(tp.A))
-sort(eig(params.A))
+sort(eig(tp.model.A))
+sort(eig(params.model.A))
 
-tp.Pi     = dlyap(tp.A,tp.Q);
-params.Pi = dlyap(params.A,params.Q);
-
-figure
-plot(vec(tp.C*tp.Pi*tp.C'),vec(params.C*params.Pi*params.C'),'xr')
+tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = dlyap(params.model.A,params.model.Q);
 
 figure
-plot(vec(tp.C*tp.A*tp.Pi*tp.C'),vec(params.C*params.A*params.Pi*params.C'),'xr')
+plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
 
 figure
-plot(tp.d,params.d,'rx');
+plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
 
 figure
-plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q*params.C'),'xr')
+plot(tp.model.d,params.model.d,'rx');
 
 figure
-plot(tp.C*tp.x0,params.C*params.x0,'xr')
+plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'xr')
+
+figure
+plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')

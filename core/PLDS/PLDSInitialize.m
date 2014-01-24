@@ -1,8 +1,8 @@
-function params = PLDSInitialize(seq,xDim,varargin)
+function params = PLDSInitialize(seq,xDim,initMethod,params)
 %
 % function params = PLDSInitialize(params,seq) 
 %
-% Methods:
+% initMethods:
 %
 % - params						% just initialize minimal undefiened fields with standard values
 % - PLDSID						% moment conversion + Ho-Kalman SSID, default
@@ -11,14 +11,9 @@ function params = PLDSInitialize(seq,xDim,varargin)
 %
 
 
-initMethod = 'PLDSID';
-params     = [];
-
-assignopts(who,varargin);
-
 yDim       = size(seq(1).y,1);                                                                           
 Trials     = numel(seq);
-params.algorithmic.initMethod = initMethod;
+params.opts.initMethod = initMethod;
 params     = PLDSsetDefaultParameters(params,xDim,yDim);  % set standard parameter values
 
 
@@ -30,9 +25,9 @@ switch initMethod
 
        
    case 'PLDSID'
-   	% !!! debugg SSID stuff separately
+   	% !!! debugg SSID stuff separately & change to params.model convention
 	disp('Initializing PLDS parameters using PLDSID')
-	PLDSIDoptions = struct2arglist(params.algorithmic.PLDSID);
+	PLDSIDoptions = struct2arglist(params.opts.algorithmic.PLDSID);
 	params = FitPLDSParamsSSID(seq,xDim,'params',params,PLDSIDoptions{:});
 
 
@@ -40,22 +35,22 @@ switch initMethod
    	% this replaces the FA initializer from the previous verions...
    	disp('Initializing PLDS parameters using exponential family PCA')
 	
-	dt = params.algorithmic.ExpFamPCA.dt;
+	dt = params.opts.algorithmic.ExpFamPCA.dt;
 	Y  = [seq.y];
-	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.algorithmic.ExpFamPCA.lam,'options',params.algorithmic.ExpFamPCA.options);     
-	params.C = Cpca;
-	params.d = dpca-log(dt);				% compensate for rebinning
+	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.opts.algorithmic.ExpFamPCA.lam,'options',params.opts.algorithmic.ExpFamPCA.options);     
+	params.model.C = Cpca;
+	params.model.d = dpca-log(dt);				% compensate for rebinning
 
 	Tpca = size(Xpca,2);
-	params.Pi = Xpca*Xpca'./Tpca;
+	params.model.Pi = Xpca*Xpca'./Tpca;
 
-	params.A  = Xpca(:,2:end)/Xpca(:,1:end-1);
-	params.A  = diag(min(max((diag(abs(params.A))).^(1/dt),0.5),0.98));
-	params.Q  = params.Pi - params.A*params.Pi*params.A';	% set innovation covariance Q such that stationary dist matches the ExpFamPCA solution params.Pi
-	[Uq Sq Vq] = svd(params.Q);				% ensure that Q is pos def
-	params.Q  = Uq*diag(max(diag(Sq),1e-3))*Uq';
-	params.x0 = zeros(xDim,1);
-	params.Q0 = dlyap(params.A,params.Q);			% set initial distribution to stationary distribution, this could prob be refined
+	params.model.A  = Xpca(:,2:end)/Xpca(:,1:end-1);
+	params.model.A  = diag(min(max((diag(abs(params.model.A))).^(1/dt),0.5),0.98));
+	params.model.Q  = params.model.Pi - params.model.A*params.model.Pi*params.model.A';	% set innovation covariance Q such that stationary dist matches the ExpFamPCA solution params.model.Pi
+	[Uq Sq Vq] = svd(params.model.Q);				% ensure that Q is pos def
+	params.model.Q  = Uq*diag(max(diag(Sq),1e-3))*Uq';
+	params.model.x0 = zeros(xDim,1);
+	params.model.Q0 = dlyap(params.model.A,params.model.Q);			% set initial distribution to stationary distribution, this could prob be refined
 	
 
    otherwise

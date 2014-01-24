@@ -1,26 +1,19 @@
 clear all
 close all
 
-addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/core_lds')
-addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/util')
-
 
 xDim   = 10;
 yDim   = 100;
-
-T      = 200;  % also check if the transformed systems have the same liklihood, sensitive test;
+T      = 200;
 Trials = 3;    
 
 
-trueparams = generateLDS('xDim',xDim,'yDim',yDim);
-seqOrig    = sampleLDS(trueparams,T,Trials)
+trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim);
+seqOrig    = LDSsample(trueparams,T,Trials);
 
 tp = trueparams;
-tp.PiY = tp.C*tp.Pi*tp.C';
-tp.notes.forceEqualT = true;
-tp.notes.useB = false;
-tp.notes.useD = false;
-tp.notes.type = 'LDS';
+tp.model.PiY = tp.model.C*tp.model.Pi*tp.model.C';
+
 
 %%%%%%%%% test parameter transformation
 
@@ -29,33 +22,51 @@ tp.notes.type = 'LDS';
 [params] = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),tp);
 [params] = LDSTransformParams(params,'TransformType','2');
 
-params.PiY = params.C*params.Pi*params.C';
+params.model.C'*params.model.C
+dlyap(params.model.A,params.model.Q)
+
+
+params.model.PiY = params.model.C*params.model.Pi*params.model.C';
 
 figure
-plot(vec(tp.PiY),vec(params.PiY),'rx');
+plot(vec(tp.model.PiY),vec(params.model.PiY),'rx');
 
 figure    
-plot(vec(tp.C*tp.A*tp.Pi*tp.C'),vec(params.C*params.A*params.Pi*params.C'),'rx');
+plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'rx');
 
 figure
-plot(vec(tp.C*tp.Q0*tp.C'),vec(params.C*params.Q0*params.C'),'rx');
+plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'rx');
 
 figure
-plot(vec(tp.C*tp.x0),vec(params.C*params.x0),'rx');
+plot(vec(tp.model.C*tp.model.x0),vec(params.model.C*params.model.x0),'rx');
+
+subspace(tp.model.C,params.model.C)
+
+sort(eig(tp.model.A))
+sort(eig(params.model.A))
 
 
-subspace(tp.C,params.C)
-
-sort(eig(tp.A))
-sort(eig(params.A))
 
 
-tp.xo = tp.x0;tp.Qo = tp.Q0;
-params.xo = params.x0;params.Qo = params.Q0;
+%{
+
+%% this needs to be debugged
+
+tp.notes.forceEqualT = true;
+tp.notes.useB = false;
+tp.notes.useD = false;
+tp.notes.type = 'LDS';
+
+addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/core_lds')
+addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/util')
+
+tp.xo = tp.model.x0;tp.model.Qo = tp.model.Q0;
+params.xo = params.model.x0;params.model.Qo = params.model.Q0;
 [tpseq, tpLL] = exactInferenceLDS(seqOrig, tp,'getLL',true);
 [seq,   LL]   = exactInferenceLDS(seqOrig, params,'getLL',true);
 
 sum(abs(tpLL-LL))./sum(abs(tpLL))
 
-params.C'*params.C
-dlyap(params.A,params.Q)
+params.model.C'*params.model.C
+dlyap(params.model.A,params.model.Q)
+%}

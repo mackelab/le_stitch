@@ -4,7 +4,7 @@ function params = PLDSMStep(params,seq)
 %
 
 
-params = LDSMStep(params,seq);
+params = LDSMStepLDS(params,seq);
 params = PLDSMStepObservation(params,seq);
 
-params = LDSTransformParams(params,'TransformType',params.algorithmic.TransformType); 
+params = LDSTransformParams(params,'TransformType',params.opts.algorithmic.TransformType); 
