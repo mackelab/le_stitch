@@ -1,8 +1,8 @@
-% This script presents an  example how to use the PLDS toolbox.
+% PLDS toolbox example
 % 
 %
 %
-% Lars Buesing, 2014
+% Lars Buesing, Jakob H Macke, 2014
 %
 
 
@@ -12,28 +12,29 @@ close all
 
 % set parameters for the ground truth model
  
-xDim    = 3;			% latent dimensiom
-yDim    = 30;		    	% observed dimension = no of neurons
-T       = 100;		    	% no of time bins per trial; here a time step is approx 10ms 
-Trials  = 5;		    	% no trials
-maxIter = 5;		    	% max no of EM iterations for fitting the model
+xDim    = 5;												% latent dimensiom
+yDim    = 100;											    	% observed dimension = no of neurons
+T       = 100;												% no of time bins per trial; here a time step is approx 10ms 
+Trials  = 25;		    										% no trials
+maxIter = 50;		    										% max no of EM iterations for fitting the model
+
 
 %%%% ground truth model
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);		% create ground truth model parameters
 seqOrig    = PLDSsample(trueparams,T,Trials);								% sample from the model
 tp         = trueparams;										
-hist(mean([seqOrig.y]'))
+hist(mean([seqOrig.y]'));										% histogram of mean firing rates
 
 
 %%%% fitting a model to data
 
 seq    = seqOrig;
 params = [];
-params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
+params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);							% initialize parameters using exponential family PCA, alternatives are 'PLDSID', 'NucNormMin'
 
-params.opts.algorithmic.EMIterations.maxIter     = maxIter;						%
-params.opts.algorithmic.EMIterations.maxCPUTime  = 600;							% allow for 600s of EM
+params.opts.algorithmic.EMIterations.maxIter     = maxIter;						% setting max no of EM iterations
+params.opts.algorithmic.EMIterations.maxCPUTime  = 600;							% setting max CPU time for EM to 600s
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
 
 

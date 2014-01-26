@@ -101,6 +101,22 @@ switch params.opts.initMethod
 	params.opts.algorithmic.ExpFamPCA.options = touchField(params.opts.algorithmic.ExpFamPCA.options,'progTol',1e-9);
 	params.opts.algorithmic.ExpFamPCA.options = touchField(params.opts.algorithmic.ExpFamPCA.options,'optTol',1e-5); 
 
+
+   case 'NucNormMin'
+
+   	params.opts.algorithmic = touchField(params.opts.algorithmic,'NucNormMin');
+	params.opts.algorithmic.NucNormMin = touchField(params.opts.algorithmic.NucNormMin,'dt',10);
+	params.opts.algorithmic.NucNormMin = touchField(params.opts.algorithmic.NucNormMin,'fixedxDim',true);
+	params.opts.algorithmic.NucNormMin = touchField(params.opts.algorithmic.NucNormMin,'options');
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'rho',	1.3);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'eps_abs',	1e-6);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'eps_rel',	1e-3);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'maxIter',  	250);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'nlin',     	'exp');
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'lambda',	0.3);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'verbose',	1);
+
+
    otherwise
 	
 	warning('Unknown PLDS initialization method, cannot set parameters')

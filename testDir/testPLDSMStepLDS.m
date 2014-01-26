@@ -2,16 +2,16 @@ clear all
 close all
 
 
-xDim   = 3;
-yDim   = 30;
+xDim   = 10;
+yDim   = 100;
 T      = 100;
-Trials = 5;
+Trials = 150;
 
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-1.5);
 trueparams = LDSApplyParamsTransformation(randn(xDim)+eye(xDim)*0.3,trueparams);
 seq = PLDSsample(trueparams,T,Trials);
-tp = trueparams;
+tp =  trueparams;
 
 tic
 seq = PLDSVariationalInference(tp,seq);
@@ -22,12 +22,11 @@ plotPosterior(seq,1,tp);
 
 
 % do MStep
-params = LDSMStep(tp,seq);
+params = LDSMStepLDS(tp,seq);
 
 
 % look at some invariant comparison statistics
 
-subspace(tp.model.C,params.model.C)
 
 sort(eig(tp.model.A))
 sort(eig(params.model.A))
@@ -36,16 +35,17 @@ tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
 params.model.Pi = dlyap(params.model.A,params.model.Q);
 
 figure
-plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
+plot(vec(tp.model.A),vec(params.model.A),'xr')
 
 figure
-plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
+plot(vec(tp.model.Q),vec(params.model.Q),'xr')
 
 figure
-plot(tp.model.d,params.model.d,'rx');
+plot(vec(tp.model.Pi),vec(params.model.Pi),'xr')
 
 figure
-plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'xr')
+plot(vec(tp.model.x0),vec(params.model.x0),'xr')
 
 figure
-plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')
+plot(vec(tp.model.Q0),vec(params.model.Q0),'xr')
+

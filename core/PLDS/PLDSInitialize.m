@@ -4,17 +4,17 @@ function params = PLDSInitialize(seq,xDim,initMethod,params)
 %
 % initMethods:
 %
-% - params						% just initialize minimal undefiened fields with standard values
-% - PLDSID						% moment conversion + Ho-Kalman SSID, default
-% - ExpFamPCA						% exponential family PCA, if trials are short use this
-% - others... to implement: NucNormMin + SSID 
+% - params											% just initialize minimal undefiened fields with standard values
+% - PLDSID											% moment conversion + Ho-Kalman SSID
+% - ExpFamPCA											% exponential family PCA
+% - NucNormMin											% nuclear norm minimization, see [Robust learning of low-dimensional dynamics from large neural ensembles David Pfau, Eftychios A. Pnevmatikakis, Liam Paninski. NIPS2013] 
 %
 
 
 yDim       = size(seq(1).y,1);                                                                           
 Trials     = numel(seq);
 params.opts.initMethod = initMethod;
-params     = PLDSsetDefaultParameters(params,xDim,yDim);  % set standard parameter values
+params     = PLDSsetDefaultParameters(params,xDim,yDim);					% set standard parameter values
 
 
 switch initMethod
@@ -39,18 +39,27 @@ switch initMethod
 	Y  = [seq.y];
 	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.opts.algorithmic.ExpFamPCA.lam,'options',params.opts.algorithmic.ExpFamPCA.options);     
 	params.model.C = Cpca;
-	params.model.d = dpca-log(dt);				% compensate for rebinning
+	params.model.d = dpca-log(dt);								% compensate for rebinning
+	params.model   = LDSRoughInit(Xpca,params.model,dt);
+	
 
-	Tpca = size(Xpca,2);
-	params.model.Pi = Xpca*Xpca'./Tpca;
+   case 'NucNormMin'
+	disp('Initializing PLDS parameters using Nuclear Norm Minimization')
+	
+        dt = params.opts.algorithmic.NucNormMin.dt;
+	seqRebin = rebinRaster(seq,dt);
+        Y  = [seqRebin.y];
+	options = params.opts.algorithmic.NucNormMin.options;
+	options.lambda = options.lambda*sqrt(size(Y,1)*size(Y,2));
+	[Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( Y, options );
+	params.model.d = d-log(dt);
 
-	params.model.A  = Xpca(:,2:end)/Xpca(:,1:end-1);
-	params.model.A  = diag(min(max((diag(abs(params.model.A))).^(1/dt),0.5),0.98));
-	params.model.Q  = params.model.Pi - params.model.A*params.model.Pi*params.model.A';	% set innovation covariance Q such that stationary dist matches the ExpFamPCA solution params.model.Pi
-	[Uq Sq Vq] = svd(params.model.Q);				% ensure that Q is pos def
-	params.model.Q  = Uq*diag(max(diag(Sq),1e-3))*Uq';
-	params.model.x0 = zeros(xDim,1);
-	params.model.Q0 = dlyap(params.model.A,params.model.Q);			% set initial distribution to stationary distribution, this could prob be refined
+	if ~params.opts.algorithmic.NucNormMin.fixedxDim
+	   disp('Varaible dimension; still to implement!')
+	else
+	   params.model.C = Xu(:,1:xDim)*Xs(1:xDim,1:xDim);
+	   params.model   = LDSRoughInit(Xv(:,1:xDim)',params.model,dt);
+	end
 	
 
    otherwise
@@ -58,4 +67,5 @@ switch initMethod
 
 end
 
-%%% !!! maybe parameter cleanup steps here
+params = LDSTransformParams(params,'TransformType',params.opts.algorithmic.TransformType);	% clean up parameters
+params.modelInit = params.model;

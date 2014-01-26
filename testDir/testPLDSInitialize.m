@@ -8,7 +8,7 @@ T      = 100;
 Trials = 50;
 
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-1.5);
 seq = PLDSsample(trueparams,T,Trials);
 mean(vec([seq.y]))
 tp  = trueparams;
