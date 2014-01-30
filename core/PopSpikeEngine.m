@@ -32,8 +32,8 @@ function [dat,params]=PopSpikeEngine(dat,params,opts)
 
 
 %model:
-y_t= Cx_t +sum(D.*s_t,2) +Eu_t+ nu_t (for Gaussian)
-x_t=Ax_{t-1}+Bh_t+ epsilon_t
+%y_t= Cx_t +sum(D.*s_t,2) +Eu_t+ nu_t (for Gaussian)
+%x_t=Ax_{t-1}+Bh_t+ epsilon_t
 
 %s_t: stimulus not shared across neurons, i.e. Ds_t '=' sum(D.*s_t,2)
 %u_t: shared stimulus across neurons

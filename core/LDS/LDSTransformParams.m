@@ -1,5 +1,9 @@
 function [params] = LDSTransformParams(params,varargin)
 %
+%
+% transform parameters of LDS by imposing constraints on C and the
+% stationary distribution Pi.
+%
 %  Pi := dlyap(params.model.A,params.model.Q)   stationary distribution
 %
 % 0: do nothing
@@ -8,7 +12,7 @@ function [params] = LDSTransformParams(params,varargin)
 % 3: not implemented / tested yet
 % 4: not implemented / tested yet
 %
-% @2014 Lars Busing   lars@stat.columbia.edu
+% (c) 2014 Lars Busing   lars@stat.columbia.edu
 %
 %
 % also see: LDSApplyParamsTransformation(M,params,varargin)

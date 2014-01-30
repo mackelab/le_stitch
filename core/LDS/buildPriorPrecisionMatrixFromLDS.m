@@ -2,6 +2,12 @@ function Lambda = buildPriorPrecisionMatrixFromLDS(params,T)
 %
 % Lambda = buildPrecisionMatrixFromLDS(params,T)
 %
+% construct the precision matrix of the prior across all time points and
+% dimensions, as described in Paninski et al, A new look at state-space
+% models for neural data, 2009
+%
+% c/o L Buesing and J Macke, 01/2014
+
 
 xDim   = size(params.model.A,1);
 invQ   = pinv(params.model.Q);
@@ -10,7 +16,7 @@ AinvQ  = params.model.A'*invQ;
 AinvQA = AinvQ*params.model.A;
 
 
-Lambda = zeros(T*xDim,T*xDim);
+Lambda = sparse(T*xDim,T*xDim); %changed this to make matrix sparse immediately to avoid allocation of dense matrix
 Lambda(1:xDim,1:xDim) = invQ0;
 
 for t=1:T-1

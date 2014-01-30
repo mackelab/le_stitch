@@ -59,7 +59,7 @@ t=T;xidx = ((t-1)*xDim+1):(t*xDim);
 F1(xidx,:) = eye(xDim)/(eye(xDim)/(F0(xidx,:))+CRinvC(xidx,:));
 
 
-% backward pass using Rauch–Tung–Striebel smoother
+% backward pass using Rauch???Tung???Striebel smoother
 
 t = T; xidx = ((t-1)*xDim+1):(t*xDim);
 Vsm(xidx,:) = F1(xidx,:);

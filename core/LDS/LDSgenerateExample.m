@@ -1,7 +1,10 @@
 function params = generateLDS(varargin)
 %
-% trueparams = generateLDS(varargin)
+% params = generateLDS(varargin)
 %
+% make a random LDS given some parameters
+
+%NOT DOCUMENTED YET%
 
 xDim     = 10;
 yDim     = 100;

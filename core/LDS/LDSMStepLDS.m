@@ -6,8 +6,10 @@ function params = MStepLDS(params,seq)
 %
 %	- stimulus drive B 
 %
-% Parameters to update: A,Q,Q0,x0,B(? erst mal nicht)
+% Parameters to update: A,Q,Q0,x0,B
 %
+%
+% (c) L Buesing 2014
 
 
 xDim    = size(params.model.A,1);

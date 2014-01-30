@@ -2,6 +2,7 @@ function seq = sampleLDS(params,T,Trials)
 %
 % sampleLDS(params,T,Trials)
 %
+% sample from linear dynamical system model
 
 if numel(T)==1
    T = ones(Trials,1)*T;
