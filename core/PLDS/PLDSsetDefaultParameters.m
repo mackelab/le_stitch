@@ -8,24 +8,29 @@ function params = PLDSsetDefaultParameters(params,xDim,yDim)
 
 
 %%%%%%%%%%% set standard parameters %%%%%%%%%%%%%%%%%%%%
-
+% these standard settings make sense for data binned at 10ms with average rates of roughly 10Hz
 params = touchField(params,'model');
-params.model = touchField(params.model,'A',0.9*eye(xDim));                                  % these standard settings make sense for data binned at 10ms with average rates of roughly 10Hz
-params.model = touchField(params.model,'Q',(1-0.9.^2)*eye(xDim));
-params.model = touchField(params.model,'Q0',eye(xDim));
-params.model = touchField(params.model,'x0',zeros(xDim,1));
-params.model = touchField(params.model,'C',randn(yDim,xDim)./sqrt(xDim));
-params.model = touchField(params.model,'d',zeros(yDim,1)-2.0);
+params.model = touchField(params.model,'A',0.9*eye(xDim));    % dynamics matrix A                              
+params.model = touchField(params.model,'Q',(1-0.9.^2)*eye(xDim)); %innovation covariance Q
+params.model = touchField(params.model,'Q0',eye(xDim)); %initial state covariance Q0
+params.model = touchField(params.model,'x0',zeros(xDim,1)); %initial mean x0
+params.model = touchField(params.model,'C',randn(yDim,xDim)./sqrt(xDim)); %couplings from latent to observed C
+params.model = touchField(params.model,'d',zeros(yDim,1)-2.0); %mean-controlling offset d for each neuron
 
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%
-
-params.model = touchField(params.model,'likeHandle',       @ExpPoissonHandle);
-params.model = touchField(params.model,'dualHandle',       @ExpPoissonDualHandle);
-params.model = touchField(params.model,'domainHandle',     @ExpPoissonDomain);
-params.model = touchField(params.model,'baseMeasureHandle',@PoissonBaseMeasure);
-params.model = touchField(params.model,'inferenceHandle',  @PLDSVariationalInference);
-params.model = touchField(params.model,'MStepHandle',      @PLDSMStep);
+%note: these functions all have to be consistent with each other, i.e.
+%the likeHandle, dualHandle, domainHandle, baseMeasureHandle, MstepHandle all 
+%have to be corresponding to the same likelihood-model and inference
+%procedure, otherwise funny things will happen.
+%at the moment, only Poisson model with exponential nonlinarity is
+%implemented
+params.model = touchField(params.model,'likeHandle',       @ExpPoissonHandle); %use exponential Poisson likelihood
+params.model = touchField(params.model,'dualHandle',       @ExpPoissonDualHandle); %and its dual
+params.model = touchField(params.model,'domainHandle',     @ExpPoissonDomain); %specify the domain of addmissable parameters
+params.model = touchField(params.model,'baseMeasureHandle',@PoissonBaseMeasure); %base measure, i.e. constant part which does not need to be evaluated at each step
+params.model = touchField(params.model,'inferenceHandle',  @PLDSVariationalInference); % function that does the actual inference
+params.model = touchField(params.model,'MStepHandle',      @PLDSMStep); %handle to function that does the M-step
 
 
 %%%%%%%%%%% set standard algorithmic parameters %%%%%%%%%%%%%%%%%%%%
@@ -35,12 +40,14 @@ params.opts = touchField(params.opts,'algorithmic');
 
 
 %%%% set parameters for Variational Inference %%%%
-
+%these parameters are handed over to the function 'minFunc' that is used
+%for optimization, so see the documentation of minFunc for what the
+%parameters mean and do
 params.opts.algorithmic = touchField(params.opts.algorithmic,'VarInfX');
 params.opts.algorithmic.VarInfX = touchField(params.opts.algorithmic.VarInfX,'minFuncOptions');
 
-params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'display',	'none');
-params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'maxFunEvals',	50000);
+params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'display',	'none'); 
+params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'maxFunEvals',	50000);  
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'MaxIter',	5000);
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'progTol',	1e-9);
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'optTol',	1e-5);
@@ -48,7 +55,9 @@ params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorith
 
 
 %%%% set parameters for MStep of observation model %%%%%%%%
-
+%these parameters are handed over to the function 'minFunc' that is used
+%for optimization, so see the documentation of minFunc for what the
+%parameters mean and do
 params.opts.algorithmic = touchField(params.opts.algorithmic,'MStepObservation');
 params.opts.algorithmic.MStepObservation = touchField(params.opts.algorithmic.MStepObservation,'minFuncOptions');
 
@@ -62,7 +71,7 @@ params.opts.algorithmic.MStepObservation.minFuncOptions = touchField(params.opts
 
 %%%% set parameters for EM iterations %%%%%%%%       
 
-params.opts.algorithmic = touchField(params.opts.algorithmic,'TransformType','0');                                        % transform LDS parameters after each MStep to canonical form?
+params.opts.algorithmic = touchField(params.opts.algorithmic,'TransformType','0');         % transform LDS parameters after each MStep to canonical form?
 params.opts.algorithmic = touchField(params.opts.algorithmic,'EMIterations');
 params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'maxIter',100);			% max no of EM iterations
 params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'maxCPUTime',1200);		% max CPU time for EM
@@ -79,7 +88,8 @@ switch params.opts.initMethod
    	% do nothing
 	
    case 'PLDSID'
-
+    %use Poisson-Linear-Dynamics System Identification Method, see
+    %documentation of 'FitPLDSParamsSSID' for details
    	params.opts.algorithmic = touchField(params.opts.algorithmic,'PLDSID');
 	params.opts.algorithmic.PLDSID = touchField(params.opts.algorithmic.PLDSID,'algo','SVD');
 	params.opts.algorithmic.PLDSID = touchField(params.opts.algorithmic.PLDSID,'hS',xDim);
@@ -89,7 +99,7 @@ switch params.opts.initMethod
 	params.opts.algorithmic.PLDSID = touchField(params.opts.algorithmic.PLDSID,'doNonlinTransform',1);
 
    case 'ExpFamPCA'
-
+    %use Exponential Family PCA, see function ExpFamPCA for details
    	params.opts.algorithmic = touchField(params.opts.algorithmic,'ExpFamPCA');
 	params.opts.algorithmic.ExpFamPCA = touchField(params.opts.algorithmic.ExpFamPCA,'dt',10);				% rebinning factor, choose such that roughly E[y_{kt}] = 1 forall k,t
 	params.opts.algorithmic.ExpFamPCA = touchField(params.opts.algorithmic.ExpFamPCA,'lam',1);		  		% regularization coeff for ExpFamPCA
@@ -103,7 +113,7 @@ switch params.opts.initMethod
 
 
    case 'NucNormMin'
-
+    %use Exponential Family PCA, see function MODnucnrmminWithd for details
    	params.opts.algorithmic = touchField(params.opts.algorithmic,'NucNormMin');
 	params.opts.algorithmic.NucNormMin = touchField(params.opts.algorithmic.NucNormMin,'dt',10);
 	params.opts.algorithmic.NucNormMin = touchField(params.opts.algorithmic.NucNormMin,'fixedxDim',true);
@@ -115,7 +125,6 @@ switch params.opts.initMethod
         params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'nlin',     	'exp');
         params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'lambda',	0.3);
         params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'verbose',	1);
-
 
    otherwise
 	

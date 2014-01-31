@@ -2,8 +2,6 @@ function [f df ddf] = PLDSLaplaceCost(x,y,Lambda,mu,W,d)
 %
 %
 %
-
-
 over_m = W*x+d;
 yhat   = exp(over_m);
 xmu    = x-mu;

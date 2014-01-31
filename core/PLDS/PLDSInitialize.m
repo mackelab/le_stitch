@@ -2,13 +2,23 @@ function params = PLDSInitialize(seq,xDim,initMethod,params)
 %
 % function params = PLDSInitialize(params,seq) 
 %
+% inititalize parameters of Population-LDS model with different methods. At
+% the moment, focusses on exponential link function and Poisson
+% observations.
+%
+%input: 
+% seq:      standard data struct
+% xdim:     desired latent dimensionality
 % initMethods:
 %
 % - params											% just initialize minimal undefiened fields with standard values
 % - PLDSID											% moment conversion + Ho-Kalman SSID
 % - ExpFamPCA											% exponential family PCA
 % - NucNormMin											% nuclear norm minimization, see [Robust learning of low-dimensional dynamics from large neural ensembles David Pfau, Eftychios A. Pnevmatikakis, Liam Paninski. NIPS2013] 
+% params: if initialization method 'params' is chosen, the params-struct
+% that one should use
 %
+% (c) L Buesing 2014
 
 
 yDim       = size(seq(1).y,1);                                                                           
@@ -55,7 +65,7 @@ switch initMethod
 	params.model.d = d-log(dt);
 
 	if ~params.opts.algorithmic.NucNormMin.fixedxDim
-	   disp('Varaible dimension; still to implement!')
+	   disp('Variable dimension; still to implement!')
 	else
 	   params.model.C = Xu(:,1:xDim)*Xs(1:xDim,1:xDim);
 	   params.model   = LDSRoughInit(Xv(:,1:xDim)',params.model,dt);

@@ -1,6 +1,8 @@
-%interface for using the code
+error('not implemented yet')
+%parameter conventions in here are out of date
 
-function [dat,params]=PopSpikeEngine(dat,params,opts)
+%interface for using the code
+%function [dat,params]=PopSpikeEngine(dat,params,opts)
 
 %dat: data put in, same format as in PPLDS_packaged
 %params: are learned by system

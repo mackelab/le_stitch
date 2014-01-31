@@ -2,6 +2,8 @@ function params = PLDSgenerateExample(varargin)
 %
 % trueparams = PLDSgenerateExample(varargin)
 %
+% generate a random PLDS model based on some inputs, 
+% using POisson or Bernoulli observations
 
 xDim     = 10;
 yDim     = 100;

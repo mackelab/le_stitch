@@ -2,8 +2,10 @@ function [f df] = ExpFamPCACost(CXd,Y,xDim,lambda)
 %
 % [f df] = ExpFamPCACost(CXd,Y,xDim,lambda)
 %
+% (c) L Buesing 2014
 
 [yDim T] = size(Y);
+
 
 d  = CXd(end-yDim+1:end);
 CX = reshape(CXd(1:end-yDim),yDim+T,xDim);

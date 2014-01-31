@@ -3,7 +3,8 @@ function [Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( S, opts )
 % [Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( S, opts )
 %
 %  obj function is -log(S|x) + lambda||X||_* + Tr[Z'(x-d-X)] + rho/2||x-d-X||^2_F
-%
+% Nuclear Norm Minimization with additive offset to model mean firing
+% 
 % opts -
 %   rho - dual gradient ascent rate for ADMM
 %   eps_abs - absolute threshold for ADMM

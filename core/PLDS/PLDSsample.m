@@ -2,6 +2,9 @@ function seq = PLDSsample(params,T,Trials)
 %
 % seq = PLDSsample(params,T,Trials)
 %
+% sample from a poisson model with exponential nonlinearity
+%
+% (c) L Buesing 2014
 
 if numel(T)==1
    T = ones(Trials,1)*T;

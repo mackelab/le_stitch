@@ -11,7 +11,8 @@ function [f, df] = PLDSMStepObservationCost(vecCd,seq,params)
 %
 %       0) analyze run time
 %
-
+%
+% (c) L Buesing 2014
 
 
 Trials  = numel(seq);

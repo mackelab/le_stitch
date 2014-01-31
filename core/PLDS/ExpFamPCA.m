@@ -41,6 +41,7 @@ Y = seqDum.y;
 
 [yDim T] = size(Y);
 
+%% rough initialization for ExpFamPCA based on SVD
 my = mean(Y,2);
 [Uy Sy Vy] = svd(bsxfun(@minus,Y,my),0);
 my = max(my,0.1);
@@ -48,10 +49,13 @@ my = max(my,0.1);
 Cinit = Uy(:,1:xDim);
 Xinit = zeros(xDim,T);
 dinit = log(my);%zeros(yDim,1);
-
 CXdinit = [vec([Cinit; Xinit']); dinit];
+
+%run ExpFamCPA  
 CXdOpt  = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam); 
 
+% Function returns all parameters lupmed together as one vector, so need to
+% disentangle: 
 d  = CXdOpt(end-yDim+1:end);
 CX = reshape(CXdOpt(1:end-yDim),yDim+T,xDim);
 C  = CX(1:yDim,:);
