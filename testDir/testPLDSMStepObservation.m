@@ -5,7 +5,7 @@ close all
 xDim   = 10;
 yDim   = 100;
 T      = 100;
-Trials = 100;
+Trials = 10;
 
 
 trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-1.5);
