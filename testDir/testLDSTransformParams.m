@@ -2,10 +2,10 @@ clear all
 close all
 
 
-xDim   = 10;
+xDim   = 5;
 yDim   = 100;
-T      = 200;
-Trials = 3;    
+T      = 1000;
+Trials = 1;    
 
 
 trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim);

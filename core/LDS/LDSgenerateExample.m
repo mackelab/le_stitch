@@ -1,4 +1,4 @@
-function params = generateLDS(varargin)
+function params = LDSgenerateExample(varargin)
 %
 % params = generateLDS(varargin)
 %
@@ -9,6 +9,7 @@ function params = generateLDS(varargin)
 xDim     = 10;
 yDim     = 100;
 
+Arot     = 0.1;
 Aspec    = 0.99;
 Arand    = 0.03;
 Q0max    = 0.3;
@@ -27,6 +28,7 @@ assignopts(who,varargin);
 
 A  = eye(xDim)+Arand*randn(xDim);
 A  = A./max(abs(eig(A)))*Aspec;
+MAS = randn(xDim); MAS = (MAS-MAS')/2;A  = expm(Arot.*(MAS))*A;
 Q  = diag(rand(xDim,1));
 Q0 = dlyap(A,Q);
 M  = diag(1./sqrt(diag(Q0)));

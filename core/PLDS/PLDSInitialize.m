@@ -37,6 +37,9 @@ switch initMethod
    case 'PLDSID'
    	% !!! debugg SSID stuff separately & change to params.model convention
 	disp('Initializing PLDS parameters using PLDSID')
+	if params.model.useB
+	  warning('SSID initialization with external input: not implemented yet!!!')
+	end
 	PLDSIDoptions = struct2arglist(params.opts.algorithmic.PLDSID);
 	params = FitPLDSParamsSSID(seq,xDim,'params',params,PLDSIDoptions{:});
 
@@ -50,7 +53,9 @@ switch initMethod
 	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.opts.algorithmic.ExpFamPCA.lam,'options',params.opts.algorithmic.ExpFamPCA.options);     
 	params.model.C = Cpca;
 	params.model.d = dpca-log(dt);								% compensate for rebinning
-	params.model   = LDSRoughInit(Xpca,params.model,dt);
+
+	if model.useB; u = [seq.u];else;u = [];end
+	params.model = LDSObservedEstimation(Xpca,params.model,dt,u);
 	
 
    case 'NucNormMin'
@@ -68,13 +73,18 @@ switch initMethod
 	   disp('Variable dimension; still to implement!')
 	else
 	   params.model.C = Xu(:,1:xDim)*Xs(1:xDim,1:xDim);
-	   params.model   = LDSRoughInit(Xv(:,1:xDim)',params.model,dt);
+	   if model.useB; u = [seq.u];else;u = [];end
+	   params.model = LDSObservedEstimation(Xv(:,1:xDim)',params.model,dt,u);
 	end
 	
 
    otherwise
 	warning('Unknown PLDS initialization method')
 
+end
+
+if params.model.useB && (numel(params.model.B)<1)
+  params.model.B = zeros(xDim,size(seq(1).u,1));
 end
 
 params = LDSTransformParams(params,'TransformType',params.opts.algorithmic.TransformType);	% clean up parameters

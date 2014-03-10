@@ -5,6 +5,7 @@ function params = PLDSgenerateExample(varargin)
 % generate a random PLDS model based on some inputs, 
 % using POisson or Bernoulli observations
 
+uDim     = 0;
 xDim     = 10;
 yDim     = 100;
 
@@ -50,6 +51,10 @@ else
     params.model.likeHandle = @ExpPoissonHandle;
 end
 
-params.model.inferenceHandle = @PLDSVariationalInference;
+if uDim>0
+  cQ = max(abs(diag(chol(params.model.Q))));
+  params.model.B    = cQ*(rand(xDim,uDim)+0.5)/2;
+  params.model.useB = true;
+end
 
 params = PLDSsetDefaultParameters(params,xDim,yDim);

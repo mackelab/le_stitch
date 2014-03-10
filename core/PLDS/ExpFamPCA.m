@@ -3,27 +3,27 @@ function [C, X, d] = ExpFamPCA(Y,xDim,varargin)
 % [C, X, d] = ExpFamPCA(Y,xDim)
 %
 % exponential family PCA, currently only implemented for
-% exponential-Poisson observation model, i.e. learns C and d for model 
-%Y ~ Poisson(exp(Cx+d));
+% exponential-Poisson observation model, i.e. learns C, X and d for model 
+% Y ~ Poisson(exp(Cx+d));
 %
 % inputs:
-%Y:     matrix of size yDim x T
-%xDim:  scaler, dimensionality of latent space
+% Y:     matrix of size yDim x T
+% xDim:  scaler, dimensionality of latent space
 %
-%output: 
-%C:      loading matrix, of size yDim x xDim
-%X:      recovered latent factors, of size xDim x T
-%d:      mean offset
+% output: 
+% C:      loading matrix, of size yDim x xDim
+% X:      recovered latent factors, of size xDim x T
+% d:      mean offset
 %
 %
-%todo: 
+% todo: 
 %  - generalize to different observation models
 %
 % (c) Lars Buesing 2014
 
-
-dt  = 10;    % rebin factor %!!! this is very much dependent on the firing rates
-lam = 1e-1;  % penalizer
+useB = false;
+dt   = 10;    % rebin factor %!!! this is very much dependent on the firing rates
+lam  = 1e-1;  % penalizer
 
 options.display     = 'none';
 options.MaxIter     = 10000;

@@ -40,8 +40,10 @@ for tr = 1:Trials
   VarInfparams.Lambda = buildPriorPrecisionMatrixFromLDS(params,T);  % generate prior precision matrix
   VarInfparams.WlamW  = sparse(zeros(xDim*T)); %allocate sparse observation matrix
   % fix this: optparams.dualParams{tr} should default to 0
-  VarInfparams.dualParams      = optparams.dualParams{tr};   
-  VarInfparams.DataBaseMeasure = feval(params.model.baseMeasureHandle,seq(tr).y);
+  VarInfparams.dualParams      = optparams.dualParams{tr};
+  if isfield(params.model,'baseMeasureHandle')
+    VarInfparams.DataBaseMeasure = feval(params.model.baseMeasureHandle,seq(tr).y);
+  end
 
   % init value
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamInit')
