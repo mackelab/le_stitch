@@ -1,12 +1,13 @@
 clear all
 close all
 
+uDim   = 3;
 xDim   = 10;
 yDim   = 50;
-T      = 50;
-Trials = 50;
+T      = 150;
+Trials = 250;
 
-trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim);
+trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 trueparams = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),trueparams);
 seq = LDSsample(trueparams,T,Trials);
 seq = LDSInference(trueparams,seq);
@@ -32,5 +33,9 @@ imagesc([tp.model.Q0 params.model.Q0])
 figure
 plot(tp.model.x0,params.model.x0,'xr')
  
+if params.model.useB
+  figure
+  plot(tp.model.B,params.model.B,'xr')
+end
 
 

@@ -54,7 +54,7 @@ switch initMethod
 	params.model.C = Cpca;
 	params.model.d = dpca-log(dt);								% compensate for rebinning
 
-	if model.useB; u = [seq.u];else;u = [];end
+	if params.model.useB; u = [seq.u];else;u = [];end
 	params.model = LDSObservedEstimation(Xpca,params.model,dt,u);
 	
 
@@ -73,7 +73,7 @@ switch initMethod
 	   disp('Variable dimension; still to implement!')
 	else
 	   params.model.C = Xu(:,1:xDim)*Xs(1:xDim,1:xDim);
-	   if model.useB; u = [seq.u];else;u = [];end
+	   if params.model.useB; u = [seq.u];else;u = [];end
 	   params.model = LDSObservedEstimation(Xv(:,1:xDim)',params.model,dt,u);
 	end
 	

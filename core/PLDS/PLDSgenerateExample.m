@@ -53,7 +53,7 @@ end
 
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));
-  params.model.B    = cQ*(rand(xDim,uDim)+0.5)/2;
+  params.model.B    = cQ*(rand(xDim,uDim)+0.5)/(uDim);
   params.model.useB = true;
 end
 

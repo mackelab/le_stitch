@@ -1,16 +1,12 @@
-function params = MStepLDS(params,seq)
+function params = LDSMStepLDS(params,seq)
 %
 % function params = MStepLDS(params,seq)
-%
-% to do:
-%
-%	- stimulus drive B 
 %
 % Parameters to update: A,Q,Q0,x0,B
 %
 %
 % (c) L Buesing 2014
-
+%
 
 xDim    = size(params.model.A,1);
 Trials  = numel(seq);
@@ -18,9 +14,15 @@ Trials  = numel(seq);
 
 %% compute posterior statistics
 
+if params.model.useB
+  uDim = size(seq(1).u,1);
+else
+  uDim = 0;
+end
+
 S11 = zeros(xDim,xDim);
-S01 = zeros(xDim,xDim);
-S00 = zeros(xDim,xDim);
+S01 = zeros(xDim+uDim,xDim);
+S00 = zeros(xDim+uDim,xDim+uDim);
 
 x0 = zeros(xDim,Trials);
 Q0 = zeros(xDim,xDim);
@@ -38,9 +40,17 @@ for tr = 1:Trials
     MUsm0 = seq(tr).posterior.xsm(:,1:T-1);
     MUsm1 = seq(tr).posterior.xsm(:,2:T);
 
-    S00   = S00 + sum(Vsm(:,:,1:T-1),3)  + MUsm0*MUsm0';
-    S01   = S01 + sum(VVsm(:,:,1:T-1),3) + MUsm0*MUsm1';
-    S11   = S11 + sum(Vsm(:,:,2:T),3)    + MUsm1*MUsm1';
+    S11                = S11                + sum(Vsm(:,:,1:T-1),3)  + MUsm0*MUsm0';
+    S01(1:xDim,:)      = S01(1:xDim,:)      + sum(VVsm(:,:,1:T-1),3) + MUsm0*MUsm1';
+    S00(1:xDim,1:xDim) = S00(1:xDim,1:xDim) + sum(Vsm(:,:,2:T),3)    + MUsm1*MUsm1';
+
+    if params.model.useB
+      u = seq(tr).u(:,1:T-1);
+      S01(1+xDim:end,:) = S01(1+xDim:end,:) + u*MUsm1';
+      S00(1+xDim:end,1:xDim) = S00(1+xDim:end,1:xDim) + u*MUsm0';
+      S00(1:xDim,1+xDim:end) = S00(1:xDim,1+xDim:end) + MUsm0*u';
+      S00(1+xDim:end,1+xDim:end) = S00(1+xDim:end,1+xDim:end) + u*u';
+    end
 
     x0(:,tr) = MUsm0(:,1);
     Q0 = Q0 + Vsm(:,:,1);
@@ -54,6 +64,11 @@ params.model.A  = S01'/S00;
 params.model.Q  = (S11+params.model.A*S00*params.model.A'-S01'*params.model.A'-params.model.A*S01)./(sum(Tall)-Trials);
 params.model.Q  = (params.model.Q+params.model.Q')/2;
 
+if params.model.useB
+  params.model.B = params.model.A(:,1+xDim:end);
+  params.model.A = params.model.A(:,1:xDim);
+end
+
 params.model.x0 = mean(x0,2);
-x0dev     = bsxfun(@minus,x0,params.model.x0);
+x0dev = bsxfun(@minus,x0,params.model.x0);
 params.model.Q0 = (Q0 + x0dev*x0dev')./Trials;

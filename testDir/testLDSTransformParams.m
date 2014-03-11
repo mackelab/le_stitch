@@ -2,13 +2,14 @@ clear all
 close all
 
 
+uDim   = 2;
 xDim   = 5;
 yDim   = 100;
 T      = 1000;
 Trials = 1;    
 
 
-trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim);
+trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 seqOrig    = LDSsample(trueparams,T,Trials);
 
 tp = trueparams;
@@ -20,7 +21,7 @@ tp.model.PiY = tp.model.C*tp.model.Pi*tp.model.C';
 % random transformation works!
 
 [params] = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),tp);
-[params] = LDSTransformParams(params,'TransformType','2');
+[params] = LDSTransformParams(params,'TransformType','1');
 
 params.model.C'*params.model.C
 dlyap(params.model.A,params.model.Q)
@@ -40,6 +41,12 @@ plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*
 figure
 plot(vec(tp.model.C*tp.model.x0),vec(params.model.C*params.model.x0),'rx');
 
+if params.model.useB
+  figure
+  plot(vec(tp.model.C*tp.model.B),vec(params.model.C*params.model.B),'rx');
+end
+
+
 subspace(tp.model.C,params.model.C)
 
 sort(eig(tp.model.A))
@@ -50,7 +57,7 @@ sort(eig(params.model.A))
 
 %{
 
-%% this needs to be debugged
+%% this needs to be debugged, not really vital
 
 tp.notes.forceEqualT = true;
 tp.notes.useB = false;

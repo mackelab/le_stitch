@@ -31,21 +31,21 @@ end
 
 %%%%%%%%%%%%%%%%% means %%%%%%%%%%%%%%%%
 
-Mu = zeros(xDim,T);
-Mu(:,1) = params.model.x0;
-
-for t=2:T
-    Mu(:,t) = params.model.A*Mu(:,t-1);
-end
-
-Mu = Lambda*vec(Mu);
-
-
 for tr=1:Trials
-    Y = bsxfun(@minus,seq(tr).y,params.model.d);
-    Y = params.model.R\Y;
-    Y = params.model.C'*Y;
-    seq(tr).posterior.xsm = reshape(LambdaPost\(Mu+vec(Y)),xDim,T);
-    seq(tr).posterior.Vsm = Vsm;
-    seq(tr).posterior.VVsm = VVsm;
+  Mu = zeros(xDim,T);
+  Mu(:,1) = params.model.x0;
+  if params.model.useB; Mu(:,1) = Mu(:,1)+params.model.B*seq(tr).u(:,1);end;
+
+  for t=2:T
+    Mu(:,t) = params.model.A*Mu(:,t-1);
+     if params.model.useB; Mu(:,t) = Mu(:,t)+params.model.B*seq(tr).u(:,t);end;
+  end
+
+  Mu = Lambda*vec(Mu);
+  Y  = bsxfun(@minus,seq(tr).y,params.model.d);
+  Y  = params.model.R\Y;
+  Y  = params.model.C'*Y;
+  seq(tr).posterior.xsm  = reshape(LambdaPost\(Mu+vec(Y)),xDim,T);
+  seq(tr).posterior.Vsm  = Vsm;
+  seq(tr).posterior.VVsm = VVsm;
 end

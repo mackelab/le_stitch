@@ -41,7 +41,7 @@ else
 
     uauto = zeros(uDim,dt);
     for ud=1:uDim
-      uauto(ud,:) = autocorr(u(1,:),dt-1);      
+      uauto(ud,:) = autocorr(u(ud,:),dt-1);      
     end
     Aauto = zeros(xDim,dt);
     for tt=1:dt

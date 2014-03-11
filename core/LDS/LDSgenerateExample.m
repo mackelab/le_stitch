@@ -6,6 +6,7 @@ function params = LDSgenerateExample(varargin)
 
 %NOT DOCUMENTED YET%
 
+uDim     = 0;
 xDim     = 10;
 yDim     = 100;
 
@@ -15,11 +16,6 @@ Arand    = 0.03;
 Q0max    = 0.3;
 Rmin     = 0.1;
 Rmax     = 0.1;
-
-
-T        = 100;
-Trials   = 10;
-
 
 assignopts(who,varargin);
 
@@ -36,12 +32,12 @@ A  = M*A*pinv(M);
 Q  = M*Q*M'; Q=(Q+Q)/2;
 
 O  = orth(randn(xDim));
-Q0 = O*diag(rand(xDim,1)*Q0max)*O'/100;
-x0 = randn(xDim,1);
+Q0 = O*diag(rand(xDim,1)*Q0max)*O'/3;
+x0 = randn(xDim,1)/3;
 
-C  = randn(yDim,xDim)./sqrt(xDim);
+C  = randn(yDim,xDim)./sqrt(3*xDim);
 R  = diag(rand(yDim,1)*Rmax+Rmin);
-d  = randn(yDim,1);
+d  = 0.3*randn(yDim,1);
 
 params.model.A    = A;
 params.model.Q    = Q;
@@ -51,3 +47,11 @@ params.model.C    = C;
 params.model.d    = d;
 params.model.R    = R;
 params.model.Pi   = dlyap(params.model.A,params.model.Q);
+
+if uDim>0
+  cQ = max(abs(diag(chol(params.model.Q))));
+  params.model.B    = cQ*(rand(xDim,uDim)+0.5)/(uDim);
+  params.model.useB = true;
+else 
+  params.model.useB = false;
+end

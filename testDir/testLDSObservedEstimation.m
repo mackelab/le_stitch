@@ -35,9 +35,9 @@ figure
 plot(vec(tp.model.A),vec(model.A),'rx')
 
 
-figure
-plot(vec(tp.model.B),vec(model.B),'rx')
-
+figure; hold on
+plot(vec(tp.model.B(:,1:end-1)),vec(model.B(:,1:end-1)),'rx')
+plot(vec(tp.model.B(:,end)),vec(model.B(:,end)),'bx')
 
 figure
 plot(vec(tp.model.Q),vec(model.Q),'rx')

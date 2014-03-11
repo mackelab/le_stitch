@@ -6,6 +6,8 @@ function [params] = LDSTransformParams(params,varargin)
 %
 %  Pi := dlyap(params.model.A,params.model.Q)   stationary distribution
 %
+% TransformType:
+%
 % 0: do nothing
 % 1: C'*C = eye		&&		Pi = diag    [default]
 % 2: C'*C = diag 	&& 		Pi = eye
