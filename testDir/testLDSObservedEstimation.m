@@ -5,15 +5,15 @@ uDim   = 4;
 xDim   = 12;
 yDim   = 100;
 
-T      = 5000;
+T      = 10000;
 Trials = 1;
 dt     = 10;
 
-tp  = PLDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
+tp  = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 tp.model.Q = tp.model.Q+diag(rand(xDim,1));
 %tp.model.A = diag(0.9+0.1*rand(xDim,1));
 tp.model.Q0 = dlyap(tp.model.A,tp.model.Q);
-seq = PLDSsample(tp,T,Trials);
+seq = LDSsample(tp,T,Trials);
 model.useB = true;
 
 X    = [seq.x];

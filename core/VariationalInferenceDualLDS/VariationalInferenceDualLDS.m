@@ -2,9 +2,11 @@ function [seq] = VariationalInferenceDualLDS(params,seq,optparams)
 %
 % [seq] = VariationalInferenceDualLDS(params,seq);
 %
-% Assume here that all trials are of same length
 %
 % do this for different normalizer than that of Poisson --> introduce base measure handle
+%
+%
+% L Buesing 2014
 %
 
 
@@ -30,7 +32,11 @@ for tr = 1:Trials
 
   VarInfparams.mu = zeros(xDim,T); %prior mean
   VarInfparams.mu(:,1) = params.model.x0;
-  for t=2:T; VarInfparams.mu(:,t) = params.model.A*VarInfparams.mu(:,t-1); end
+  if params.model.useB;  VarInfparams.mu(:,1)=VarInfparams.mu(:,1)+params.model.B*seq(tr).u(:,1);end;
+  for t=2:T; 
+    VarInfparams.mu(:,t) = params.model.A*VarInfparams.mu(:,t-1); 
+    if params.model.useB;  VarInfparams.mu(:,t)=VarInfparams.mu(:,t)+params.model.B*seq(tr).u(:,t);end;
+  end
   VarInfparams.mu = vec(VarInfparams.mu);
   
   Cl = {}; for t=1:T; Cl = {Cl{:} params.model.C}; end

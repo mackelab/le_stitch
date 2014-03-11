@@ -53,7 +53,6 @@ for tr=1:Trials
      
   df   = df  + (y-yhat)*m'-TT;
   dfd  = dfd + sum((y-yhat),2);
-
   
 end
 
