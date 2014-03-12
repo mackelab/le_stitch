@@ -27,5 +27,5 @@ if isfield(params.model,'B')
 end
 
 if isfield(params.model,'Pi')
-   params.model.Pi = M * params.model.Pi * M';
+   params.model.Pi = dlyap(params.model.A,params.model.Q);
 end
