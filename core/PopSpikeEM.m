@@ -28,8 +28,10 @@ maxIter         = params.opts.algorithmic.EMIterations.maxIter;
 progTolvarBound = params.opts.algorithmic.EMIterations.progTolvarBound;  
 maxCPUTime      = params.opts.algorithmic.EMIterations.maxCPUTime;
 
-InferenceMethod = params.model.inferenceHandle;
-MstepMethod     = params.model.MStepHandle;
+ParamPenalizerHandle = params.model.ParamPenalizerHandle;
+InferenceMethod      = params.model.inferenceHandle;
+MstepMethod          = params.model.MStepHandle;
+
 
 EStepTimes      = nan(maxIter,1);
 MStepTimes      = nan(maxIter+1,1);
@@ -61,6 +63,9 @@ for ii=1:maxIter
     varBound(ii) = 0;
     for tr=1:Trials; varBound(ii) = varBound(ii)+seq(tr).posterior.varBound; end;
     fprintf('\rIteration: %i     Elapsed time (EStep): %d     Elapsed time (MStep): %d     Variational Bound: %d',ii,EStepTimes(ii),MStepTimes(ii),varBound(ii))
+
+    % add regularizer costs to varBound !!!
+    varBound(ii) = varBound(ii) + ParamPenalizerHandle(NOWparams);
 
     % check termination criteria
     if varBound(ii)<varBoundMax    % check if varBound is increasing!

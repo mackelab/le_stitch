@@ -34,6 +34,7 @@ params.model = touchField(params.model,'domainHandle',     @ExpPoissonDomain); %
 params.model = touchField(params.model,'baseMeasureHandle',@PoissonBaseMeasure); %base measure, i.e. constant part which does not need to be evaluated at each step
 params.model = touchField(params.model,'inferenceHandle',  @PLDSVariationalInference); % function that does the actual inference
 params.model = touchField(params.model,'MStepHandle',      @PLDSMStep); %handle to function that does the M-step
+params.model = touchField(params.model,'ParamPenalizerHandle',@PLDSemptyParamPenalizerHandle);
 
 
 %%%%%%%%%%% set standard algorithmic parameters %%%%%%%%%%%%%%%%%%%%

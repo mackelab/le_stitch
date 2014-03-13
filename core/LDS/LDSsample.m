@@ -33,6 +33,7 @@ for tr=1:Trials
   if params.model.useB
     % !!! take this out
     if isempty(u)
+      warning('You are using an extremely dirty convenience function. It will disappear')
       uDim = size(params.model.B,2);
       gpsamp = sampleGPPrior(1,T(tr),uDim-1,'tau',10);
       tpsamp = (vec(repmat(rand(1,floor(T(tr)/10))>0.5,10,1))-0.5); tpsamp = [tpsamp' zeros(1,T(tr)-floor(T(tr)/10)*10)];

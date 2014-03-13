@@ -1,12 +1,12 @@
 clear all
 close all
 
-uDim    = 3;
-xDim    = 15;
+uDim    = 2;
+xDim    = 5;
 yDim    = 100;
 T       = 100;
 Trials  = 100;
-maxIter = 30;
+maxIter = 10;
 
 
 %%%% generate data
@@ -27,6 +27,7 @@ if uDim>0;params.model.useB = true;end
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
+%{
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = 1800000;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
@@ -63,9 +64,6 @@ plot(condRange,seqInfTP(1).posterior.xsm','b')
 plot(predRange,xpredTP','r')
 
 
-
-
-
 %%% some plotting
 
 subspace(tp.model.C,params.model.C)
@@ -85,9 +83,6 @@ if params.model.useB
   plot(tp.model.C*tp.model.B,params.modelInit.C*params.modelInit.B,'xb')
 end
 
-save('/nfs/data3/lars/dynamics/popspikedyn/long_run.mat')
-
-%{
 
 figure
 plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
@@ -100,5 +95,3 @@ plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*
 
 figure
 plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')
-
-%}
