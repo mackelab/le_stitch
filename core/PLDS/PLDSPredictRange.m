@@ -6,6 +6,7 @@ function [ypred xpred xpredCov seqInf] = PLDSPredictRange(params,y,condRange,pre
 % Lars Buesing, 2014
 %
 
+s       = [];
 u       = [];
 lamInit = [];
 
@@ -27,6 +28,9 @@ elseif size(y,2)>Tcond
    if params.model.useB
      ucond = u(:,condRange);
    end
+   if params.model.useS
+     scond = s(:,condRange);
+   end
 end
 
 
@@ -45,6 +49,7 @@ if numel(lamInit)==(yDim*Tcond)
    seqInf.posterior.lamOpt = lamInit;
 end
 if paramsInf.model.useB; seqInf.u = ucond; end;
+if paramsInf.model.useS; seqInf.s = scond; end;
 
 seqInf   = params.model.inferenceHandle(paramsInf,seqInf);
 xpred    = zeros(xDim,Tpred);
@@ -61,6 +66,10 @@ for t = (tcRhi+1):tpRhi    % progagate prediction
     if t>=tpRlo
        xpred(:,t-tpRlo+1) = xNow;
        xpredCov(:,:,t-tpRlo+1) = xCovNow;
-       ypred(:,t-tpRlo+1) = exp(params.model.C*xNow+params.model.d+0.5*diag(params.model.C*xCovNow*params.model.C'));
+       yr = params.model.C*xNow+params.model.d+0.5*diag(params.model.C*xCovNow*params.model.C');
+       if params.model.useS
+	 yr = yr+s(:,t);
+       end
+       ypred(:,t-tpRlo+1) = exp(yr);
     end
 end

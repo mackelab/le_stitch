@@ -50,9 +50,11 @@ switch initMethod
 	
 	dt = params.opts.algorithmic.ExpFamPCA.dt;
 	Y  = [seq.y];
-	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.opts.algorithmic.ExpFamPCA.lam,'options',params.opts.algorithmic.ExpFamPCA.options);     
+	if params.model.useS; s = [seq.s]; 
+	else s=0;end
+	[Cpca, Xpca, dpca] = ExpFamPCA(Y,xDim,'dt',dt,'lam',params.opts.algorithmic.ExpFamPCA.lam,'options',params.opts.algorithmic.ExpFamPCA.options,'s',s);     
 	params.model.C = Cpca;
-	params.model.d = dpca-log(dt);								% compensate for rebinning
+        params.model.d = dpca;
 
 	if params.model.useB; u = [seq.u];else;u = [];end
 	params.model = LDSObservedEstimation(Xpca,params.model,dt,u);
@@ -66,7 +68,12 @@ switch initMethod
         Y  = [seqRebin.y];
 	options = params.opts.algorithmic.NucNormMin.options;
 	options.lambda = options.lambda*sqrt(size(Y,1)*size(Y,2));
-	[Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( Y, options );
+	if params.model.useS
+	  Yext = subsampleSignal([seq.s],dt);
+	else
+	  Yext = [];
+	end
+	[Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( Y, options , 'Yext', Yext );
 	params.model.d = d-log(dt);
 
 	if ~params.opts.algorithmic.NucNormMin.fixedxDim

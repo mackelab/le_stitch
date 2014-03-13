@@ -40,8 +40,9 @@ for tr=1:Trials
   y    = seq(tr).y;
   m    = seq(tr).posterior.xsm;
   Vsm  = reshape(seq(tr).posterior.Vsm',xDim.^2,T);
-      
+     
   h    = bsxfun(@plus,C*m,d);
+  if params.model.useS; h = h+seq(tr).s; end
   rho  = CC*Vsm;
   yhat = exp(h+rho/2);
 

@@ -1,4 +1,4 @@
-function [f df] = ExpFamPCACost(CXd,Y,xDim,lambda)
+function [f df] = ExpFamPCACost(CXd,Y,xDim,lambda,s)
 %
 % [f df] = ExpFamPCACost(CXd,Y,xDim,lambda)
 %
@@ -12,7 +12,7 @@ CX = reshape(CXd(1:end-yDim),yDim+T,xDim);
 C  = CX(1:yDim,:);
 X  = CX(yDim+1:end,:)';
 
-nu = bsxfun(@plus,C*X,d);
+nu = bsxfun(@plus,C*X+s,d);
 Yhat = exp(nu);
 
 f = sum(vec(-Y.*nu+Yhat))+lambda/2*(norm(C,'fro')^2+norm(X,'fro')+norm(d)^2);

@@ -18,6 +18,7 @@ params.model = touchField(params.model,'C',randn(yDim,xDim)./sqrt(xDim)); %coupl
 params.model = touchField(params.model,'d',zeros(yDim,1)-2.0); %mean-controlling offset d for each neuron
 params.model = touchField(params.model,'useB',false);
 params.model = touchField(params.model,'B',zeros(xDim,0));
+params.model = touchField(params.model,'useS',false);
   
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%

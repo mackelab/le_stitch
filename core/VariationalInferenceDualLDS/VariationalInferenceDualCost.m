@@ -39,7 +39,7 @@ if ~feval(VarInfparams.domainHandle,lam); f = inf; df = nan(size(lam)); return; 
 W  = VarInfparams.W;          		     	     % loading matrix, sparse, only blk-diag
 mu = VarInfparams.mu;         			     % prior mean
 if isfield(VarInfparams,'d')
-  d = repmat(VarInfparams.d,T,1);		     % bias for likelihood
+  d = VarInfparams.d;		                     % bias for likelihood
 else
   d = zeros(yDim*T,1);
 end

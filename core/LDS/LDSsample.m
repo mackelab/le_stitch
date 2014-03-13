@@ -9,6 +9,7 @@ function seq = LDSsample(params,T,Trials,varargin)
 %
 
 u = [];
+s = [];
 assignopts(who,varargin);
 
 if numel(T)==1
@@ -30,6 +31,7 @@ end
 for tr=1:Trials
 
   if params.model.useB
+    % !!! take this out
     if isempty(u)
       uDim = size(params.model.B,2);
       gpsamp = sampleGPPrior(1,T(tr),uDim-1,'tau',10);
@@ -49,4 +51,12 @@ for tr=1:Trials
   end
   seq(tr).y = bsxfun(@plus,params.model.C*seq(tr).x,params.model.d)+CR'*randn(yDim,T(tr));
   seq(tr).T = T(tr);
+
+  if params.model.useS
+    seq(tr).y = seq(tr).y+s{tr};
+    seq(tr).s = s{tr};
+  end
+
 end
+
+

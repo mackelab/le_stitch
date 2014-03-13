@@ -4,10 +4,11 @@ function [C, X, d] = ExpFamPCA(Y,xDim,varargin)
 %
 % exponential family PCA, currently only implemented for
 % exponential-Poisson observation model, i.e. learns C, X and d for model 
-% Y ~ Poisson(exp(Cx+d));
+% Y ~ Poisson(exp(Cx+d+s));
 %
 % inputs:
 % Y:     matrix of size yDim x T
+% s:     additive , observed input, same size as Y or scalar
 % xDim:  scaler, dimensionality of latent space
 %
 % output: 
@@ -21,7 +22,8 @@ function [C, X, d] = ExpFamPCA(Y,xDim,varargin)
 %
 % (c) Lars Buesing 2014
 
-useB = false;
+
+s    = 0;
 dt   = 10;    % rebin factor %!!! this is very much dependent on the firing rates
 lam  = 1e-1;  % penalizer
 
@@ -39,11 +41,13 @@ seqDum.y = Y;
 seqDum = rebinRaster(seqDum,dt);
 Y = seqDum.y;
 
+if numel(s)>1.5; s = subsampleSignal(s,dt);end
+
 [yDim T] = size(Y);
 
 %% rough initialization for ExpFamPCA based on SVD
-my = mean(Y,2);
-[Uy Sy Vy] = svd(bsxfun(@minus,Y,my),0);
+my = mean(Y-s,2);
+[Uy Sy Vy] = svd(bsxfun(@minus,Y-s,my),0);
 my = max(my,0.1);
 
 Cinit = Uy(:,1:xDim);
@@ -52,7 +56,7 @@ dinit = log(my);%zeros(yDim,1);
 CXdinit = [vec([Cinit; Xinit']); dinit];
 
 %run ExpFamCPA  
-CXdOpt  = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam); 
+CXdOpt  = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam,s); 
 
 % Function returns all parameters lupmed together as one vector, so need to
 % disentangle: 
@@ -60,7 +64,7 @@ d  = CXdOpt(end-yDim+1:end);
 CX = reshape(CXdOpt(1:end-yDim),yDim+T,xDim);
 C  = CX(1:yDim,:);
 X  = CX(yDim+1:end,:)';
-
+d  = d-log(dt);
 
 % transform for C to have orthonormal columns
 [UC SC VC] = svd(C);

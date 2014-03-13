@@ -1,10 +1,9 @@
-function [Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( S, opts )
+function [Y,Xu,Xs,Xv,d,cost] = MODnucnrmminWithd( S, opts, varargin )
 %
-% [Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( S, opts )
+% [Y,Xu,Xs,Xv,d,cost] = MODnucnrmminWithd( S, opts, varargin )
 %
-%  obj function is -log(S|x) + lambda||X||_* + Tr[Z'(x-d-X)] + rho/2||x-d-X||^2_F
-% Nuclear Norm Minimization with additive offset to model mean firing
-% 
+%  obj function is -log(S|x) + lambda||X||_* + Tr[Z'(x-X)] + rho/2||x-X||^2_F
+%
 % opts -
 %   rho - dual gradient ascent rate for ADMM
 %   eps_abs - absolute threshold for ADMM
@@ -27,25 +26,32 @@ function [Y,Xu,Xs,Xv,d] = MODnucnrmminWithd( S, opts )
 % minor modifications by Lars Buesing, 2014
 %
 
+Yinit = [];
+dinit = [];
+Yext  = [];
+assignopts(who,varargin);
+
 % set default values
-rho     = 0;
-eps_abs = 0;
-eps_rel = 0;
-maxIter = 0;
-nlin    = 0;
-lambda  = 0;
-verbose = 0;
+rho     = 1.3;
+eps_abs = 1e-10;%1e-6;
+eps_rel = 1e-5;%1e-3;
+maxIter = 250;
+nlin    = 'exp';
+lambda  = 1;
+verbose = 1;
 
-
-for field = {'rho','eps_abs','eps_rel','maxIter','nlin','lambda','verbose'}
-    eval([field{1} ' = opts.' field{1} ';'])
+if nargin > 1
+    for field = {'rho','eps_abs','eps_rel','maxIter','nlin','lambda','verbose'}
+        if isfield(opts, field)
+            eval([field{1} ' = opts.' field{1} ';'])
+        end
+    end
 end
 
-%nz = logical(sum(S,2));
-%S = S(nz,:); % remove rows with no spikes
-
 [N,T] = size(S);
-
+if isempty(Yext)
+  Yext = zeros(size(S));
+end
 
 switch nlin
     case 'exp'
@@ -60,17 +66,30 @@ switch nlin
         d2f = @(x) exp(-x)./(1+exp(-x)).^2;
 end
 
-switch nlin  % crude ADMM initialization
-    case 'exp'
-        x = log(max(S,1));
-    case {'soft','logexp'}
-        x = max(S-1,0);
+if ~isempty(Yinit)
+  x = Yinit;
+else
+  switch nlin  % crude ADMM initialization
+   case 'exp'
+    x = log(max(S,1))-Yext;
+   case {'soft','logexp'}
+    x = max(S-1,0)-Yext;
+  end
+end
+
+if ~isempty(dinit)
+  d = dinit;
+  if isempty(Yinit)
+    x = zeros(size(S));
+  end
+else
+  d = mean(x,2);
+  x = bsxfun(@minus,x,d);
 end
 
 X = zeros(N,T);
 Z = zeros(N,T);
-d = mean(x,2);
-x = bsxfun(@minus,x,d);
+
 
 nr_p = Inf; nr_d= Inf;
 e_p = 0;    e_d = 0;
@@ -86,8 +105,8 @@ while ( nr_p > e_p || nr_d > e_d ) && iter < maxIter % Outer loop of ADMM
     while stopping/norm(x,'fro') > 1e-6 % Outer loop of Newton's method
         switch nlin
             case 'exp'
-                h =  exp( bsxfun(@plus,x,d) ); % diagonal of Hessian
-                g =  exp( bsxfun(@plus,x,d) ) - S; % gradient
+                h =  exp( bsxfun(@plus,x+Yext,d) ); % diagonal of Hessian
+                g =  exp( bsxfun(@plus,x+Yext,d) ) - S; % gradient
             otherwise
 		warning('not implemented')
                 h =  d2f( x ) - S .* ( d2f( x ) .* f( x ) - df( x ).^2 ) ./ f( x ).^2;
@@ -99,8 +118,8 @@ while ( nr_p > e_p || nr_d > e_d ) && iter < maxIter % Outer loop of ADMM
         grad = g + rho*(x-X) + Z;
         dx = -inv_hess_mult(h,grad);
         
-	gd = sum(g,2)+lambda*d;
-	hd = sum(h,2)+lambda;
+	gd = sum(g,2);%+lambda*d;
+	hd = sum(h,2);%+lambda;
 	dd = -gd./hd;
 
 	% upadate
@@ -150,8 +169,13 @@ while ( nr_p > e_p || nr_d > e_d ) && iter < maxIter % Outer loop of ADMM
     X = X_;
     Z = Z_;
     
-    fval = sum( sum( f( bsxfun(@plus,x,d) ) - S .* log( f( bsxfun(@plus,x,d) ) ) ) );
-    nn = sum( svd( x ) );
+    % !!! mod here, report stuff from low rank rates
+    fval = sum( sum( f( bsxfun(@plus,X+Yext,d) ) - S .* log( f( bsxfun(@plus,X+Yext,d) ) ) ) );
+    nn = sum( svd( X ) );
+    
+    cost.loglike   = -fval;
+    cost.nucnorm   = nn;
+    cost.total     = -cost.loglike+lambda*cost.nucnorm;
     
     % print
     iter = iter + 1;
@@ -161,19 +185,19 @@ while ( nr_p > e_p || nr_d > e_d ) && iter < maxIter % Outer loop of ADMM
 
 end
 
-%Y = zeros(length(nz),T);
-Y = x;
-%Y(~nz,:) = -Inf; % set firing rates to zero for rows with no data. Used to make sure the returned value is aligned with the input
+Y = X;   %!!! returns low rank rates
+sqrtXs = diag(sqrt(diag(Xs)));
+cost.penaltyC = norm(Xu*sqrtXs,'fro')^2;
+cost.penaltyX = norm(Xv*sqrtXs,'fro')^2;
 
-    function y = inv_hess_mult(H,x)
+
+      function y = inv_hess_mult(H,x)
             y = x./(H + rho);
-    end
-
-    function y = obj(x)
-        
-        foo = S.*log(f( bsxfun(@plus,x,d) ));
+      end
+      function y = obj(x)
+        foo = S.*log(f( bsxfun(@plus,x+Yext,d) ));
         foo(isnan(foo)) = 0; % 0*log(0) = 0 by convention
-        y = sum(sum(f( bsxfun(@plus,x,d)  ) - foo)) + sum(sum(Z.*x)) + rho/2*norm(x-X,'fro')^2;
-        
-    end
+        y = sum(sum(f( bsxfun(@plus,x+Yext,d)  ) - foo)) + sum(sum(Z.*x)) + rho/2*norm(x-X,'fro')^2;
+      end  
+ 
 end
