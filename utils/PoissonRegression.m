@@ -28,8 +28,12 @@ over_m = [];
 over_v = [];
 Dinit  = zeros(yDim,uDim);
 
-options.Display = 0;
-options.Method  = 'lbfgs';
+options.Display     = 'iter';
+options.Method      = 'lbfgs';
+options.MaxIter     = 5000;
+options.maxFunEvals = 50000;
+options.progTol     = 1e-9;
+options.optTol      = 1e-5;
 
 assignopts(who,varargin);
 

@@ -2,10 +2,10 @@ clear all
 close all
 
 uDim    = 0;
-xDim    = 10;
+xDim    = 3;
 yDim    = 150;
 T       = 100;
-Trials  = 100;
+Trials  = 25;
 maxIter = 25;
 
 
@@ -16,11 +16,11 @@ for tr=1:Trials
   s{tr} = (vec(repmat(rand(1,floor(T/10))>0.5,10,1))-0.5);
   s{tr} = [s{tr}' zeros(1,T-floor(T/10)*10)];
   s{tr} = repmat(s{tr},yDim,1)-1;
-  s{tr}(1:20,:) = s{tr}(1:20,:)*2;
+  s{tr}(1:20,:) = s{tr}(1:20,:)*1.5;
 end
 
 tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0);
-tp.model.useS = true;
+tp.model.notes.useS = true;
 seqOrig    = PLDSsample(tp,T,Trials,'s',s);
 tp         = tp;
 fprintf('Max spike count:    %i \n', max(vec([seqOrig.y])))
@@ -32,20 +32,27 @@ fprintf('Freq non-zero bin:  %d \n', mean(vec([seqOrig.y])>0.5))
 
 seq    = seqOrig;
 params = [];
-params.model.useS = true;
+params.model.notes.useS = true;
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 %params = PLDSInitialize(seq,xDim,'NucNormMin',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
-%{
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
 fprintf('Final subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
-%}
+
 
 figure
 plot(tp.model.d,params.model.d,'rx')
+
+tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = dlyap(params.model.A,params.model.Q);
+
+figure
+plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
+
+
 
 
 

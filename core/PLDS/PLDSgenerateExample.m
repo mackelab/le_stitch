@@ -54,7 +54,7 @@ end
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));
   params.model.B    = cQ*(rand(xDim,uDim)+0.5)/(uDim);
-  params.model.useB = true;
+  params.model.notes.useB = true;
 end
 
 params = PLDSsetDefaultParameters(params,xDim,yDim);

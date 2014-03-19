@@ -12,7 +12,7 @@ Trials = 2;
 tp  = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 seq = LDSsample(tp,T,Trials);
 
-if tp.model.useB
+if tp.model.notes.useB
   figure
   plot(seq(1).u')
 end  

@@ -15,9 +15,9 @@ mean(vec([seq.y]))
 tp  = trueparams;
 
 params = [];
-params.model.useB = (uDim>0.5);
-%params = PLDSInitialize(seq,xDim,'NucNormMin',params);
-params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
+params.model.notes.useB = (uDim>0.5);
+params = PLDSInitialize(seq,xDim,'NucNormMin',params);
+%params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 
 
 subspace(tp.model.C,params.model.C)

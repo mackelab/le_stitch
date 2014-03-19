@@ -7,14 +7,14 @@ yDim   = 100;
 
 T      = 10000;
 Trials = 1;
-dt     = 10;
+dt     = 1;
 
 tp  = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 tp.model.Q = tp.model.Q+diag(rand(xDim,1));
 %tp.model.A = diag(0.9+0.1*rand(xDim,1));
 tp.model.Q0 = dlyap(tp.model.A,tp.model.Q);
 seq = LDSsample(tp,T,Trials);
-model.useB = true;
+model.notes.useB = true;
 
 X    = [seq.x];
 Xsub = subsampleSignal([seq.x],dt);

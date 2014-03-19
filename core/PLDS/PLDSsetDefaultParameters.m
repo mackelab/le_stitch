@@ -16,10 +16,14 @@ params.model = touchField(params.model,'Q0',eye(xDim)); %initial state covarianc
 params.model = touchField(params.model,'x0',zeros(xDim,1)); %initial mean x0
 params.model = touchField(params.model,'C',randn(yDim,xDim)./sqrt(xDim)); %couplings from latent to observed C
 params.model = touchField(params.model,'d',zeros(yDim,1)-2.0); %mean-controlling offset d for each neuron
-params.model = touchField(params.model,'useB',false);
 params.model = touchField(params.model,'B',zeros(xDim,0));
-params.model = touchField(params.model,'useS',false);
-  
+params.model = touchField(params.model,'notes');
+
+params.model.notes = touchField(params.model.notes,'learnx0',true);
+params.model.notes = touchField(params.model.notes,'learnA',true);
+params.model.notes = touchField(params.model.notes,'useB',false);
+params.model.notes = touchField(params.model.notes,'useS',false);
+
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%
 %note: these functions all have to be consistent with each other, i.e.

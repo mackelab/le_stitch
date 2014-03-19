@@ -23,16 +23,17 @@ fprintf('Freq non-zero bin:  %d \n', mean(vec([seqOrig.y])>0.5))
 
 seq    = seqOrig;
 params = [];
-if uDim>0;params.model.useB = true;end
+if uDim>0;params.model.notes.useB = true;end
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
-%{
+
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
-params.opts.algorithmic.EMIterations.maxCPUTime  = 1800000;
+params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
 
 
+%{
 %%%% compare models
 
 Tpred = 200;
@@ -62,6 +63,7 @@ figure; hold on
 plot(seqPred(1).x','k')
 plot(condRange,seqInfTP(1).posterior.xsm','b')
 plot(predRange,xpredTP','r')
+%}
 
 
 %%% some plotting
@@ -77,7 +79,7 @@ params.model.Pi = dlyap(params.model.A,params.model.Q);
 figure
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
 
-if params.model.useB
+if params.model.notes.useB
   figure; hold on
   plot(tp.model.C*tp.model.B,params.model.C*params.model.B,'xr')
   plot(tp.model.C*tp.model.B,params.modelInit.C*params.modelInit.B,'xb')

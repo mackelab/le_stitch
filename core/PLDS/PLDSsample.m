@@ -13,7 +13,6 @@ seq = LDSsample(params,T,Trials,varargin{:});
 
 for tr=1:Trials
   seq(tr).yr = seq(tr).y;
-  
   seq(tr).y  = poissrnd(exp(seq(tr).yr));
 end
 

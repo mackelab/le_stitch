@@ -34,15 +34,18 @@ end
 for tr=1:Trials
   Mu = zeros(xDim,T);
   Mu(:,1) = params.model.x0;
-  if params.model.useB; Mu(:,1) = Mu(:,1)+params.model.B*seq(tr).u(:,1);end;
+  if params.model.notes.useB; Mu(:,1) = Mu(:,1)+params.model.B*seq(tr).u(:,1);end;
 
   for t=2:T
     Mu(:,t) = params.model.A*Mu(:,t-1);
-     if params.model.useB; Mu(:,t) = Mu(:,t)+params.model.B*seq(tr).u(:,t);end;
+     if params.model.notes.useB; Mu(:,t) = Mu(:,t)+params.model.B*seq(tr).u(:,t);end;
   end
 
   Mu = Lambda*vec(Mu);
   Y  = bsxfun(@minus,seq(tr).y,params.model.d);
+  if params.model.notes.useS
+    Y = Y-seq.s;
+  end
   Y  = params.model.R\Y;
   Y  = params.model.C'*Y;
   seq(tr).posterior.xsm  = reshape(LambdaPost\(Mu+vec(Y)),xDim,T);

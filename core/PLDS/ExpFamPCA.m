@@ -8,17 +8,14 @@ function [C, X, d] = ExpFamPCA(Y,xDim,varargin)
 %
 % inputs:
 % Y:     matrix of size yDim x T
-% s:     additive , observed input, same size as Y or scalar
-% xDim:  scaler, dimensionality of latent space
+% s:     additive , observed input, same size as Y or scalar (optional)
+% xDim:  scalar, dimensionality of latent space
 %
 % output: 
 % C:      loading matrix, of size yDim x xDim
 % X:      recovered latent factors, of size xDim x T
 % d:      mean offset
 %
-%
-% todo: 
-%  - generalize to different observation models
 %
 % (c) Lars Buesing 2014
 
@@ -52,21 +49,23 @@ my = max(my,0.1);
 
 Cinit = Uy(:,1:xDim);
 Xinit = zeros(xDim,T);
-dinit = log(my);%zeros(yDim,1);
+dinit = log(my);
 CXdinit = [vec([Cinit; Xinit']); dinit];
 
 %run ExpFamCPA  
 CXdOpt  = minFunc(@ExpFamPCACost,CXdinit,options,Y,xDim,lam,s); 
 
-% Function returns all parameters lupmed together as one vector, so need to
-% disentangle: 
+% Function returns all parameters lumped together as one vector, so need to disentangle: 
 d  = CXdOpt(end-yDim+1:end);
 CX = reshape(CXdOpt(1:end-yDim),yDim+T,xDim);
 C  = CX(1:yDim,:);
 X  = CX(yDim+1:end,:)';
 d  = d-log(dt);
+Xm = mean(X,2);
+X  = bsxfun(@minus,X,Xm);
+d  = d+C*Xm;
 
-% transform for C to have orthonormal columns
+% transform C to have orthonormal columns
 [UC SC VC] = svd(C);
 M = SC(1:xDim,1:xDim)*VC(:,1:xDim)';
 C = C/M;

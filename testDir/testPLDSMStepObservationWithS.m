@@ -17,7 +17,7 @@ end
 
 tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.5);
 tp = LDSApplyParamsTransformation(randn(xDim)+eye(xDim)*0.3,tp);
-tp.model.useS = true;
+tp.model.notes.useS = true;
 seq = PLDSsample(tp,T,Trials,'s',s);
 max(vec([seq.y]))
 
@@ -30,7 +30,9 @@ plotPosterior(seq,1,tp);
 
 
 % do MStep
-params = PLDSMStepObservation(tp,seq);
+params = tp;
+params.model.notes.useS = false;% true;
+params = PLDSMStepObservation(params,seq);
 
 
 % look at some invariant comparison statistics

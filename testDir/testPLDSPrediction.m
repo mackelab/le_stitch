@@ -10,8 +10,7 @@ Trials  = 1;
 
 %%%% ground truth model
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0,'uDim',uDim);
-tp         = trueparams;
+tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0,'uDim',uDim);
 tp.model.B = tp.model.B;
 tp.model.Q = tp.model.Q/10;
 
@@ -22,7 +21,7 @@ eig(tp.model.A)
 seqOrig = PLDSsample(tp,T,Trials);
 seq     = seqOrig;
 params  = tp;
-
+%params.model.notes.useB = false;
 
 %%%% prediction example
 

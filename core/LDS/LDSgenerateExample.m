@@ -51,7 +51,7 @@ params.model.Pi   = dlyap(params.model.A,params.model.Q);
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));
   params.model.B    = cQ*(rand(xDim,uDim)+0.5)/(uDim);
-  params.model.useB = true;
+  params.model.notes.useB = true;
 else 
-  params.model.useB = false;
+  params.model.notes.useB = false;
 end

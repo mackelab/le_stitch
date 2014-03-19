@@ -15,13 +15,13 @@ X  = CX(yDim+1:end,:)';
 nu = bsxfun(@plus,C*X+s,d);
 Yhat = exp(nu);
 
-f = sum(vec(-Y.*nu+Yhat))+lambda/2*(norm(C,'fro')^2+norm(X,'fro')+norm(d)^2);
+f = sum(vec(-Y.*nu+Yhat))+lambda/2*(norm(C,'fro')^2+norm(X,'fro'));
 
 YhatmY = Yhat-Y;
 
 gX = C'*YhatmY+lambda*X;
 gC = YhatmY*X'+lambda*C;
-gd = sum(YhatmY,2)+lambda*d;
+gd = sum(YhatmY,2);
 
 df = [vec([gC;gX']);gd];
 

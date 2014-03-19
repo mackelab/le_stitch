@@ -5,18 +5,14 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 %Expectation algorithm for learning parameters of population model with spikes
 %
 % input:
-% params:       struct,  see PopSikeEngine.m for a definition and
-% description
-% seq:          struct with multiple elements, see PopSikeEngine.m for a
-% defintion and description
+% params:       struct,  see PopSikeEngine.m for a definition and description
+% seq:          struct with multiple elements, see PopSikeEngine.m for a defintion and description
 %
 % output: 
-% NOWparams:    struct, same as input-params but with updated and added
-% fields
+% NOWparams:    struct, same as input-params but with updated and added fields
 % seq:          struct, same as input-struct but with added field
 % 'posterior'
-% varBound:     vector, variational bound (or other cost function) for each
-% iteration of EM
+% varBound:     vector, variational bound (or other cost function) for each  iteration of EM
 % EStepTimes, MStepTimes: vector, cpu-time taken by each iteration
 %
 % (c) L Buesing 01/2014
@@ -55,17 +51,23 @@ for ii=1:maxIter
 
     % do inference
     infTimeBegin   = cputime;
-    seq = InferenceMethod(NOWparams,seq);            %For variational method, varBound for each trials is saved in seq.posterior... ?
+    try 
+      seq = InferenceMethod(NOWparams,seq);            %For variational method, varBound for each trials is saved in seq.posterior... ?
+    catch
+      disp('Error in inference, aborting EM iterations')
+      break
+    end
     infTimeEnd     = cputime;
     EStepTimes(ii) = infTimeEnd-infTimeBegin;
 
     % evaluate variational lower bound  !!! Will need to generalize to other cost functions... how to store cost etc....
     varBound(ii) = 0;
     for tr=1:Trials; varBound(ii) = varBound(ii)+seq(tr).posterior.varBound; end;
-    fprintf('\rIteration: %i     Elapsed time (EStep): %d     Elapsed time (MStep): %d     Variational Bound: %d',ii,EStepTimes(ii),MStepTimes(ii),varBound(ii))
 
     % add regularizer costs to varBound !!!
-    varBound(ii) = varBound(ii) + ParamPenalizerHandle(NOWparams);
+    varBound(ii) = varBound(ii) - ParamPenalizerHandle(NOWparams);
+
+    fprintf('\rIteration: %i     Elapsed time (EStep): %d     Elapsed time (MStep): %d     Variational Bound: %d',ii,EStepTimes(ii),MStepTimes(ii),varBound(ii))
 
     % check termination criteria
     if varBound(ii)<varBoundMax    % check if varBound is increasing!
@@ -90,7 +92,8 @@ for ii=1:maxIter
     %%%%%%% M-step
 
     mstepTimeBegin = cputime;
-    NOWparams = PLDSMStep(NOWparams,seq);
+    NOWparams = MstepMethod(NOWparams,seq);
+    %NOWparams = PLDSMStep(NOWparams,seq);
     mstepTimeEnd   = cputime;
     MStepTimes(ii+1) = mstepTimeEnd-mstepTimeBegin;	      
 

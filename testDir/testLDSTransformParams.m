@@ -41,7 +41,7 @@ plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*
 figure
 plot(vec(tp.model.C*tp.model.x0),vec(params.model.C*params.model.x0),'rx');
 
-if params.model.useB
+if params.model.notes.useB
   figure
   plot(vec(tp.model.C*tp.model.B),vec(params.model.C*params.model.B),'rx');
 end

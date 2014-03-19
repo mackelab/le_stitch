@@ -31,15 +31,15 @@ for tr = 1:Trials
   T = size(seq(tr).y,2);
 
   VarInfparams.d  = repmat(params.model.d,T,1);
-  if params.model.useS
+  if params.model.notes.useS
     VarInfparams.d = VarInfparams.d + vec(seq(tr).s);
   end
   VarInfparams.mu = zeros(xDim,T); %prior mean
   VarInfparams.mu(:,1) = params.model.x0;
-  if params.model.useB;  VarInfparams.mu(:,1)=VarInfparams.mu(:,1)+params.model.B*seq(tr).u(:,1);end;
+  if params.model.notes.useB;  VarInfparams.mu(:,1)=VarInfparams.mu(:,1)+params.model.B*seq(tr).u(:,1);end;
   for t=2:T; 
     VarInfparams.mu(:,t) = params.model.A*VarInfparams.mu(:,t-1); 
-    if params.model.useB;  VarInfparams.mu(:,t)=VarInfparams.mu(:,t)+params.model.B*seq(tr).u(:,t);end;
+    if params.model.notes.useB;  VarInfparams.mu(:,t)=VarInfparams.mu(:,t)+params.model.B*seq(tr).u(:,t);end;
   end
   VarInfparams.mu = vec(VarInfparams.mu);
   
@@ -60,7 +60,6 @@ for tr = 1:Trials
     lamInit = seq(tr).posterior.lamInit;
   else
     lamInit = zeros(yDim*T,1)+mean(vec(seq(tr).y))+1e-3;
-    if params.model.useS;lamInit = lamInit-mean(vec(seq(tr).s));end;
   end
   % warm start inference if possible
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamOpt')

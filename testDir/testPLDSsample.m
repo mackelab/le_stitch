@@ -15,7 +15,7 @@ for tr=1:Trials
 end
 
 params = PLDSgenerateExample('xDim',xDim,'yDim',yDim);
-params.model.useS = true;
+params.model.notes.useS = true;
 seq    = PLDSsample(params,T,Trials,'s',s);
 
 mean(vec([seq.y]))

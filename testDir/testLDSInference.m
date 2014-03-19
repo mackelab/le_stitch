@@ -46,7 +46,6 @@ paramsC.Qo = paramsC.Q0;
 paramsC.xo = paramsC.x0;
 seqC = seqOrig;
 paramsC.notes.forceEqualT= true;
-paramsC.notes.useB = paramsC.useB;
 if paramsC.notes.useB;for tr=1:Trials;seqC(tr).h=seqC(tr).u;end;end
 addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/core_lds')
 addpath('/nfs/nhome/live/lars/projects/dynamics/pair/HNLDS/matlab/PPGPFA/util')  

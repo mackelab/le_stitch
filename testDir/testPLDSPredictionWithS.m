@@ -14,15 +14,15 @@ for tr=1:Trials
   s{tr} = (vec(repmat(rand(1,floor(T(tr)/10))>0.5,10,1))-0.5);
   s{tr} = [s{tr}' zeros(1,T(tr)-floor(T(tr)/10)*10)];
   s{tr} = repmat(s{tr},yDim,1);
-  s{tr}(1:20,:) = s{tr}(1:20,:)*2;
+%  s{tr}(1:20,:) = s{tr}(1:20,:)*2;
+  s{tr} = s{tr}*4;
 end
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0,'uDim',uDim);
-tp         = trueparams;
-tp.model.useS = true;
+tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.5,'uDim',uDim);
+tp.model.notes.useS = true;
 
 UA = randn(xDim); UA = (UA-UA')/2;
-tp.model.A       = expm(0.1*UA)*0.995*eye(xDim);
+tp.model.A = expm(0.1*UA)*0.995*eye(xDim);
 eig(tp.model.A)
 
 seqOrig = PLDSsample(tp,T,Trials,'s',s);
