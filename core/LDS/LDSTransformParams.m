@@ -39,12 +39,18 @@ switch TransformType
        params        = LDSApplyParamsTransformation(SC*VC',params);
 
        params.model.Pi     = dlyap(params.model.A,params.model.Q);
+       if min(eig(params.model.Pi))<0
+	 params.model.Pi = params.model.Q;
+       end
        [UPi SPi VPi] = svd(params.model.Pi);
        params        = LDSApplyParamsTransformation(UPi',params);
 
   case '2'  
   
 	params.model.Pi     = dlyap(params.model.A,params.model.Q);
+	if min(eig(params.model.Pi))<0
+	  params.model.Pi = params.model.Q;
+	end
 	[UPi SPi VPi] = svd(params.model.Pi);
 	M    	      = diag(1./sqrt(diag(SPi)))*UPi';
        	params        = LDSApplyParamsTransformation(M,params);    	

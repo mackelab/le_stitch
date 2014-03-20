@@ -40,9 +40,9 @@ for tr = 1:Trials
     MUsm0 = seq(tr).posterior.xsm(:,1:T-1);
     MUsm1 = seq(tr).posterior.xsm(:,2:T);
 
-    S11                = S11                + sum(Vsm(:,:,1:T-1),3)  + MUsm0*MUsm0';
+    S11                = S11                + sum(Vsm(:,:,2:T),3)  + MUsm1*MUsm1';
     S01(1:xDim,:)      = S01(1:xDim,:)      + sum(VVsm(:,:,1:T-1),3) + MUsm0*MUsm1';
-    S00(1:xDim,1:xDim) = S00(1:xDim,1:xDim) + sum(Vsm(:,:,2:T),3)    + MUsm1*MUsm1';
+    S00(1:xDim,1:xDim) = S00(1:xDim,1:xDim) + sum(Vsm(:,:,1:T-1),3)  + MUsm0*MUsm0';
 
     if params.model.notes.useB
       u = seq(tr).u(:,1:T-1);
@@ -64,10 +64,11 @@ if params.model.notes.learnA
   params.model.A  = S01'/S00;
 end
 params.model.Q  = (S11+params.model.A*S00*params.model.A'-S01'*params.model.A'-params.model.A*S01)./(sum(Tall)-Trials);
+%params.model.Q  = S11-S01'/S00*S01;
 params.model.Q  = (params.model.Q+params.model.Q')/2;
 
-[aQ bQ] = eig(params.model.Q);
-params.model.Q = aQ*diag(max(diag(bQ),0))*aQ';
+%[aQ bQ] = eig(params.model.Q);
+%params.model.Q = aQ*diag(max(diag(bQ),0))*aQ';
 
 if params.model.notes.useB
   params.model.B = params.model.A(:,1+xDim:end);
@@ -79,4 +80,12 @@ if params.model.notes.learnx0
 end
 
 x0dev = bsxfun(@minus,x0,params.model.x0);
-params.model.Q0 = (Q0 + x0dev*x0dev')./Trials;
+
+if params.model.notes.learnQ0
+  params.model.Q0 = (Q0 + x0dev*x0dev')./Trials;
+end
+
+if (min(eig(params.model.Q))<0) || (min(eig(params.model.Q0))<0)
+   keyboard
+   params.model.Q=params.model.Q+1e-9*eye(xDim);
+end

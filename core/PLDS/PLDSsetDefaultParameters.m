@@ -20,9 +20,10 @@ params.model = touchField(params.model,'B',zeros(xDim,0));
 params.model = touchField(params.model,'notes');
 
 params.model.notes = touchField(params.model.notes,'learnx0',true);
-params.model.notes = touchField(params.model.notes,'learnA',true);
-params.model.notes = touchField(params.model.notes,'useB',false);
-params.model.notes = touchField(params.model.notes,'useS',false);
+params.model.notes = touchField(params.model.notes,'learnQ0',true);
+params.model.notes = touchField(params.model.notes,'learnA', true);
+params.model.notes = touchField(params.model.notes,'useB',   false);
+params.model.notes = touchField(params.model.notes,'useS',   false);
 
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%
@@ -55,7 +56,7 @@ params.opts.algorithmic = touchField(params.opts.algorithmic,'VarInfX');
 params.opts.algorithmic.VarInfX = touchField(params.opts.algorithmic.VarInfX,'minFuncOptions');
 
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'display',	'none'); 
-params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'maxFunEvals',	50000);  
+params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'maxFunEvals',50000);  
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'MaxIter',	5000);
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'progTol',	1e-9);
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'optTol',	1e-5);
