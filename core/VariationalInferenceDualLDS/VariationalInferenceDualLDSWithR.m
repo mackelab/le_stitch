@@ -1,6 +1,6 @@
-function [seq] = VariationalInferenceDualLDS(params,seq,optparams)
+function [seq] = VariationalInferenceDualLDSWithR(params,seq,optparams)
 %
-% [seq] = VariationalInferenceDualLDS(params,seq);
+% [seq] = VariationalInferenceDualLDSWithR(params,seq);
 %
 %
 % do this for different normalizer than that of Poisson --> introduce base measure handle
@@ -34,6 +34,13 @@ for tr = 1:Trials
   if params.model.notes.useS
     VarInfparams.d = VarInfparams.d + vec(seq(tr).s);
   end
+
+  if params.model.notes.useR
+    VarInfparams.R = repmat(params.model.R,T,1);
+  else
+    VarInfparams.R = zeros(yDim*T,1);
+  end
+
   VarInfparams.mu = zeros(xDim,T); %prior mean
   VarInfparams.mu(:,1) = params.model.x0;
   if params.model.notes.useB;  VarInfparams.mu(:,1)=VarInfparams.mu(:,1)+params.model.B*seq(tr).u(:,1);end;
@@ -66,9 +73,9 @@ for tr = 1:Trials
     lamInit = seq(tr).posterior.lamOpt; 
   end
   
-  lamOpt = minFunc(@VariationalInferenceDualCost,lamInit,optparams.minFuncOptions,VarInfparams);
+  lamOpt = minFunc(@VariationalInferenceDualCostWithR,lamInit,optparams.minFuncOptions,VarInfparams);
     
-  [DualCost, ~, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v] = VariationalInferenceDualCost(lamOpt,VarInfparams);
+  [DualCost, ~, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v, n_ast, U_ast] = VariationalInferenceDualCost(lamOpt,VarInfparams);
 
 
   seq(tr).posterior.xsm        = reshape(m_ast,xDim,T);	      % posterior mean   E[x(t)|y(1:T)]
@@ -80,6 +87,10 @@ for tr = 1:Trials
   seq(tr).posterior.DualCost   = DualCost;
   seq(tr).posterior.over_m     = over_m;		      % C*xsm+d
   seq(tr).posterior.over_v     = over_v;		      % diag(C*Vsm*C')
-  
+
+  if params.model.notes.useR
+    seq(tr).posterior.n_ast    = n_ast;
+    seq(tr).posterior.U_ast    = U_ast;
+  end
   
 end

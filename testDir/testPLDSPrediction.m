@@ -13,6 +13,7 @@ Trials  = 1;
 tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0,'uDim',uDim);
 tp.model.B = tp.model.B;
 tp.model.Q = tp.model.Q/10;
+tp.model.R = tp.model.R*3;
 
 UA = randn(xDim); UA = (UA-UA')/2;
 tp.model.A       = expm(0.1*UA)*0.995*eye(xDim);
@@ -21,7 +22,7 @@ eig(tp.model.A)
 seqOrig = PLDSsample(tp,T,Trials);
 seq     = seqOrig;
 params  = tp;
-%params.model.notes.useB = false;
+
 
 %%%% prediction example
 

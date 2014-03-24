@@ -44,6 +44,15 @@ for tr=1:Trials
   h    = bsxfun(@plus,C*m,d);
   if params.model.notes.useS; h = h+seq(tr).s; end
   rho  = CC*Vsm;
+
+  if params.model.notes.useR
+    h    = h+seq(tr).posterior.n_ast;
+    R    = repmat(params.model.R,1,T);
+    Rlam = R.*reshape(seq(tr).posterior.lamOpt,yDim,T);
+    Rbar = R./(Rlam+1);
+    rho  = rho./((Rlam+1).^2)+Rbar;
+  end
+
   yhat = exp(h+rho/2);
 
   f    = f+sum(vec(y.*h-yhat));

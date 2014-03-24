@@ -47,6 +47,8 @@ params.model.C    = C;
 params.model.d    = d;
 params.model.R    = R;
 params.model.Pi   = dlyap(params.model.A,params.model.Q);
+params.model.notes.useR = true;
+
 
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));

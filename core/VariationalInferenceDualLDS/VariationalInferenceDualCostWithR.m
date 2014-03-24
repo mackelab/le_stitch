@@ -1,6 +1,6 @@
-function [f, df, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v] = VariationalInferenceDualCost(lam,VarInfparams);
+function [f, df, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v, n_ast, U_ast] = VariationalInferenceDualCostWithR(lam,VarInfparams);
 % 
-% [f, df, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v] = VariationalInferenceDualCost(lam,VarInfparams)
+% [f, df, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v] = VariationalInferenceDualCostWithR(lam,VarInfparams)
 %
 % Cost function for variational inference via dual optimization for
 % Gaussian LDS with exponential family observations
@@ -36,6 +36,7 @@ y        = VarInfparams.y; % observed data
 % check domain of lam
 if ~feval(VarInfparams.domainHandle,lam); f = inf; df = nan(size(lam)); return; end
 
+R  = VarInfparams.R;
 W  = VarInfparams.W;          		     	     % loading matrix, sparse, only blk-diag
 mu = VarInfparams.mu;         			     % prior mean
 if isfield(VarInfparams,'d')
@@ -52,22 +53,30 @@ WlamY         = W'*lamY;
 SigWlamY      = Lambda\WlamY;
 WlamYSigWlamY = WlamY'*SigWlamY;
 
+RlamY         = R.*lamY;
+Rlam          = R.*lam;
+lamYRlamY     = (lamY.^2)'*R;
+Rbar          = R./(lam.*R+1);
 
 %VarInfparams.WlamW  = sparse(zeros(xDim*T)); %debug-line, do note use, already pre-allocated
 for t=1:T
   xidx = ((t-1)*xDim+1):(t*xDim);
   yidx = ((t-1)*yDim+1):(t*yDim);
   %VarInfparams.WlamW(xidx,xidx) = VarInfparams.C'*diag(lam(yidx))*VarInfparams.C; %debug-line, use below
-  VarInfparams.WlamW(xidx,xidx) = reshape(VarInfparams.CC*lam(yidx),xDim,xDim);
+  %VarInfparams.WlamW(xidx,xidx) = reshape(VarInfparams.CC*lam(yidx),xDim,xDim);
+  Reff = 1./(R(yidx)+1./lam(yidx));
+  VarInfparams.WlamW(xidx,xidx) = reshape(VarInfparams.CC*Reff,xDim,xDim);
 end
 Alam       = Lambda+VarInfparams.WlamW;  % precision matrix of current variational approximation
 logdetAlam = logdet(Alam,'chol');
+logdetRlam = sum(log(Rlam+1));
 
 % function value
 
 [like_f, like_df] = feval(VarInfparams.dualHandle,lam,VarInfparams.dualParams);
 
-f = 0.5*WlamYSigWlamY-mu'*WlamY-d'*lamY-0.5*logdetAlam+like_f;
+f =     0.5*WlamYSigWlamY-mu'*WlamY-d'*lamY-0.5*logdetAlam+like_f;
+f = f + 0.5*lamYRlamY                      -0.5*logdetRlam;
   
 % catch infeasible lambdas
 if isinf(f)
@@ -96,21 +105,28 @@ for t=1:T
   lam_con(yidx) = VarInfparams.CC'*vec(Vsm(xidx,:));
 end
 
+lam_con_old = lam_con;
+lam_con = lam_con./((Rlam+1).^2)+Rbar;
 %df = W*SigWlamY-W*mu+loglam-0.5*diag(W/Alam*W'); %debug-line, use below
-df  = W*SigWlamY-W*mu-d-lam_con/2+like_df;
-
+df  =      W*SigWlamY-W*mu-d-lam_con./2+like_df;
+df  = df + RlamY;
 
 %%%%% compute variational lower bound
 
 m_ast    = mu-SigWlamY;  % optimal mean
 invV_ast = Alam;         % optimal inverse covariance
+n_ast    = -RlamY;
+U_ast    = Rbar + (Rbar.^2).*(lam.^2).*lam_con_old;
 
-over_m 	 = W*m_ast+d;
+over_m 	 = W*m_ast+d+n_ast;
 over_v	 = lam_con;
 over_m 	 = reshape(over_m,yDim,T);
 over_v   = reshape(over_v,yDim,T);
+n_ast    = reshape(n_ast,yDim,T);
+U_ast    = reshape(U_ast,yDim,T);
 
-varBound = -0.5*logdetAlam-0.5*WlamYSigWlamY+0.5*lam'*lam_con;                                            %prior contribution
+varBound =           -0.5*logdetAlam-0.5*WlamYSigWlamY+0.5*lam'*lam_con;                                            %prior contribution
+varBound = varBound - 0.5*logdetRlam-0.5*lamYRlamY;
 varBound = varBound - 0.5*logdet(VarInfparams.Q)*(T-1)-0.5*logdet(VarInfparams.Q0);
 
 varBound = varBound-sum(vec(feval(VarInfparams.likeHandle,y,over_m,over_v,VarInfparams.dualParams)));     %likelihood contribution

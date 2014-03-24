@@ -1,17 +1,17 @@
 clear all
 close all
 
-uDim    = 2;
-xDim    = 5;
+uDim    = 0;
+xDim    = 3;
 yDim    = 100;
 T       = 100;
-Trials  = 100;
-maxIter = 10;
+Trials  = 25;
+maxIter = 100;
 
 
 %%%% generate data
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.5,'uDim',uDim);
+trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-1.5,'uDim',uDim);
 seqOrig    = PLDSsample(trueparams,T,Trials);
 tp         = trueparams;
 fprintf('Max spike count:    %i \n', max(vec([seqOrig.y])))
@@ -24,13 +24,23 @@ fprintf('Freq non-zero bin:  %d \n', mean(vec([seqOrig.y])>0.5))
 seq    = seqOrig;
 params = [];
 if uDim>0;params.model.notes.useB = true;end
+
+%params.model.notes.useR   = true;
+%params.model.notes.learnR = true;
+%params.model.R = 0.01*ones(yDim,1);
+
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
+params.model.d = params.model.d-0.5*params.model.R;
 
 
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
+fprintf('Final subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
+
+figure
+plot(tp.model.R,params.model.R,'rx');
 
 
 %{
@@ -63,7 +73,7 @@ figure; hold on
 plot(seqPred(1).x','k')
 plot(condRange,seqInfTP(1).posterior.xsm','b')
 plot(predRange,xpredTP','r')
-%}
+
 
 
 %%% some plotting
@@ -97,3 +107,6 @@ plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*
 
 figure
 plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')
+
+%}
+

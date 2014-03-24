@@ -21,9 +21,14 @@ Trials = numel(T);
 [yDim xDim] = size(params.model.C);
 CQ          = chol(params.model.Q);
 CQ0         = chol(params.model.Q0);
-try
-  CR = chol(params.model.R);
-catch
+
+if isfield(params.model,'R') && params.model.notes.useR
+  R = params.model.R;
+  if size(R,2)==1
+    R = diag(R);
+  end
+  CR = chol(R);
+else
   CR = zeros(yDim);
 end
 
@@ -59,5 +64,6 @@ for tr=1:Trials
   end
 
 end
+
 
 
