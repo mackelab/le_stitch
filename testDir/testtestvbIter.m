@@ -6,7 +6,7 @@ xDim    = 3;
 yDim    = 30;
 T       = 100;
 Trials  = 5;
-maxIter = 100;
+maxIter = 25;
 
 
 %%%% generate data
@@ -31,12 +31,13 @@ fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
 
 params.model.inferenceHandle = @PLDSlpinf;
-params.model.CostFuncMethod  = @PLDSVariationalInference;
-params.model.inferenceHandle = @PLDSVariationalInference;
+%params.model.costFuncHandle  = @PLDSlpinf;
+params.model.costFuncHandle  = @PLDSVariationalInference;
+%params.model.inferenceHandle = @PLDSVariationalInference;
 
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
-tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
+tic; [params seq varBound EStepTimes MStepTimes] = testvbIter(params,seq); toc
 fprintf('Final subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
 

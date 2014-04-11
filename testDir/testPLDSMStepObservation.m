@@ -14,7 +14,7 @@ seq = PLDSsample(tp,T,Trials);
 
 
 params = tp;
-%params.model.R = params.model.R*0;
+
 tic
 seq = PLDSVariationalInference(params,seq);
 toc
@@ -37,8 +37,5 @@ plot(vec(tp.model.C),vec(params.model.C),'xr')
 figure
 plot(tp.model.d,params.model.d,'xr')
 
-figure; hold on
-plot(tp.model.R,params.model.R,'xr')
-plot([0 1],[0 1]) 
 
 

@@ -19,7 +19,7 @@ for tr=1:Trials
   s{tr}(1:20,:) = s{tr}(1:20,:)*1.5;
 end
 
-tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0);
+tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-1.0);
 tp.model.notes.useS = true;
 seqOrig    = PLDSsample(tp,T,Trials,'s',s);
 tp         = tp;
@@ -37,6 +37,8 @@ params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 %params = PLDSInitialize(seq,xDim,'NucNormMin',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
+%params.model.inferenceHandle = @PLDSlpinf;
+params.model.inferenceHandle = @PLDSVariationalInference;
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
@@ -51,6 +53,7 @@ params.model.Pi = dlyap(params.model.A,params.model.Q);
 
 figure
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
+
 
 
 

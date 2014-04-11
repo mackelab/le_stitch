@@ -9,16 +9,29 @@ Trials = 1;
 
 
 params = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-1.5);%,'uDim',uDim);
-params = LDSTransformParams(params,'TransformType','1');
+params.model.notes.useR = true;
+params.model.R = 0.3*rand(yDim,1)+0.1;
 seq = PLDSsample(params,T,Trials);
 max(vec([seq.y]))
 
 
 tic
-seq = PLDSVariationalInference(params,seq);
+seqnR = PLDSVariationalInference(params,seq);
 toc
 
-plotPosterior(seq,1);
+%params.model.R = zeros(yDim,1);
+tic
+seqR = PLDSVariationalInferenceWithR(params,seq);
+toc
+
+
+plotPosterior(seqnR,1,params);
+plotPosterior(seqR,1,params);
+
+norm([seqnR(1).posterior.xsm]-[seqR(1).posterior.xsm],'fro')
+seqnR(1).posterior.varBound
+seqR(1).posterior.varBound
+
 
 
 if uDim>0

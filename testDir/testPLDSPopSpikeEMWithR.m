@@ -3,9 +3,9 @@ close all
 
 uDim    = 0;
 xDim    = 3;
-yDim    = 30;
+yDim    = 100;
 T       = 100;
-Trials  = 5;
+Trials  = 25;
 maxIter = 100;
 
 
@@ -25,24 +25,23 @@ seq    = seqOrig;
 params = [];
 if uDim>0;params.model.notes.useB = true;end
 
+params.model.notes.useR   = true;
+params.model.notes.learnR = true;
+params.model.R = 0.01*ones(yDim,1);
+params.model.inferenceHandle = @PLDSVariationalInferenceWithR;
 
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
+params.model.d = params.model.d-0.5*params.model.R;
 
-
-params.model.inferenceHandle = @PLDSlpinf;
-params.model.CostFuncMethod  = @PLDSVariationalInference;
-params.model.inferenceHandle = @PLDSVariationalInference;
 
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
 fprintf('Final subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
-
-
-
-
+figure
+plot(tp.model.R,params.model.R,'rx');
 
 
 %{

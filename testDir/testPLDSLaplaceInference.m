@@ -1,18 +1,60 @@
 clear all
 close all
 
+%rng('default');
 
-xDim   = 3;
-yDim   = 30;
-T      = [100];
+uDim   = 2;   
+xDim   = 10;
+yDim   = 100;
+T      = 100;
 Trials = 1;
 
 
-params  = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.0);
+params  = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'uDim',uDim,'doff',-1.75);
 seqOrig = PLDSsample(params,T,Trials);
-seqVar  = feval(params.inferenceHandle,params,seqOrig)
-seq     = seqOrig;
 
+
+tic
+seqVarInf = PLDSVariationalInference(params,seqOrig);
+toc
+
+tic
+seqLpInf  = PLDSlpinf(params,seqOrig);
+toc
+
+Mu = getPriorMeanLDS(params,T,'seq',seqOrig(1));
+norm(seqVarInf.posterior.xsm-seqLpInf.posterior.xsm,'fro')/ ...
+    norm(seqVarInf.posterior.xsm-Mu,'fro')
+
+
+
+figure;
+hold on
+plot(vec(seqVarInf.posterior.Vsm),vec(seqLpInf.posterior.Vsm),'rx')
+
+%{
+figure; hold on
+plot(seqVarInf.posterior.xsm','k')
+plot(seqLpInf.posterior.xsm','r--')
+figure
+plot(Mu')
+%}
+
+
+
+
+%{
+seqVarInf2 = seqOrig;
+seqVarInf2.posterior.lamOpt = seqLpInf.posterior.lamOpt;
+params.opts.algorithmic.VarInfX.minFuncOptions.display = 'iter';
+
+tic
+seqVarInf2 = PLDSVariationalInference(params,seqVarInf2);
+toc
+%}
+
+
+%{
 %%%% outer loop over trials
 
 options.Method      = 'newton';
@@ -41,3 +83,4 @@ for tr=1:Trials
 
 end 
 
+%}

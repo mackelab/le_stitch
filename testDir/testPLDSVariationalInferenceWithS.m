@@ -3,8 +3,8 @@ close all
 
 uDim   = 0;
 xDim   = 10;
-yDim   = 150;
-T      = [150];
+yDim   = 100;
+T      = [100];
 Trials = 1;
 
 for tr=1:Trials
@@ -12,7 +12,7 @@ for tr=1:Trials
   s{tr} = [s{tr}' zeros(1,T(tr)-floor(T(tr)/10)*10)];
   s{tr} = repmat(s{tr},yDim,1);
   s{tr}(1:20,:) = s{tr}(1:20,:);
-  s{tr} = s{tr}*4;
+  s{tr} = s{tr}*5;
 end
 
 
@@ -26,6 +26,13 @@ tic
 seqInf = PLDSVariationalInference(params,seqInf);
 toc
 
+seqInfLp = seq;
+tic
+seqInfLp = PLDSlpinf(params,seqInfLp);
+toc
+
+
 plotPosterior(seqInf,1,params);
+plotPosterior(seqInfLp,1,params);
 
 
