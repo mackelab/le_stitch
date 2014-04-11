@@ -1,6 +1,6 @@
-function [params] = LDSApplyParamsTransformation(M,params,varargin)
+function [params, seq] = LDSApplyParamsTransformation(M,params,varargin)
 %
-% [params] = LDSTransformParams(M,params,varargin)
+% [params seq] = LDSApplyParamsTransformation(M,params,varargin)
 %
 % Applies M from left and inv(M)/M' from the right
 %
@@ -9,8 +9,11 @@ function [params] = LDSApplyParamsTransformation(M,params,varargin)
 %
 % L Buesing 2014
 
+seq = [];
 
 assignopts(who,varargin); 
+
+xDim = size(params.model.A,1);
 
 if cond(M)>1e3
    warning('Attempting LDSApplyParamsTransformation with ill-conditioned transformation')
@@ -28,4 +31,22 @@ end
 
 if isfield(params.model,'Pi')
    params.model.Pi = dlyap(params.model.A,params.model.Q);
+end
+
+if ~isempty(seq)
+ for tr=1:numel(seq)
+   if isfield(seq,'posterior')
+     seq(tr).posterior.xsm  = M*seq(tr).posterior.xsm;
+     for t = 1:size(seq(tr).y,2);
+       xidx = ((t-1)*xDim+1):(xDim*t);
+       seq(tr).posterior.Vsm(xidx,:)  = M*seq(tr).posterior.Vsm(xidx,:)*M';
+       if t>1;
+	 seq(tr).posterior.VVsm(xidx-xDim,:) = M*seq(tr).posterior.VVsm(xidx-xDim,:)*M';
+       end
+     end
+   end
+   if isfield(seq,'x')
+     seq(tr).x = M*seq(tr).x;
+   end
+ end
 end

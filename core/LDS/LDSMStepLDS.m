@@ -34,9 +34,14 @@ for tr = 1:Trials
     T = size(seq(tr).y,2);
     Tall  = [Tall T];
 
-    Vsm   = reshape(seq(tr).posterior.Vsm' ,xDim,xDim,T);
-    VVsm  = reshape(seq(tr).posterior.VVsm',xDim,xDim,T-1);
-    
+    if isfield(seq(tr).posterior,'Vsm')
+      Vsm   = reshape(seq(tr).posterior.Vsm' ,xDim,xDim,T);
+      VVsm  = reshape(seq(tr).posterior.VVsm',xDim,xDim,T-1);
+    else
+      Vsm   = reshape(seq(1).posterior.Vsm' ,xDim,xDim,T);
+      VVsm  = reshape(seq(1).posterior.VVsm',xDim,xDim,T-1);
+    end
+
     MUsm0 = seq(tr).posterior.xsm(:,1:T-1);
     MUsm1 = seq(tr).posterior.xsm(:,2:T);
 

@@ -67,9 +67,6 @@ for t = (tcRhi+1):tpRhi    % progagate prediction
        xpred(:,t-tpRlo+1) = xNow;
        xpredCov(:,:,t-tpRlo+1) = xCovNow;
        yr = params.model.C*xNow+params.model.d+0.5*diag(params.model.C*xCovNow*params.model.C');
-       if params.model.notes.useR
-	 yr = yr+0.5*params.model.R;
-       end
        if params.model.notes.useS
 	 yr = yr+s(:,t);
        end

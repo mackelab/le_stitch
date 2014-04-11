@@ -21,15 +21,3 @@ params.model.C = CdOpt(:,1:xDim);
 params.model.d = CdOpt(:,end);
 
 
-%%% Update private variances %%%
-
-if params.model.notes.useR && params.model.notes.learnR
-  n_ast = [];
-  U_ast = [];
-  for tr=1:numel(seq)
-    n_ast = [n_ast seq(tr).posterior.n_ast];
-    U_ast = [U_ast seq(tr).posterior.U_ast];	
-  end
-  params.model.R = mean(U_ast+n_ast.^2,2);
-end
-

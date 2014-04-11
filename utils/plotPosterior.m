@@ -27,7 +27,7 @@ figure; hold on; title('posterior')
 for i=1:numel(Pidx)
   subplot(numel(Pidx),1,i); hold on;
   pidx = Pidx(i);
-  errorbar(1:T,xsm(pidx,:),sqrt(xerr(pidx,:)),'r')
+  errorbar(1:T,xsm(pidx,:),xerr(pidx,:),'r')
   try;plot(1:T,seq(trId).x(pidx,:),'linewidth',2);end;
   plot(1:T,xsm(pidx,:),'r','linewidth',2)
   ylabel('x(t)');  
@@ -39,9 +39,20 @@ end
 if isfield(seq(1).posterior,'phi')
 try
   figure
-  plot(seq(1).posterior.phi,'rx','MarkerSize',10,'linewidth',2)
+  plot(seq(1).posterior.phi,'x','MarkerSize',10,'linewidth',2)
   xlabel('neuron no');ylabel('phi')
   %figSize = {14,10};
   %figuresize(figSize{:},'centimeters')
+
+%{
+  figure
+  piNow = exp(seq(1).posterior.phi);
+  piNow = bsxfun(@times,piNow,1./sum(piNow,2));
+  plot(piNow,'x','MarkerSize',10,'linewidth',2)
+  %plot(seq(1).posterior.phi,'rx','MarkerSize',10,'linewidth',2)
+  xlabel('neuron no');ylabel('pi')
+  %figSize = {14,10};
+  %figuresize(figSize{:},'centimeters')
+%}
 end
 end

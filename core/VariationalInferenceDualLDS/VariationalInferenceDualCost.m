@@ -117,3 +117,4 @@ varBound = varBound-sum(vec(feval(VarInfparams.likeHandle,y,over_m,over_v,VarInf
 if isfield(VarInfparams,'DataBaseMeasure');   % !!! put this into PLDSInitialize or smth
    varBound = varBound+VarInfparams.DataBaseMeasure;
 end
+

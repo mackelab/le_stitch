@@ -5,7 +5,7 @@ function params = PLDSgenerateExample(varargin)
 % generate a random PLDS model based on some inputs, 
 % using POisson or Bernoulli observations
 
-useR     = true;
+useR     = false;
 uDim     = 0;
 xDim     = 10;
 yDim     = 100;
@@ -43,12 +43,6 @@ params.model.x0   = x0;
 params.model.C    = C;
 params.model.d    = d;
 
-
-if useR
-  params.model.notes.learnR = true;
-  params.model.notes.useR   = true;
-  params.model.R = 0.2*rand(yDim,1)+0.01;
-end
 
 if BernFlag
     params.model.dualHandle = @LogisticBernoulliDualHandle;

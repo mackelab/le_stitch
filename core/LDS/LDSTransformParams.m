@@ -1,4 +1,6 @@
-function [params] = LDSTransformParams(params,varargin)
+function [params, seq] = LDSTransformParams(params,varargin)
+%
+% function [params, seq] = LDSTransformParams(params,varargin)
 %
 %
 % transform parameters of LDS by imposing constraints on C and the
@@ -21,6 +23,7 @@ function [params] = LDSTransformParams(params,varargin)
 %
 
 
+seq = [];
 TransformType   = '1';
 
 assignopts(who,varargin);
@@ -36,14 +39,14 @@ switch TransformType
   case '1'
 
        [UC,SC,VC]    = svd(params.model.C,0);
-       params        = LDSApplyParamsTransformation(SC*VC',params);
+       [params seq]  = LDSApplyParamsTransformation(SC*VC',params,'seq',seq);
 
        params.model.Pi     = dlyap(params.model.A,params.model.Q);
        if min(eig(params.model.Pi))<0
 	 params.model.Pi = params.model.Q;
        end
        [UPi SPi VPi] = svd(params.model.Pi);
-       params        = LDSApplyParamsTransformation(UPi',params);
+       [params seq]  = LDSApplyParamsTransformation(UPi',params,'seq',seq);
 
   case '2'  
   
@@ -53,10 +56,10 @@ switch TransformType
 	end
 	[UPi SPi VPi] = svd(params.model.Pi);
 	M    	      = diag(1./sqrt(diag(SPi)))*UPi';
-       	params        = LDSApplyParamsTransformation(M,params);    	
+       	[params seq]  = LDSApplyParamsTransformation(M,params,'seq',seq);    	
 
         [UC,SC,VC]    = svd(params.model.C,0);
-        params        = LDSApplyParamsTransformation(VC',params);  	
+        [params seq]  = LDSApplyParamsTransformation(VC',params,'seq',seq);  	
 
   otherwise
 	

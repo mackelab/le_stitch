@@ -3,16 +3,13 @@ function [seq] = VariationalInferenceDualLDS(params,seq,optparams)
 % [seq] = VariationalInferenceDualLDS(params,seq);
 %
 %
-% do this for different normalizer than that of Poisson --> introduce base measure handle
-%
-%
 % L Buesing 2014
 %
 
 
 Trials      = numel(seq);
 [yDim xDim] = size(params.model.C);
-
+Tmax        = max([seq.T]);
 
 % set up parameters for variational inference
 
@@ -23,6 +20,8 @@ for yy=1:yDim
 end
 VarInfparams.CC = reshape(VarInfparams.CC,xDim^2,yDim);
 
+Cl = {}; for t=1:Tmax; Cl = {Cl{:} params.model.C}; end
+Wmax = sparse(blkdiag(Cl{:}));
 
 % iterate over trials
 
@@ -30,27 +29,14 @@ for tr = 1:Trials
   
   T = size(seq(tr).y,2);
 
-  VarInfparams.d  = repmat(params.model.d,T,1);
-  if params.model.notes.useS
-    VarInfparams.d = VarInfparams.d + vec(seq(tr).s);
-  end
-  VarInfparams.mu = zeros(xDim,T); %prior mean
-  VarInfparams.mu(:,1) = params.model.x0;
-  if params.model.notes.useB;  VarInfparams.mu(:,1)=VarInfparams.mu(:,1)+params.model.B*seq(tr).u(:,1);end;
-  for t=2:T; 
-    VarInfparams.mu(:,t) = params.model.A*VarInfparams.mu(:,t-1); 
-    if params.model.notes.useB;  VarInfparams.mu(:,t)=VarInfparams.mu(:,t)+params.model.B*seq(tr).u(:,t);end;
-  end
-  VarInfparams.mu = vec(VarInfparams.mu);
+  VarInfparams.d          = repmat(params.model.d,T,1); if params.model.notes.useS; VarInfparams.d = VarInfparams.d + vec(seq(tr).s); end
+  VarInfparams.mu         = vec(getPriorMeanLDS(params,T,'seq',seq(tr)));
+  VarInfparams.W          = Wmax(1:yDim*T,1:xDim*T);  
+  VarInfparams.y          = seq(tr).y;
+  VarInfparams.Lambda     = buildPriorPrecisionMatrixFromLDS(params,T);  % generate prior precision matrix
+  VarInfparams.WlamW      = sparse(zeros(xDim*T)); %allocate sparse observation matrix
+  VarInfparams.dualParams = optparams.dualParams{tr};
   
-  Cl = {}; for t=1:T; Cl = {Cl{:} params.model.C}; end
-  VarInfparams.W      = sparse(blkdiag(Cl{:})); %stacked loading matrix
-  
-  VarInfparams.y      = seq(tr).y;
-  VarInfparams.Lambda = buildPriorPrecisionMatrixFromLDS(params,T);  % generate prior precision matrix
-  VarInfparams.WlamW  = sparse(zeros(xDim*T)); %allocate sparse observation matrix
-  % fix this: optparams.dualParams{tr} should default to 0
-  VarInfparams.dualParams      = optparams.dualParams{tr};
   if isfield(params.model,'baseMeasureHandle')
     VarInfparams.DataBaseMeasure = feval(params.model.baseMeasureHandle,seq(tr).y);
   end
@@ -65,6 +51,7 @@ for tr = 1:Trials
   if isfield(seq(tr),'posterior')&&isfield(seq(tr).posterior,'lamOpt')
     lamInit = seq(tr).posterior.lamOpt; 
   end
+  
   
   lamOpt = minFunc(@VariationalInferenceDualCost,lamInit,optparams.minFuncOptions,VarInfparams);
     
