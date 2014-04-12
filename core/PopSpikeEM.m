@@ -18,6 +18,7 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 % (c) L Buesing 01/2014
 
 
+vbIter = 10;
 
 Trials          = numel(seq); 
 maxIter         = params.opts.algorithmic.EMIterations.maxIter;
