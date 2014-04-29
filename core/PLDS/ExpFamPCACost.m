@@ -1,4 +1,4 @@
-function [f df] = ExpFamPCACost(CXd,Y,xDim,lambda,s)
+function [f df] = ExpFamPCACost(CXd,Y,xDim,lambda,s,CposConstrain)
 %
 % [f df] = ExpFamPCACost(CXd,Y,xDim,lambda)
 %
@@ -10,6 +10,7 @@ function [f df] = ExpFamPCACost(CXd,Y,xDim,lambda,s)
 d  = CXd(end-yDim+1:end);
 CX = reshape(CXd(1:end-yDim),yDim+T,xDim);
 C  = CX(1:yDim,:);
+if CposConstrain; C = exp(C); end;
 X  = CX(yDim+1:end,:)';
 
 nu = bsxfun(@plus,C*X+s,d);
@@ -21,6 +22,7 @@ YhatmY = Yhat-Y;
 
 gX = C'*YhatmY+lambda*X;
 gC = YhatmY*X'+lambda*C;
+if CposConstrain; gC = gC.*C; end
 gd = sum(YhatmY,2);
 
 df = [vec([gC;gX']);gd];

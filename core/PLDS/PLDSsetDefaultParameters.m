@@ -19,12 +19,13 @@ params.model = touchField(params.model,'d',zeros(yDim,1)-2.0); %mean-controlling
 params.model = touchField(params.model,'B',zeros(xDim,0));
 
 params.model = touchField(params.model,'notes');
-params.model.notes = touchField(params.model.notes,'learnx0',true);
-params.model.notes = touchField(params.model.notes,'learnQ0',true);
-params.model.notes = touchField(params.model.notes,'learnA', true);
-params.model.notes = touchField(params.model.notes,'learnR', false);
-params.model.notes = touchField(params.model.notes,'useB',   false);
-params.model.notes = touchField(params.model.notes,'useS',   false);
+params.model.notes = touchField(params.model.notes,'learnx0', true);
+params.model.notes = touchField(params.model.notes,'learnQ0', true);
+params.model.notes = touchField(params.model.notes,'learnA',  true);
+params.model.notes = touchField(params.model.notes,'learnR',  false);
+params.model.notes = touchField(params.model.notes,'useB',    false);
+params.model.notes = touchField(params.model.notes,'useS',    false);
+params.model.notes = touchField(params.model.notes,'useCMask',false);
 
 
 %%%%%%%%%%% set standard observation model handles for variational inference %%%%%%%%%%%%%%%%%%%%
@@ -59,7 +60,7 @@ params.opts.algorithmic.VarInfX = touchField(params.opts.algorithmic.VarInfX,'mi
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'display',	'none'); 
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'maxFunEvals',50000);  
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'MaxIter',	5000);
-params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'progTol',	1e-9);
+params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'progTol',	1e-6); % this might be too agressive, maybe 1e-9 is the better option
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'optTol',	1e-5);
 params.opts.algorithmic.VarInfX.minFuncOptions = touchField(params.opts.algorithmic.VarInfX.minFuncOptions,'Method',	'lbfgs');
 
@@ -84,8 +85,9 @@ params.opts.algorithmic.MStepObservation.minFuncOptions = touchField(params.opts
 params.opts.algorithmic = touchField(params.opts.algorithmic,'TransformType','0');         % transform LDS parameters after each MStep to canonical form?
 params.opts.algorithmic = touchField(params.opts.algorithmic,'EMIterations');
 params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'maxIter',100);			% max no of EM iterations
-params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'maxCPUTime',1200);		% max CPU time for EM
+params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'maxCPUTime',inf);		% max CPU time for EM
 params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'progTolvarBound',1e-6);     	% progress tolerance on var bound per data time bin
+params.opts.algorithmic.EMIterations = touchField(params.opts.algorithmic.EMIterations,'abortDecresingVarBound',true);
 
 
 %%%% set parameters for initialization methods %%%%
@@ -133,8 +135,8 @@ switch params.opts.initMethod
         params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'eps_rel',	1e-3);
         params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'maxIter',  	250);
         params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'nlin',     	'exp');
-        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'lambda',	0.3);
-        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'verbose',	1);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'lambda',	0.03);
+        params.opts.algorithmic.NucNormMin.options = touchField(params.opts.algorithmic.NucNormMin.options,'verbose',	0);
 
    otherwise
 	

@@ -18,8 +18,6 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 % (c) L Buesing 01/2014
 
 
-vbIter = 10;
-
 Trials          = numel(seq); 
 maxIter         = params.opts.algorithmic.EMIterations.maxIter;
 progTolvarBound = params.opts.algorithmic.EMIterations.progTolvarBound;  
@@ -51,13 +49,14 @@ for ii=1:maxIter
     %%%%%%% E-step: inference
 
     % do inference
-    infTimeBegin   = cputime;
-    try 
+    infTimeBegin = cputime;
+    NOWparams.opts.EMiter = ii;
+    %try 
       seq = InferenceMethod(NOWparams,seq);            %For variational method, varBound for each trials is saved in seq.posterior... ?
-    catch
-      disp('Error in inference, aborting EM iterations')
-      break
-    end
+    %catch
+    %  disp('Error in inference, aborting EM iterations')
+    %  break
+    %end
     infTimeEnd     = cputime;
     EStepTimes(ii) = infTimeEnd-infTimeBegin;
 
@@ -71,13 +70,14 @@ for ii=1:maxIter
     fprintf('\rIteration: %i     Elapsed time (EStep): %d     Elapsed time (MStep): %d     Variational Bound: %d',ii,EStepTimes(ii),MStepTimes(ii),varBound(ii))
 
     % check termination criteria
-    if varBound(ii)<varBoundMax    % check if varBound is increasing!
+    if params.opts.algorithmic.EMIterations.abortDecresingVarBound && (varBound(ii)<varBoundMax)    % check if varBound is increasing!
        NOWparams = PREVparams;	   % parameter backtracking
+       fprintf('\n ');
        warning('Variational lower bound is decreasing, aborting EM & backtracking');
        break;
     end
 
-    if (abs(varBound(ii)-varBoundMax)/Tall)<progTolvarBound
+    if params.opts.algorithmic.EMIterations.abortDecresingVarBound && ((abs(varBound(ii)-varBoundMax)/Tall)<progTolvarBound)
        fprintf('\nReached progTolvarBound for EM, aborting')
        break
     end	     
@@ -95,10 +95,12 @@ for ii=1:maxIter
     mstepTimeBegin = cputime;
     NOWparams = MstepMethod(NOWparams,seq);
     %NOWparams = PLDSMStep(NOWparams,seq);
-    mstepTimeEnd   = cputime;
+    mstepTimeEnd = cputime;
     MStepTimes(ii+1) = mstepTimeEnd-mstepTimeBegin;	      
 
 end
+
+NOWparams.opts = rmfield(NOWparams.opts,'EMiter');
 
 fprintf('\n----------------------------------------------------------------------------------------------------------------------------\n')
 disp('EM iterations done')

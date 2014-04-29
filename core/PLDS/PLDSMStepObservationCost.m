@@ -22,6 +22,7 @@ xDim    = size(params.model.A,1);
 
 CdMat   = reshape(vecCd,yDim,xDim+1);
 C       = CdMat(:,1:xDim);
+if params.model.notes.useCMask; C = C.*params.model.CMask; end
 d       = CdMat(:,end);
 
 CC      = zeros(yDim,xDim^2);
@@ -59,4 +60,5 @@ for tr=1:Trials
 end
 
 f  = -f;
+if params.model.notes.useCMask; df = df.*params.model.CMask; end
 df = -vec([df dfd]);

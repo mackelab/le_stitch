@@ -38,7 +38,7 @@ eps_rel = 1e-5;%1e-3;
 maxIter = 250;
 nlin    = 'exp';
 lambda  = 1;
-verbose = 1;
+verbose = 0;
 
 if nargin > 1
     for field = {'rho','eps_abs','eps_rel','maxIter','nlin','lambda','verbose'}
