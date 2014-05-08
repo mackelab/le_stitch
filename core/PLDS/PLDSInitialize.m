@@ -84,6 +84,7 @@ switch initMethod
 	   if params.model.notes.useB; u = [seq.u];else;u = [];end
 	   params.model = LDSObservedEstimation(Xv(:,1:xDim)',params.model,dt,u);
 	   params.model.Xpca = Xv(:,1:xDim)';
+	   params.model.Xs   = diag(Xs(1:xDim,1:xDim));
 	end
 	
 
