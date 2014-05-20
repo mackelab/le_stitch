@@ -3,7 +3,7 @@ function params = PLDSgenerateExample(varargin)
 % trueparams = PLDSgenerateExample(varargin)
 %
 % generate a random PLDS model based on some inputs, 
-% using POisson or Bernoulli observations
+% using Poisson or Bernoulli observations
 
 params   = [];
 useR     = false;
@@ -16,6 +16,7 @@ Arand    = 0.03;
 Q0max    = 0.3;
 BernFlag = false;
 doff     = -1.9;
+statFlag = false;
 
 assignopts(who,varargin);
 
@@ -52,8 +53,13 @@ end
 
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));
-  params.model.B    = cQ*(rand(xDim,uDim)+0.5)/(uDim);
+  params.model.B = cQ*(rand(xDim,uDim)+0.5)/(uDim);
   params.model.notes.useB = true;
+end
+
+if statFlag
+  params.model.x0 = zeros(xDim,1);
+  params.model.Q0 = dlyap(params.model.A,params.model.Q);
 end
 
 params = PLDSsetDefaultParameters(params,xDim,yDim);

@@ -2,7 +2,7 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 %
 % [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 %
-%Expectation algorithm for learning parameters of population model with spikes
+% Expectation maximization algorithm for learning parameters of population model with spikes
 %
 % input:
 % params:       struct,  see PopSikeEngine.m for a definition and description
@@ -10,8 +10,7 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 %
 % output: 
 % NOWparams:    struct, same as input-params but with updated and added fields
-% seq:          struct, same as input-struct but with added field
-% 'posterior'
+% seq:          struct, same as input-struct but with added field 'posterior'
 % varBound:     vector, variational bound (or other cost function) for each  iteration of EM
 % EStepTimes, MStepTimes: vector, cpu-time taken by each iteration
 %
@@ -51,18 +50,14 @@ for ii=1:maxIter
     % do inference
     infTimeBegin = cputime;
     NOWparams.opts.EMiter = ii;
-    %try 
-      seq = InferenceMethod(NOWparams,seq);            %For variational method, varBound for each trials is saved in seq.posterior... ?
-    %catch
-    %  disp('Error in inference, aborting EM iterations')
-    %  break
-    %end
+    try 
+      [seq varBound(ii)] = InferenceMethod(NOWparams,seq);            %For variational method, varBound for each trials is saved in seq.posterior... ?
+    catch
+      disp('Error in inference, aborting EM iterations')
+      break
+    end
     infTimeEnd     = cputime;
     EStepTimes(ii) = infTimeEnd-infTimeBegin;
-
-    % evaluate variational lower bound  !!! Will need to generalize to other cost functions... how to store cost etc....
-    varBound(ii) = 0;
-    for tr=1:Trials; varBound(ii) = varBound(ii)+seq(tr).posterior.varBound; end;
 
     % add regularizer costs to varBound !!!
     varBound(ii) = varBound(ii) - ParamPenalizerHandle(NOWparams);

@@ -1,4 +1,4 @@
-function seq = PLDSLaplaceInference(params,seq)
+function [seq varBound] = PLDSLaplaceInference(params,seq)
 %
 % function seq = PLDSlpinf(params,seq)
 %
@@ -41,3 +41,6 @@ for tr=1:Trials
   seq(tr).posterior.VVsm     = reshape(permute(seqRet.VV(:,:,2:end),[2 1 3]),xDim,xDim*(T-1))';
   seq(tr).posterior.lamOpt   = exp(vec(seqRet.Ypred));
 end
+
+varBound = 0;  
+for tr=1:Trials; varBound = varBound + seq(tr).posterior.varBound; end; 

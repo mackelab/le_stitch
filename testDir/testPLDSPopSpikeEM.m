@@ -30,8 +30,8 @@ params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
 
-params.model.inferenceHandle = @PLDSlpinf;
-params.model.CostFuncMethod  = @PLDSVariationalInference;
+%params.model.inferenceHandle = @PLDSlpinf;
+%params.model.CostFuncMethod  = @PLDSVariationalInference;
 params.model.inferenceHandle = @PLDSVariationalInference;
 
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;

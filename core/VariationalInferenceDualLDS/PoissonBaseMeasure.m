@@ -1,4 +1,4 @@
-function [f] = PoissonBaseMeasure(y);
+function [f] = PoissonBaseMeasure(y,params);
 %
 % log y!
 %

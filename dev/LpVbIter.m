@@ -1,4 +1,4 @@
-function [NOWparams seq varBound EStepTimes MStepTimes] = testvbIter(params,seq)
+function [NOWparams seq varBound EStepTimes MStepTimes] = LpVbIter(params,seq)
 %
 % [NOWparams seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq)
 %
@@ -18,12 +18,12 @@ function [NOWparams seq varBound EStepTimes MStepTimes] = testvbIter(params,seq)
 % (c) L Buesing 01/2014
 
 
-vbIter = 5;
-
 Trials          = numel(seq); 
 maxIter         = params.opts.algorithmic.EMIterations.maxIter;
 progTolvarBound = params.opts.algorithmic.EMIterations.progTolvarBound;  
 maxCPUTime      = params.opts.algorithmic.EMIterations.maxCPUTime;
+CostIter        = params.opts.algorithmic.EMIterations.CostIter;
+
 
 ParamPenalizerHandle = params.model.ParamPenalizerHandle;
 InferenceMethod      = params.model.inferenceHandle;
@@ -33,7 +33,7 @@ MstepMethod          = params.model.MStepHandle;
 
 EStepTimes      = nan(maxIter,1);
 MStepTimes      = nan(maxIter+1,1);
-varBound        = nan(ceil(maxIter/vbIter),1);
+varBound        = nan(ceil(maxIter/CostIter),1);
 PREVparams      = params;			     % params for backtracking!
 NOWparams       = params;
 varBoundMax     = -inf;
@@ -62,17 +62,16 @@ for ii=1:maxIter
     infTimeEnd     = cputime;
     EStepTimes(ii) = infTimeEnd-infTimeBegin;
 
-    if rem(ii-1,vbIter)==0
-      jj  = round((ii-1)/vbIter+1);
-      seq = CostFuncMethod(NOWparams,seq);
+    if rem(ii-1,CostIter)==0
+      jj  = round((ii-1)/CostIter+1);
+      seqCost = CostFuncMethod(NOWparams,seq);
    
-      % evaluate variational lower bound  !!! Will need to generalize to other cost functions... how to store cost etc....
+      % evaluate variational lower bound 
       varBound(jj) = 0;
-      for tr=1:Trials; varBound(jj) = varBound(jj)+seq(tr).posterior.varBound; end;
+      for tr=1:Trials; varBound(jj) = varBound(jj)+seqCost(tr).posterior.varBound; end;
 
-      % add regularizer costs to varBound !!!
+      % add regularizer costs to varBound
       varBound(jj) = varBound(jj) - ParamPenalizerHandle(NOWparams);
-
 
       % check termination criteria
       if varBound(jj)<varBoundMax    % check if varBound is increasing!
@@ -90,7 +89,7 @@ for ii=1:maxIter
       
     end
 
-    PREVparams  = NOWparams;
+    PREVparams = NOWparams;
     fprintf('\rIteration: %i     Elapsed time (EStep): %d       Elapsed time (MStep): %d        Variational Bound: %d',ii,EStepTimes(ii),MStepTimes(ii),varBound(jj))
 
     if (cputime-EMbeginTime)>maxCPUTime

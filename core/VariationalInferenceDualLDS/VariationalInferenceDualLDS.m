@@ -38,7 +38,8 @@ for tr = 1:Trials
   VarInfparams.dualParams = optparams.dualParams{tr};
   
   if isfield(params.model,'baseMeasureHandle')
-    VarInfparams.DataBaseMeasure = feval(params.model.baseMeasureHandle,seq(tr).y);
+    VarInfparams.DataBaseMeasure = feval(params.model.baseMeasureHandle,seq(tr).y,params);
+    seq(tr).posterior.DataBaseMeasure = VarInfparams.DataBaseMeasure;
   end
 
   % init value
@@ -67,6 +68,5 @@ for tr = 1:Trials
   seq(tr).posterior.DualCost   = DualCost;
   seq(tr).posterior.over_m     = over_m;		      % C*xsm+d
   seq(tr).posterior.over_v     = over_v;		      % diag(C*Vsm*C')
-  
   
 end
