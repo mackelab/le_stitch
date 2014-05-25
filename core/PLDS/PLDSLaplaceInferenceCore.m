@@ -1,4 +1,4 @@
-function smooth = qlds_fast_estep_poiss(data, params)
+function smooth = PLDSLaplaceInferenceCore(data, params)
 % Compute laplace-approximated posterior means and covariances for PLDS
 % (c) Evan Archer, 2014
 % 
@@ -101,7 +101,7 @@ while 1
     end
 
     % Let's see if we can't compute the likelihood. 
-%     fprintf('\ncomputing likelihood:\n')
+    % fprintf('\ncomputing likelihood:\n')
     
     XX = xx(:,2:end) - mps.A*xx(:,1:end-1) - H(:,2:end);
     X0 = (xx(:,1) - mps.initx - H(:,1));
