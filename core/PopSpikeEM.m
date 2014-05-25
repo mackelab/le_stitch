@@ -50,12 +50,12 @@ for ii=1:maxIter
     % do inference
     infTimeBegin = cputime;
     NOWparams.opts.EMiter = ii;
-    try 
+    %try 
       [seq varBound(ii)] = InferenceMethod(NOWparams,seq);            %For variational method, varBound for each trials is saved in seq.posterior... ?
-    catch
-      disp('Error in inference, aborting EM iterations')
-      break
-    end
+    % catch
+    %  disp('Error in inference, aborting EM iterations')
+    %  break
+    %end
     infTimeEnd     = cputime;
     EStepTimes(ii) = infTimeEnd-infTimeBegin;
 

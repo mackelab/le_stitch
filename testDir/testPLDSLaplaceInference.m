@@ -3,11 +3,11 @@ close all
 
 %rng('default');
 
-uDim   = 2;   
-xDim   = 10;
-yDim   = 100;
+uDim   = 0;   
+xDim   = 3;
+yDim   = 30;
 T      = 100;
-Trials = 1;
+Trials = 3;
 
 
 params  = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'uDim',uDim,'doff',-1.75);
@@ -15,15 +15,15 @@ seqOrig = PLDSsample(params,T,Trials);
 
 
 tic
-seqVarInf = PLDSVariationalInference(params,seqOrig);
+[seqVarInf varBoundVB] = PLDSVariationalInference(params,seqOrig);
 toc
 
 tic
-seqLpInf  = PLDSLaplaceInference(params,seqOrig);
+[seqLpInf varBoundLP] = PLDSLaplaceInference(params,seqOrig);
 toc
 
 Mu = getPriorMeanLDS(params,T,'seq',seqOrig(1));
-norm(seqVarInf.posterior.xsm-seqLpInf.posterior.xsm,'fro')/norm(seqVarInf.posterior.xsm-Mu,'fro')
+norm(seqVarInf(1).posterior.xsm-seqLpInf(1).posterior.xsm,'fro')/norm(seqVarInf(1).posterior.xsm-Mu,'fro')
 
 
 

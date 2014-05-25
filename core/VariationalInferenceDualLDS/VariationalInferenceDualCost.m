@@ -14,6 +14,7 @@ function [f, df, varBound, m_ast, invV_ast, Vsm, VVsm, over_m, over_v] = Variati
 % VarInfparams.A
 % VarInfparams.WlamW
 % VarInfparams.d
+% VarInfparams.CC
 %
 % OUTPUT:
 % f        = dual cost
