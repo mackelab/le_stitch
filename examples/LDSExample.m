@@ -21,7 +21,7 @@ Trials  = 25;		    										% no trials
 
 %%%% ground truth model
 
-trueparams = LDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);		% create ground truth model parameters
+trueparams = LDSgenerateExample('xDim',xDim,'yDim',yDim,'doff',-2.0);                                   % create ground truth model parameters
 seqOrig    = LDSsample(trueparams,T,Trials);								% sample from the model
 
 
