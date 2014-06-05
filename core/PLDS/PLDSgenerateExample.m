@@ -17,6 +17,7 @@ Q0max    = 0.3;
 BernFlag = false;
 doff     = -1.9;
 statFlag = false;
+Bscale   = 1.0;
 
 assignopts(who,varargin);
 
@@ -53,7 +54,7 @@ end
 
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));
-  params.model.B = cQ*(rand(xDim,uDim)+0.5)/(uDim);
+  params.model.B = cQ*(rand(xDim,uDim)+0.5)/(uDim)*Bscale;
   params.model.notes.useB = true;
 end
 
