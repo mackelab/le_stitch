@@ -1,6 +1,4 @@
 % PLDS toolbox example
-% 
-%
 %
 % Lars Buesing, Jakob H Macke, 2014
 %
@@ -10,55 +8,68 @@ clear all
 close all
 
 
-% set parameters for the ground truth model
+% set parameters for the ground truth PLDS model
  
 xDim    = 5;												% latent dimensiom
 yDim    = 100;											    	% observed dimension = no of neurons
 T       = 100;												% no of time bins per trial; here a time step is approx 10ms 
 Trials  = 25;		    										% no trials
-maxIter = 50;		    										% max no of EM iterations for fitting the model
+maxIter = 100;		    										% max no of EM iterations for fitting the model
 
 
 %%%% ground truth model
 
-trueparams = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',-2.0);		% create ground truth model parameters
+trueparams = PLDSgenerateExample('xDim',xDim,'yDim',yDim,'doff',-2.0);                                  % create ground truth model parameters
 seqOrig    = PLDSsample(trueparams,T,Trials);								% sample from the model
 tp         = trueparams;										
-hist(mean([seqOrig.y]'));										% histogram of mean firing rates
+
+% print out some statistics of the artificial data
+fprintf('Max spike count:    %i \n', max(vec([seqOrig.y])))
+fprintf('Mean spike count:   %d \n', mean(vec([seqOrig.y])))
+fprintf('Freq non-zero bin:  %d \n', mean(vec([seqOrig.y])>0.5))
 
 
-%%%% fitting a model to data
+%%%% fitting a model to artificial data
 
 seq    = seqOrig;
 params = [];
-params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);							% initialize parameters using exponential family PCA, alternatives are 'PLDSID', 'NucNormMin'
 
+% initialize parameters, options are:
+% - Poisson SSID 'PLDSID', see [Spectral learning of linear dynamics from generalised-linear observations with application to neural population data. Buesing et al. 2012 NIPS]
+% - Nuclear norm penalized rate estimation 'NucNormMin' [Robust learning of low-dimensional dynamics from large neural ensembles. Pfau et al. NIPS 2013]
+% - Exponential family 'ExpFamPCA'
+params = PLDSInitialize(seq,xDim,'NucNormMin',params);
+
+params.model.inferenceHandle = @PLDSLaplaceInference;                                                   % comment out for using variational infernce
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;						% setting max no of EM iterations
 params.opts.algorithmic.EMIterations.maxCPUTime  = 600;							% setting max CPU time for EM to 600s
-tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
+tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc;                         % do EM iterations
+fprintf('Subspace angle between true and estimated loading matrices: %d\n',subspace(tp.model.C,params.model.C))
 
 
-%%%% compare models
+%%%% compare ground thruth and estimated model
 
-subspace(tp.model.C,params.model.C)
+figure;
+plot(varBound)
+title('expected log-likelihood as function of EM iterations')
 
-sort(eig(tp.model.A))
-sort(eig(params.model.A))
+hf = figure(); hold on
+plotMatrixSpectrum(tp.model.A,'figh',hf,'col','k');
+plotMatrixSpectrum(params.model.A,'figh',hf,'col','r');
+title('true (black) and estimated (red) eigenvalues of dynamics matrix')
 
 tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
 params.model.Pi = dlyap(params.model.A,params.model.Q);
 
 figure
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
+title('true vs estimated elements of the stationary rate covariance matrix')
 
 figure
 plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
+title('true vs estimated elements of one time step delayed cross-covariance matrix')
 
 figure
 plot(tp.model.d,params.model.d,'rx');
+title('true vs estimated bias parameters')
 
-figure
-plot(vec(tp.model.C*tp.model.Q0*tp.model.C'),vec(params.model.C*params.model.Q0*params.model.C'),'xr')
-
-figure
-plot(tp.model.C*tp.model.x0,params.model.C*params.model.x0,'xr')
