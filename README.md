@@ -1,11 +1,3 @@
-# This is my README
-
-PLDS example script 
-
-Useful references:
-
-
-
 
 # Welcome
 
