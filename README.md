@@ -1,7 +1,8 @@
 # Welcome
 
-written by: - Lars Buesing, contact: lars@stat.columbia.edu
-            - Jakob Macke
+written by: 
+* Lars Buesing, contact: lars@stat.columbia.edu
+* Jakob Macke
 
 This repository contains different methods for linear dynamical system models with Poisson observations. It has been developed and implemented with the goal of modelling spike-train recordings from neural populations, but at least some of the methods will be applicable more generally. 
 
