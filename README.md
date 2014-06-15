@@ -1,8 +1,10 @@
 # Welcome
 
 written by: 
-* Lars Buesing, contact: lars@stat.columbia.edu
+* Lars Buesing, (primary contact): lars@stat.columbia.edu 
+
 * Jakob Macke
+
 
 This repository contains different methods for linear dynamical system models with Poisson observations. It has been developed and implemented with the goal of modelling spike-train recordings from neural populations, but at least some of the methods will be applicable more generally. 
 
@@ -29,16 +31,15 @@ The code is published under the GNU General Public License. The code is provided
 
 The code is based on 
 
-### Jakob H Macke, Lars Buesing, John P Cunningham, M Yu Byron, Krishna V Shenoy, and Maneesh
-Sahani. Empirical models of spiking in neural populations. In NIPS, pages 1350–1358, 2011.
+### Jakob H Macke, Lars Buesing, John P Cunningham, M Yu Byron, Krishna V Shenoy, and Maneesh Sahani. Empirical models of spiking in neural populations. In NIPS, pages 1350–1358, 2011.
 
-### Lars Buesing, Jakob H Macke, and Maneesh Sahani. Spectral learning of linear dynamics from
-generalised-linear observations with application to neural population data. In NIPS, pages 1691–1699,
-2012.
+### Lars Buesing, Jakob H Macke, and Maneesh Sahani. Spectral learning of linear dynamics from generalised-linear observations with application to neural population data. In NIPS, pages 1691–1699, 2012.
 
-### David Pfau, Eftychios A Pnevmatikakis, and Liam Paninski. Robust learning of low-dimensional dynam-
-ics from large neural ensembles. In NIPS, pages 2391–2399, 2013.
+### David Pfau, Eftychios A Pnevmatikakis, and Liam Paninski. Robust learning of low-dimensional dynamics from large neural ensembles. In NIPS, pages 2391–2399, 2013.
 
 and some of the methods are also described in 
 
 ### JH Macke, L Buesing, M Sahani: Estimating state and model parameters in state-space models of spike trains. Book-chapter, in preparation.
+
+The code-package makes use of the optimisation-package minFunc, written by Mark Schmidt,
+http://www.di.ens.fr/~mschmidt/Software/minFunc.html.
