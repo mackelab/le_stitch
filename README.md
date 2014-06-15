@@ -34,6 +34,8 @@ The code is based on
 
 ### Jakob H Macke, Lars Buesing, John P Cunningham, M Yu Byron, Krishna V Shenoy, and Maneesh Sahani. Empirical models of spiking in neural populations. In NIPS, pages 1350–1358, 2011.
 
+[download paper](https://bitbucket.org/mackelab/pop_spike_dyn/downloads/Buesing_Macke_2013_PLSID.pdf)
+
 ### Lars Buesing, Jakob H Macke, and Maneesh Sahani. Spectral learning of linear dynamics from generalised-linear observations with application to neural population data. In NIPS, pages 1691–1699, 2012.
 
 ### David Pfau, Eftychios A Pnevmatikakis, and Liam Paninski. Robust learning of low-dimensional dynamics from large neural ensembles. In NIPS, pages 2391–2399, 2013.
