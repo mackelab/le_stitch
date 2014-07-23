@@ -15,6 +15,7 @@ function [params, seq] = LDSTransformParams(params,varargin)
 % 2: C'*C = diag 	&& 		Pi = eye
 % 3: ||C(:,k)||_2 = 1
 % 4: P_ii = 1
+% 5: Pi = diag          &&              A  = blk-diag
 %
 % (c) 2014 Lars Busing   lars@stat.columbia.edu
 %

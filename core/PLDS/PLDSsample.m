@@ -13,8 +13,9 @@ assignopts(who,varargin);
 
 seq = LDSsample(params,T,Trials,varargin{:});
 
+
 for tr=1:Trials
-  seq(tr).yr   = seq(tr).y;
+  seq(tr).yr   = real(seq(tr).y);
   seq(tr).y    = poissrnd(exp(seq(tr).yr));
   seq(tr).y(:) = min(yMax,seq(tr).y(:));
 end

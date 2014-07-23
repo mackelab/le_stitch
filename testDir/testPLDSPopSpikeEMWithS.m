@@ -1,11 +1,11 @@
 clear all
 close all
 
-uDim    = 0;
+uDim    = 2;
 xDim    = 3;
-yDim    = 150;
+yDim    = 50;
 T       = 100;
-Trials  = 25;
+Trials  = 250;
 maxIter = 25;
 
 
@@ -32,13 +32,13 @@ fprintf('Freq non-zero bin:  %d \n', mean(vec([seqOrig.y])>0.5))
 
 seq    = seqOrig;
 params = [];
-params.model.notes.useS = true;
+%params.model.notes.useS = true;
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 %params = PLDSInitialize(seq,xDim,'NucNormMin',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
-%params.model.inferenceHandle = @PLDSlpinf;
-params.model.inferenceHandle = @PLDSVariationalInference;
+params.model.inferenceHandle = @PLDSLaplaceInference;
+%params.model.inferenceHandle = @PLDSVariationalInference;
 params.opts.algorithmic.EMIterations.maxIter     = maxIter;
 params.opts.algorithmic.EMIterations.maxCPUTime  = inf;
 tic; [params seq varBound EStepTimes MStepTimes] = PopSpikeEM(params,seq); toc
@@ -54,7 +54,8 @@ params.model.Pi = dlyap(params.model.A,params.model.Q);
 figure
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')
 
-
+figure
+plot(vec(tp.model.C*tp.model.A*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.A*params.model.Pi*params.model.C'),'xr')
 
 
 

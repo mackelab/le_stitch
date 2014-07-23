@@ -23,8 +23,10 @@ Pi   = X*X'./T;
 if ~model.notes.useB
 
   A  = X(:,2:end)/X(:,1:end-1);         % find A via regression
-  if dt>1                               % account for sub-sampling 
-    A = diag(min(max((diag(abs(A))).^(1/dt),0),1));   
+  if dt>1                               
+    %A = diag(min(max((diag(abs(A))).^(1/dt),0),1)); 
+    % clearly, this needs fixing !!!
+     A = diag(min(max(diag(abs(A)),0.1),1));
   end
   Q  = Pi-A*Pi*A';                      % residual covariance
 

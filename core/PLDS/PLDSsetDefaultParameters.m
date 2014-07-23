@@ -23,6 +23,7 @@ params.model.notes = touchField(params.model.notes,'learnx0', true);
 params.model.notes = touchField(params.model.notes,'learnQ0', true);
 params.model.notes = touchField(params.model.notes,'learnA',  true);
 params.model.notes = touchField(params.model.notes,'learnR',  false);
+params.model.notes = touchField(params.model.notes,'useR',    false);
 params.model.notes = touchField(params.model.notes,'useB',    false);
 params.model.notes = touchField(params.model.notes,'useS',    false);
 params.model.notes = touchField(params.model.notes,'useCMask',false);
