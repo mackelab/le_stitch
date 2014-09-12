@@ -15,7 +15,7 @@ function [params, seq] = LDSTransformParams(params,varargin)
 % 2: C'*C = diag 	&& 		Pi = eye
 % 3: ||C(:,k)||_2 = 1
 % 4: P_ii = 1
-% 5: Pi = diag          &&              A  = blk-diag
+% 5: A = blk-diag       &&              ||C(:,k)||_2 = 1
 %
 % (c) 2014 Lars Busing   lars@stat.columbia.edu
 %
@@ -75,6 +75,13 @@ switch TransformType
   M = diag(1./sqrt(diag(Pi)));
   [params seq] = LDSApplyParamsTransformation(M,params,'seq',seq);
   
+ case '5'
+
+  [T B] = bdschur(params.model.A,inf);
+  [params seq] = LDSApplyParamsTransformation(pinv(T),params);
+  [params seq] = LDSApplyParamsTransformation(diag(sqrt(sum(params.model.C.^2,1))),params,'seq',seq);
+
+
  otherwise
   
   warning('Unknow paramter transformation type')

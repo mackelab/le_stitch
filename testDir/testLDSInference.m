@@ -13,7 +13,7 @@ params  = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 seqOrig = LDSsample(params,T,Trials);
 
 seq = seqOrig;
-[seq Lambda LambdaPost] = LDSInference(params,seq);
+[seq varBound Lambda LambdaPost] = LDSInference(params,seq);
 
 plotPosterior(seq,1);
 

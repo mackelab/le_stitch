@@ -2,8 +2,8 @@ clear all
 close all
 
 
-uDim   = 2;
-xDim   = 5;
+uDim   = 0
+xDim   = 10;
 yDim   = 100;
 T      = 1000;
 Trials = 1;    
@@ -21,7 +21,7 @@ tp.model.PiY = tp.model.C*tp.model.Pi*tp.model.C';
 % random transformation works!
 
 [params] = LDSApplyParamsTransformation(randn(xDim)+0.1*eye(xDim),tp);
-[params] = LDSTransformParams(params,'TransformType','1');
+[params] = LDSTransformParams(params,'TransformType','5');
 
 params.model.C'*params.model.C
 dlyap(params.model.A,params.model.Q)

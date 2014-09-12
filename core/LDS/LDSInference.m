@@ -1,10 +1,10 @@
-function [seq Lambda LambdaPost] = LDSInference(params,seq)
+function [seq varBound Lambda LambdaPost] = LDSInference(params,seq)
 %
 % simplest Kalman smoother in O(T)
 %
 % assume all trials are of the same length T
 %
-% !!! align this with convention for returning cost such that it works with PopSpikeEM.m
+
 
 
 [yDim xDim] = size(params.model.C);  
@@ -31,24 +31,30 @@ end
 
 %%%%%%%%%%%%%%%%% means %%%%%%%%%%%%%%%%
 
+varBound = -0.5*T*Trials*yDim;
+
+Mu = getPriorMeanLDS(params,T);
+LamMu = Lambda*vec(Mu);
+
 for tr=1:Trials
-  Mu = zeros(xDim,T);
-  Mu(:,1) = params.model.x0;
-  if params.model.notes.useB; Mu(:,1) = Mu(:,1)+params.model.B*seq(tr).u(:,1);end;
 
-  for t=2:T
-    Mu(:,t) = params.model.A*Mu(:,t-1);
-     if params.model.notes.useB; Mu(:,t) = Mu(:,t)+params.model.B*seq(tr).u(:,t);end;
-  end
-
-  Mu = Lambda*vec(Mu);
-  Y  = bsxfun(@minus,seq(tr).y,params.model.d);
+  Y = bsxfun(@minus,seq(tr).y,params.model.d);
   if params.model.notes.useS
     Y = Y-seq.s;
   end
+  Yraw = Y;
   Y  = params.model.R\Y;
   Y  = params.model.C'*Y;
-  seq(tr).posterior.xsm  = reshape(LambdaPost\(Mu+vec(Y)),xDim,T);
+  seq(tr).posterior.xsm  = reshape(LambdaPost\(LamMu+vec(Y)),xDim,T);
   seq(tr).posterior.Vsm  = Vsm;
   seq(tr).posterior.VVsm = VVsm;
+
+  Yraw = Yraw-params.model.C*Mu;
+  varBound = varBound - 0.5*trace(params.model.R\(Yraw*Yraw'));
+
+  Yraw = vec(params.model.C'*(params.model.R\Yraw));
+  varBound = varBound + 0.5*Yraw'*(LambdaPost\Yraw);
+
 end
+
+varBound = varBound - 0.5*Trials*(logdet(LambdaPost,'chol')-logdet(Lambda,'chol')+T*logdet(params.model.R));

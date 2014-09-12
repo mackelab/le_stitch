@@ -23,18 +23,13 @@ infparams.runinfo    = runinfo;
 infparams.notes      = params.model.notes;
 
 Tmax = max([seq.T]);
-Mu   = zeros(xDim,Tmax); Mu(:,1) = params.model.x0;
-for t=2:Tmax
-  Mu(:,t) = params.model.A*Mu(:,t-1);
-end
-
 for tr=1:Trials
   T = size(seq(tr).y,2);
   indat = seq(tr);
   if isfield(seq(tr),'posterior') && isfield(seq(tr).posterior,'xsm')
     indat.xxInit = seq(tr).posterior.xsm;
   else
-    indat.xxInit = Mu(:,1:T);
+    indat.xxInit = getPriorMeanLDS(params,T,'seq',seq(tr));
   end
   seqRet = PLDSLaplaceInferenceCore(indat, infparams);
   seq(tr).posterior.xsm      = seqRet.x;
