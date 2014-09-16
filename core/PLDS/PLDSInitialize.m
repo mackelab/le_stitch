@@ -97,5 +97,5 @@ if params.model.notes.useB && (numel(params.model.B)<1)
   params.model.B = zeros(xDim,size(seq(1).u,1));
 end
 
-%params = LDSTransformParams(params,'TransformType',params.opts.algorithmic.TransformType);	% clean up parameters
+params = LDSTransformParams(params,'TransformType',params.opts.algorithmic.TransformType);	% clean up parameters
 params.modelInit = params.model;

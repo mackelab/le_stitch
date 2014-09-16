@@ -29,6 +29,12 @@ function [Y,Xu,Xs,Xv,d,cost] = MODnucnrmminWithd( S, opts, varargin )
 Yinit = [];
 dinit = [];
 Yext  = [];
+
+f   = [];
+df  = [];
+d2f = [];
+
+
 assignopts(who,varargin);
 
 % set default values
@@ -60,10 +66,8 @@ switch nlin
         f   = @(x) exp(x).*(x<0) + (1+x).*(x>=0);
         df  = @(x) exp(x).*(x<0) + (x>=0);
         d2f = @(x) exp(x).*(x<0);
-    case 'logexp'
-        f   = @(x) log(1+exp(x));
-        df  = @(x) 1./(1+exp(-x));
-        d2f = @(x) exp(-x)./(1+exp(-x)).^2;
+    otherwise
+        disp('NucNormMin: using user-defined link function')
 end
 
 if ~isempty(Yinit)
@@ -72,7 +76,7 @@ else
   switch nlin  % crude ADMM initialization
    case 'exp'
     x = log(max(S,1))-Yext;
-   case {'soft','logexp'}
+   otherwise
     x = max(S-1,0)-Yext;
   end
 end
@@ -99,37 +103,38 @@ if verbose>0;
 end
 
 while ( nr_p > e_p || nr_d > e_d ) && iter < maxIter % Outer loop of ADMM
-    stopping = Inf; % stopping criterion
-    x_old = x;
-    if verbose == 2, fprintf('\tNewton:\t Obj\t\t Stopping\t\n'); end
-    while stopping/norm(x,'fro') > 1e-6 % Outer loop of Newton's method
-        switch nlin
-            case 'exp'
-                h =  exp( bsxfun(@plus,x+Yext,d) ); % diagonal of Hessian
-                g =  exp( bsxfun(@plus,x+Yext,d) ) - S; % gradient
-            otherwise
-		warning('not implemented')
-                h =  d2f( x ) - S .* ( d2f( x ) .* f( x ) - df( x ).^2 ) ./ f( x ).^2;
-                g =  df ( x ) - S .* df( x ) ./ f( x );
-                g(isnan(g)) = 0;
-                h(isnan(h)) = 0;
-        end
-        
-        grad = g + rho*(x-X) + Z;
-        dx = -inv_hess_mult(h,grad);
-        
-	gd = sum(g,2);%+lambda*d;
-	hd = sum(h,2);%+lambda;
-	dd = -gd./hd;
-
-	% upadate
-	x = x + dx;
-	d = d + dd;	
-
-        stopping = abs(grad(:)'*dx(:)+dd'*gd);
-        if verbose == 2 % verbosity level
-            fprintf('\t\t %1.2e \t %1.2e\n', obj(x), stopping)
-        end
+  stopping = Inf; % stopping criterion
+  x_old = x;
+  if verbose == 2, fprintf('\tNewton:\t Obj\t\t Stopping\t\n'); end
+  while stopping/norm(x,'fro') > 1e-6 % Outer loop of Newton's method
+    xEval = bsxfun(@plus,x+Yext,d);
+    switch nlin
+     case 'exp'
+      h =  exp( xEval ); % diagonal of Hessian
+      g =  exp( xEval ) - S; % gradient
+     otherwise
+      h =  d2f( xEval ) - S .* ( d2f( xEval ) .* f( xEval ) - df( xEval ).^2 ) ./ f( xEval ).^2;
+      g =  df ( xEval ) - S .* df( xEval ) ./ f( xEval );
+      g(isnan(g)) = 0;
+      h(isnan(h)) = 0;
+    end
+    
+    grad = g + rho*(x-X) + Z;
+    dx = -inv_hess_mult(h,grad);
+    
+    %!!! fix here
+    gd = sum(g,2);%+lambda*d;
+    hd = sum(h,2);%+lambda;
+    dd = -gd./hd;
+    
+    % upadate
+    x = x + dx;
+    d = d + dd;	
+    
+    stopping = abs(grad(:)'*dx(:)+dd'*gd);
+    if verbose == 2 % verbosity level
+      fprintf('\t\t %1.2e \t %1.2e\n', obj(x), stopping)
+    end
     end
     dx = norm(x_old-x,'fro')/norm(x,'fro');
 

@@ -48,7 +48,7 @@ params.model.d    = d;
 params.model.R    = R;
 params.model.Pi   = dlyap(params.model.A,params.model.Q);
 params.model.notes.useR = true;
-
+params.model.notes.useS = false;
 
 if uDim>0
   cQ = max(abs(diag(chol(params.model.Q))));
@@ -57,3 +57,6 @@ if uDim>0
 else 
   params.model.notes.useB = false;
 end
+
+params = LDSsetDefaultParameters(params,xDim,yDim);
+
