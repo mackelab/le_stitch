@@ -1,4 +1,4 @@
-function params = LDSMStep(params,seq)
+function [params seq] = LDSMStep(params,seq)
 %
 % params = LDSMStep(params,seq) 
 %

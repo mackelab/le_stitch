@@ -1,4 +1,4 @@
-function params = PLDSMStep(params,seq)
+function [params seq] = PLDSMStep(params,seq)
 %
 % params = PLDSMStep(params,seq) 
 %
