@@ -28,7 +28,14 @@ else
     params.model.Q{mm}  = M * params.model.Q{mm}  * M';
   end
 end
-params.model.Q0 = M * params.model.Q0 * M';
+
+if ~iscell(params.model.Q0)
+  params.model.Q0 = M * params.model.Q0 * M';
+else
+  for mm=1:numel(params.model.Q)
+    params.model.Q0{mm} = M * params.model.Q0{mm} * M';
+  end
+end
 params.model.x0 = M * params.model.x0;
 
 if isfield(params.model,'B')
