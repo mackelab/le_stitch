@@ -65,7 +65,7 @@ for idx = 1:runinfo.nStateDim
    poiss_hess_blk(idx,:,:) = -mps.C'*bsxfun(@times, Lambda, mps.C(:,idx));
 end
 
-poiss_grad = sparse(squeeze(sum(YC,1))');
+poiss_grad = sparse(reshape(sum(YC,1),size(data.y,2), runinfo.nStateDim)');
 poiss_hess = spblkdiag(poiss_hess_blk);
 
 %% Add the latent and observation hessian & gradient
