@@ -32,7 +32,7 @@ end
 if ~iscell(params.model.Q0)
   params.model.Q0 = M * params.model.Q0 * M';
 else
-  for mm=1:numel(params.model.Q)
+  for mm=1:numel(params.model.Q0)
     params.model.Q0{mm} = M * params.model.Q0{mm} * M';
   end
 end
