@@ -53,7 +53,6 @@ Tall        = sum([seq.T]);
 EMbeginTime = cputime;
 
 %!!!
-
 varBoundTr = zeros(Trials,1);
 seq = InferenceMethod(NOWparams,seq);
 for tr=1:Trials

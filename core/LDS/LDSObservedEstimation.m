@@ -18,7 +18,8 @@ function model = LDSObservedEstimation(X,model,dt,u)
 
 xDim = size(X,1);
 T    = size(X,2);
-Pi   = X*X'./T;
+Pi   = cov(X');
+X    = subMeanDim(X,2);
 
 if ~model.notes.useB
 
