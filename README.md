@@ -1,5 +1,7 @@
 # Welcome
 
+**More information at [www.mackelab.org](www.mackelab.org)**
+
 This package is written by: 
 
 * Lars Buesing (primary contact), lars@stat.columbia.edu 
