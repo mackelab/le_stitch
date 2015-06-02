@@ -21,8 +21,21 @@ end
 
 params.model.C  =     params.model.C  / M;
 params.model.A  = M * params.model.A  / M;
-params.model.Q  = M * params.model.Q  * M';
-params.model.Q0 = M * params.model.Q0 * M';
+if ~iscell(params.model.Q)
+  params.model.Q  = M * params.model.Q  * M';
+else
+  for mm=1:numel(params.model.Q)
+    params.model.Q{mm}  = M * params.model.Q{mm}  * M';
+  end
+end
+
+if ~iscell(params.model.Q0)
+  params.model.Q0 = M * params.model.Q0 * M';
+else
+  for mm=1:numel(params.model.Q0)
+    params.model.Q0{mm} = M * params.model.Q0{mm} * M';
+  end
+end
 params.model.x0 = M * params.model.x0;
 
 if isfield(params.model,'B')
@@ -30,7 +43,11 @@ if isfield(params.model,'B')
 end
 
 if isfield(params.model,'Pi')
-   params.model.Pi = dlyap(params.model.A,params.model.Q);
+  if ~iscell(params.model.Q)
+    params.model.Pi = dlyap(params.model.A,params.model.Q);
+  else
+    params.model.Pi = dlyap(params.model.A,params.model.Q{1});
+  end
 end
 
 if ~isempty(seq)

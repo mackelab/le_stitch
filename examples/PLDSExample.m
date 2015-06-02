@@ -31,6 +31,15 @@ fprintf('Freq non-zero bin:  %d \n', mean(vec([seqOrig.y])>0.5))
 
 %%%% fitting a model to artificial data
 
+% the input data is in the structure seq, where seq(tr) is the data
+% from trial tr
+% 
+% this struct has the fields:
+% - seq.y   of dimension N x T for a spike raster from N neurons recorded for T time-steps
+% - seq.T   2nd dimension of seq.y
+% - [optional] seq.x   true value of latent variables used to generate seq.y
+% - [optional] seq.yr  the rate of the Poisson process used to generate seq.y
+ 
 seq    = seqOrig;
 params = [];
 

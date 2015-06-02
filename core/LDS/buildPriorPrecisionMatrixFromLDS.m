@@ -16,7 +16,7 @@ AinvQ  = params.model.A'*invQ;
 AinvQA = AinvQ*params.model.A;
 
 
-Lambda = sparse(T*xDim,T*xDim); %changed this to make matrix sparse immediately to avoid allocation of dense matrix
+Lambda = sparse(T*xDim,T*xDim);
 Lambda(1:xDim,1:xDim) = invQ0;
 
 for t=1:T-1

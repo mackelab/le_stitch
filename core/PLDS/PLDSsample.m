@@ -15,7 +15,7 @@ assignopts(who,varargin);
 
 if isfield(params.model,'linkFunc')
   linkFunc = params.model.linkFunc;
-  disp('Using non-exp link function for sampling')
+  %disp('Using non-exp link function for sampling')
 else
   linkFunc = @exp;
 end

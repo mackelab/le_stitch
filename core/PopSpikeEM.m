@@ -44,7 +44,7 @@ EMbeginTime = cputime;
 
 %%%%%%%%%%% outer EM loop
 for ii=1:maxIter
-  try
+  %try
     NOWparams.state.EMiter = ii;
 
     %%%%%%% E-step: inference
@@ -90,17 +90,19 @@ for ii=1:maxIter
     %%%%%%% M-step
 
     mstepTimeBegin = cputime;
-    NOWparams = MstepMethod(NOWparams,seq);
+    [NOWparams seq] = MstepMethod(NOWparams,seq);
     %NOWparams = PLDSMStep(NOWparams,seq);
     mstepTimeEnd = cputime;
     MStepTimes(ii+1) = mstepTimeEnd-mstepTimeBegin;	      
-  catch
+    %{  
+catch
     NOWparams = PREVparams;     % parameter backtracking
     fprintf('\n ');
     warning('Aborting EM & backtracking');
     disp('Error in PopSpikeEM')
     break
   end
+  %}
 end
 
 NOWparams.opts = rmfield(NOWparams.opts,'EMiter');
