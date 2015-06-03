@@ -27,7 +27,7 @@ assignopts(who,varargin);
 A  = eye(xDim)+Arand*randn(xDim);
 A  = A./max(abs(eig(A)))*Aspec;
 Q  = diag(rand(xDim,1));
-Q0 = dlyap(A,Q);
+Q0 = direct_dlyap(A,Q);
 M  = diag(1./sqrt(diag(Q0)));
 A  = M*A*pinv(M);
 Q  = M*Q*M'; Q=(Q+Q)/2;
@@ -54,7 +54,7 @@ end
 
 if statFlag
   params.model.x0 = zeros(xDim,1);
-  params.model.Q0 = dlyap(params.model.A,params.model.Q);
+  params.model.Q0 = direct_dlyap(params.model.A,params.model.Q);
 end
 
 params = PLDSLinkFuncsetDefaultParameters(params,xDim,yDim);

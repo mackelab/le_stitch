@@ -24,7 +24,7 @@ tp.model.PiY = tp.model.C*tp.model.Pi*tp.model.C';
 [params] = LDSTransformParams(params,'TransformType','5');
 
 params.model.C'*params.model.C
-dlyap(params.model.A,params.model.Q)
+direct_dlyap(params.model.A,params.model.Q)
 
 
 params.model.PiY = params.model.C*params.model.Pi*params.model.C';
@@ -75,5 +75,5 @@ params.xo = params.model.x0;params.model.Qo = params.model.Q0;
 sum(abs(tpLL-LL))./sum(abs(tpLL))
 
 params.model.C'*params.model.C
-dlyap(params.model.A,params.model.Q)
+direct_dlyap(params.model.A,params.model.Q)
 %}

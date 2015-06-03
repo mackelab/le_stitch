@@ -44,9 +44,9 @@ end
 
 if isfield(params.model,'Pi')
   if ~iscell(params.model.Q)
-    params.model.Pi = dlyap(params.model.A,params.model.Q);
+    params.model.Pi = direct_dlyap(params.model.A,params.model.Q);
   else
-    params.model.Pi = dlyap(params.model.A,params.model.Q{1});
+    params.model.Pi = direct_dlyap(params.model.A,params.model.Q{1});
   end
 end
 

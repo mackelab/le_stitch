@@ -89,7 +89,7 @@ x0dev = bsxfun(@minus,x0,params.model.x0);
 if params.model.notes.learnQ0
   params.model.Q0 = (Q0 + x0dev*x0dev')./Trials;
 else
-  params.model.Q0 = dlyap(params.model.A,params.model.Q);
+  params.model.Q0 = direct_dlyap(params.model.A,params.model.Q);
 end
 
 if (min(eig(params.model.Q))<0) || (min(eig(params.model.Q0))<0)

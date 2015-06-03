@@ -6,7 +6,7 @@ function [params, seq] = LDSTransformParams(params,varargin)
 % transform parameters of LDS by imposing constraints on C and the
 % stationary distribution Pi.
 %
-%  Pi := dlyap(params.model.A,params.model.Q)   stationary distribution
+%  Pi := direct_dlyap(params.model.A,params.model.Q)   stationary distribution
 %
 % TransformType:
 %
@@ -42,7 +42,7 @@ switch TransformType
   [UC,SC,VC]    = svd(params.model.C,0);
   [params seq]  = LDSApplyParamsTransformation(SC*VC',params,'seq',seq);
   
-  params.model.Pi     = dlyap(params.model.A,params.model.Q);
+  params.model.Pi     = direct_dlyap(params.model.A,params.model.Q);
   if min(eig(params.model.Pi))<0
     params.model.Pi = params.model.Q;
   end
@@ -51,7 +51,7 @@ switch TransformType
   
  case '2'  
   
-  params.model.Pi = dlyap(params.model.A,params.model.Q);
+  params.model.Pi = direct_dlyap(params.model.A,params.model.Q);
   if min(eig(params.model.Pi))<0
     params.model.Pi = params.model.Q;
   end
@@ -68,7 +68,7 @@ switch TransformType
 
  case '4'
 
-  Pi = dlyap(params.model.A,params.model.Q);
+  Pi = direct_dlyap(params.model.A,params.model.Q);
   if min(eig(Pi))<0
     Pi = params.model.Q;
   end

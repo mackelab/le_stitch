@@ -26,7 +26,7 @@ A  = eye(xDim)+Arand*randn(xDim);
 A  = A./max(abs(eig(A)))*Aspec;
 MAS = randn(xDim); MAS = (MAS-MAS')/2;A  = expm(Arot.*(MAS))*A;
 Q  = diag(rand(xDim,1));
-Q0 = dlyap(A,Q);
+Q0 = direct_dlyap(A,Q);
 M  = diag(1./sqrt(diag(Q0)));
 A  = M*A*pinv(M);
 Q  = M*Q*M'; Q=(Q+Q)/2;
@@ -46,7 +46,7 @@ params.model.x0   = x0;
 params.model.C    = C;
 params.model.d    = d;
 params.model.R    = R;
-params.model.Pi   = dlyap(params.model.A,params.model.Q);
+params.model.Pi   = direct_dlyap(params.model.A,params.model.Q);
 params.model.notes.useR = true;
 params.model.notes.useS = false;
 

@@ -12,7 +12,7 @@ maxIter = 50;
 %%%% generate data
 
 tp = PLDSgenerateExample('T',T,'Trials',Trials,'xDim',xDim,'yDim',yDim,'doff',0.5,'uDim',uDim);
-tp.model.Q = dlyap(tp.model.A,tp.model.Q)/5;
+tp.model.Q = direct_dlyap(tp.model.A,tp.model.Q)/5;
 tp.model.A = zeros(xDim);
 tp = LDSTransformParams(tp,'TransformType','2');
 tp.model.Q0 = eye(xDim);
@@ -38,7 +38,7 @@ params.opts.algorithmic.TransformType = '2';
 
 params = PLDSInitialize(seq,xDim,'ExpFamPCA',params);
 fprintf('Initial subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
-params.model.Q  = dlyap(params.model.A,params.model.Q);
+params.model.Q  = direct_dlyap(params.model.A,params.model.Q);
 params.model.A  = zeros(xDim);
 params = LDSTransformParams(params,'TransformType','2');
 params.model.Q0 = eye(xDim);
@@ -55,8 +55,8 @@ fprintf('Final subspace angle:  %d \n', subspace(tp.model.C,params.model.C))
 
 subspace(tp.model.C,params.model.C)
 
-tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
-params.model.Pi = dlyap(params.model.A,params.model.Q);
+tp.model.Pi     = direct_dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = direct_dlyap(params.model.A,params.model.Q);
 
 figure
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')

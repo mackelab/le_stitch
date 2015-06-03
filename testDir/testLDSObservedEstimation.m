@@ -12,7 +12,7 @@ dt     = 1;
 tp  = LDSgenerateExample('xDim',xDim,'yDim',yDim,'uDim',uDim);
 tp.model.Q = tp.model.Q+diag(rand(xDim,1));
 %tp.model.A = diag(0.9+0.1*rand(xDim,1));
-tp.model.Q0 = dlyap(tp.model.A,tp.model.Q);
+tp.model.Q0 = direct_dlyap(tp.model.A,tp.model.Q);
 seq = LDSsample(tp,T,Trials);
 model.notes.useB = true;
 
@@ -28,7 +28,7 @@ model = LDSObservedEstimation(Xsub,model,dt,[seq.u]);
 
 % compare stationary covariance, very important that this is reasonable
 figure
-plot(vec(dlyap(tp.model.A,tp.model.Q)),vec(dlyap(model.A,model.Q)),'rx')
+plot(vec(direct_dlyap(tp.model.A,tp.model.Q)),vec(direct_dlyap(model.A,model.Q)),'rx')
 
 
 figure

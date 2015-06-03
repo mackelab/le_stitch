@@ -21,8 +21,8 @@ figure
 plot(tp.model.d,params.model.d,'rx')
 
 figure
-tp.model.Pi = dlyap(tp.model.A,tp.model.Q);
-params.model.Pi =  dlyap(params.model.A,params.model.Q);
+tp.model.Pi = direct_dlyap(tp.model.A,tp.model.Q);
+params.model.Pi =  direct_dlyap(params.model.A,params.model.Q);
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'rx');
 
 figure
@@ -54,7 +54,7 @@ figure
 plot(tp.model.d,dest,'rx')
 
 figure
-plot(vec(tp.model.C*dlyap(tp.model.A,tp.model.Q)*tp.model.C'),vec(Cest*cov(Xest')*Cest'),'rx');
+plot(vec(tp.model.C*direct_dlyap(tp.model.A,tp.model.Q)*tp.model.C'),vec(Cest*cov(Xest')*Cest'),'rx');
 
 Cest'*Cest
 Xest*Xest'./T

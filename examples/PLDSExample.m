@@ -67,8 +67,8 @@ plotMatrixSpectrum(tp.model.A,'figh',hf,'col','k');
 plotMatrixSpectrum(params.model.A,'figh',hf,'col','r');
 title('true (black) and estimated (red) eigenvalues of dynamics matrix')
 
-tp.model.Pi     = dlyap(tp.model.A,tp.model.Q);
-params.model.Pi = dlyap(params.model.A,params.model.Q);
+tp.model.Pi     = direct_dlyap(tp.model.A,tp.model.Q);
+params.model.Pi = direct_dlyap(params.model.A,params.model.Q);
 
 figure
 plot(vec(tp.model.C*tp.model.Pi*tp.model.C'),vec(params.model.C*params.model.Pi*params.model.C'),'xr')

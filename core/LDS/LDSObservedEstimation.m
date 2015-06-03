@@ -67,7 +67,7 @@ end
 [Uq Sq Vq] = svd(Q);                   % ensure that Q is pos def
 Q  = Uq*diag(max(diag(Sq),0))*Uq';
 x0 = zeros(xDim,1);
-Q0 = dlyap(A,Q);
+Q0 = direct_dlyap(A,Q);
 
 
 model.A  = A;
