@@ -140,6 +140,7 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
         
         updateParsList = [A,Q,mu0,V0,C,R]
         
+        
     elif ssmType == 'inputARLDS':
                        
         if dims.size != 3:
@@ -335,10 +336,23 @@ def checkInDims(dims):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
+""" this function is mostly convenience stuff and needs some work """
 def rotatePars(pars, W=None, sortIdx=None):
-    
-    pars = pars.copy()
-    
+    """OUT = rotatePars(pars*, W, sortIdx)
+    pars:    list or np.ndarray of (multivariate) parameters to rotate and flip
+    W:       base change matrix (has to be invertible)
+    sortIdx: permutation index for individual components of the parameters
+    OUT: x converted to ndarray 
+    function that serves to rotate the parameters of an LDS to reflect a change 
+    of base in the latent space. This change of base is desirable to compare 
+    the results of an LDS fitting algorithm to ground truth latent states and
+    parameters (if available). 
+    """    
+    pars = pars.copy() # never rotate true pars (remember most giveSomething() 
+                       # methods in this code package directly return pointers
+                       # to data, parameters etc., instead of making copies).
+                       # if results shall apply to the parameters stored in a 
+                       # timeSeriesModel object, use updatePars()    
     if not W is None:
         Winv = np.linalg.inv(W)
         Wtr  = W.transpose()
@@ -367,7 +381,7 @@ def toArray(x):
     """OUT = toArray(x*)
     x:   integer, float, list or ndarray
     OUT: x converted to ndarray 
-    convenience function that automatically converts integers and lists into
+    Convenience function that automatically converts integers and lists into
     corresponding numpy ndarrays. Does not change input that already is ndarray
     """
     if isinstance(x, (numbers.Integral,float)):
@@ -402,34 +416,14 @@ class timeSeries:
 
     To allow complex models with e.g. latent state hierachy (X ~ Poiss(exp(Z)),
     the variable groups Y, X and U can be further divided into subgroups.
-
-    INPUT to constructor:
     
-    input to be passed on to timeSeriesData constructor:
-    xGr                   subgrouping of latent states
-    yGr                   subgrouping of observed states (output data)
-    uGr                   subgrouping of input variables ( input data)
-    T                     length of observation sequence
-    numTrials             vector of numbers of trials per experiment
-    innovationNoiseDistr  | distributions for different (conditional) 
-    emissionNoiseDistr    | probability distributions of the time series. These  
-    inputNoiseDistr       | variables determine the exact state space model!
-                          | supported values (for homogeneous systems): 
-                          |'none', 'gaussian', 'categorical'
-    RNGseed               unsigned 32bit integer to seed the random number 
-                          generator used when generating surrogate/toy data 
-                          
-    input to alternative constructor .fromuxyDim:                            
-    uDim                  dimensionality of input variables ( input data)
-    xDim                  dimensionality of latent states
-    yDim                  dimensionality of observed states (output data)
-
-    object VARIABLES and METHODS:
-    seq                   (pointer to) object
-    seq.data              (pointer to) timeSeries data object
+    Constructor is called without arguments - objects of this class mostly
+    serve as containers for other objects and as scaffold for object 
+    communication
     
-    seq.reinitData()     re-initializes (i.e. overwrites!) the data object 
-                          containing sampled timeSeries data
+    VARIABLES and METHODS: 
+    giveEmpirical()    - returns the timeSeriesObject 'empirical' that stores
+                         the data model and actual data
     """
     
     objDescr = 'state_space_model_series'  
@@ -445,7 +439,7 @@ class timeSeries:
         
     def giveEmpirical(cls):
         """ OUT = .giveEmpirical()
-        OUT: returns timeSeriesObject empirical containing e.g. training data
+        OUT: returns timeSeriesObject 'empirical' containing training data
         """
         return cls._empirical
                 
@@ -472,6 +466,25 @@ class timeSeriesObject:
     and seeding has to be adjusted potentially also with some non-built-in
     RNG functions.
     
+    INPUT to constructor: 
+    tag:       string for tagging 'empirical' vs. 'analysis' objects 
+    seqObject: pointer to object that called the constructor for this object.
+               Possibly == None, but usually a timeSeries() object 
+    
+    VARIABLES and METHODS: 
+    .objectDescr   - always equals 'state_space_model_object' 
+    .tag           - tags 'empirical' and 'analysis' timeSeriesObject()s
+    .supportedTags - gives supported tags
+    .setModel()    - sets the model specifications (type, variables, parameters)
+    .fitModel()    - fits the model to data stored in the 'empirical' object
+    .resetData()   - sets curent 'empirical' to an empty timeSeriesData object
+    .addData()     - adds specified amount of data drawn from the current model
+    .giveData()    - returns pointer to the attached timeSeriesData object
+    .giveModel()   - returns pointer to the attached timeSeriesModel object
+    .giveMotherObject() - returns pointer provided at object instantiation, 
+                         usually the superordinate timeSeries object
+    _initModel()  - initiates a timeSeriesModel() object
+
     """
     objDescr = 'state_space_model_object'      
     
@@ -490,8 +503,10 @@ class timeSeriesObject:
             print(self.supportedTags)
             raise Exception('chosen timeSeriesObject tag type not supported.')
             
-        self._seqObject = seqObject
+        self._seqObject = seqObject # if provided, store 'mother' object
+        
         self._model = self._initModel('unknown')
+        self._data = timeSeriesData(self)  
 
     def _initModel(cls, modelDescr='unknown'):
         cls._model = timeSeriesModel().defaultModel(modelDescr)
@@ -506,8 +521,44 @@ class timeSeriesObject:
                   noiseInteractions=None,
                   initDistrs=None,
                   isHomogeneous=True ):     
-        """ .setModel(modelClass, modelDescr, xGr, yGr, uGr, deps, ... )
-                                                                            I NEED TO BE DESCRIBED IN MORE DETAIL
+        """ .setModel(modelClass, modelDescr, xGr, yGr, uGr, dts, deps,
+                      linkFunctions,noiseDistrs,noiseInteractions,initDistrs,
+                      isHomogeneous)
+        modelClass:   string specifying the model class, e.g.'stateSpace'
+        modelDescr:   string specifying the model type, e.g. 'LDS'
+        xGr:          np.ndarray of size xDim that specifies the assigned 
+                      subgroup of each latent variable. Implicitly defines 
+                      xDim with xGr.size!
+        yGr:          np.ndarray of size yDim that specifies the assigned 
+                      subgroup of each observed variable. Defines yDim! 
+        uGr:          np.ndarray of size uDim that specifies the assigned 
+                      subgroup of each input variable. Defines uDim!
+        dts:          np.ndarray that gives the relative time steps that 
+                      are relevant for evaluating the variables of the 
+                      current step. E.g. for a classic LDS, dt = -1 
+                      (dependency of x on x) and dt = 0 (dep. of y on x)
+                      are relevant and dts = np.array([-1,0]) in this case
+        deps:         list of np.ndarrays. Length of list has to match size
+                      of dts. Each entry of the list is a 2D binary array
+                      specifying which subgroups of X, Y depend on which
+                      other subgroups of X,Y and U. 
+        linkFunctions:     list of lists of strings specifying the types and
+                           parameters of the deterministic parts of the condi-
+                           tional distr.s linking subgroups of X, Y and U
+        noiseDistrs:       list of lists of strings specifying the types and
+                           parameters of the random parts of the conditional
+                           distributionss linking subgroups of X, Y and U
+        noiseInteractions: list of lists of strings specifying how the random
+                           and deterministic parts of the conditional distri-
+                           butions interact. E.g. '+', 'multiplicative', '^'
+        initDistrs:        list of lists of lists of strings specifying the
+                           probability distributions of the intial time steps.
+                           Length of outermost list has to match dts.size 
+        isHomogeneous: boolean that specifies whether the model is 
+                       homogeneous over time                      
+        Sets a pre-stored (but potentially not yet configurated) model to 
+        specific model type, variable description and parameter set.
+
         """
         
         if deps is None:
@@ -534,6 +585,18 @@ class timeSeriesObject:
                  experiment=0, 
                  trials=None, 
                  times=None): 
+        """ .fitModel(maxIter,epsilon,initPars, 
+                      ifPlotProgress,experiment,trials,times)
+        maxIter:  maximum allowed iterations for iterative fitting (e.g. EM)
+        epsilon:  convergence criterion, e.g. difference of log-likelihoods
+        initPars: set of parameters to start fitting. If == None, the 
+                  parameters currently stored in the model will be used 
+        ifPlotProgress: boolean, specifying if fitting progress is visualized
+        experiment: integer index for stored experiment
+        trials:  ndarray of indices for stored trials in selected experiment
+        times:   ndarray of indices for time steps in selected experiment
+        Fits the stored model to data stored in the 'empirical' object.
+        """
         LLs = cls._model.fit(maxIter,epsilon,initPars,ifPlotProgress,
                              experiment,trials,times)
         return LLs
@@ -554,11 +617,15 @@ class timeSeriesObject:
     def addData(cls,
                 numTrials=np.array([1]),
                 Ts=np.array([42]),                 
-                RNGseed=None):
+                RNGseed=42):
         """ .addData(numTrials,Ts,RNGseed)
         numTrials: ndarray of number of trials to add for new experiment(s)
         Ts:        ndarray of trial lengths for new experiment(s) 
         RNGseed:   integer specifying desired random seed used for new data
+        Adds data of one or several new experiments to the timeSeriesData
+        object attached to this timeSeriesObject. Not specifying the random
+        seed will always intialize it to the same value! Use an RNG and 
+        provide it as third argument if random outcomes are wanted.
         """
         
         try:
@@ -594,6 +661,7 @@ class timeSeriesObject:
         """OUT = .returnMotherObject()
         OUT: object that called the constructor for this object (possibly None)
         """
+        
         return cls._seqObject            
                             
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
@@ -620,14 +688,11 @@ class timeSeriesData:
     
     
     INPUT to constructor:
-    tsobject:             pointer (to object that called the constructor)
+    tsobject:             pointer to object that called the constructor. 
+                          Possibly none, but usually a timeSeriesObject()
 
-
-    imporntant object VARIABLES and METHODS:
-    data._y               observed data sequence(s) | All of these are of size=   
-    data._x               latent state sequence(s)  | [xyuDim, T, Trials] and 
-    data._u               input sequence(s)         | may come seeded with  
-                                                    | i.i.d. noise
+    VARIABLES and METHODS:
+    .objectDescr          always equals 'state_space_model_data' 
     .addExperiment()      primary method of adding data to this data store
     .giveNumExperiments() returns number of experiments
     .giveNumTrials()      returns number of trials for selected experiments
@@ -637,8 +702,13 @@ class timeSeriesData:
     .giveTracesY()        returns (slices of) data for output variables Y
     .giveTraces()         returns (slices of) data for full groups X,Y,U
     .giveMotherObject()   returns object one step above in object hierarchy 
-    ._seediidNoise()      allocates memory for the time series of a particular 
+    _seediidNoise()       allocates memory for the time series of a particular 
                           (group of) variables, and (optionally) seeds noise
+    _sampleModelGivenNoiseSeed() samples from given model given noise-seeded
+                                 np.ndarrays for data storage
+    _condsToIdx()         translates from lists of conditional dependencies
+                          into lists of indexes for quick reference within
+                          data storages
     """
     objDescr = 'state_space_model_data'      
     
@@ -659,11 +729,15 @@ class timeSeriesData:
                       numTrials=np.array([1]),
                       Ts=np.array([42]), 
                       RNGseed=42):
-        """addExperiment(timeSeriesObject*,Ts,numTrials,RNGseed)
+        """ .addExperiment(Ts,numTrials,RNGseed)
         timeSeriesObject: object that holds timeSeriesModel object
         Ts:        numExperiments-by-1 ndarray of trial lengths
         numTrials: numExperiments-by-1 ndarray of numbers of trials
         RNGseed:   integer that gives a specific random seed
+        Adds data of one or several new experiments to the timeSeriesData
+        object attached to this timeSeriesObject. Not specifying the random
+        seed will always intialize it to the same value! Use an RNG and 
+        provide it as third argument if random outcomes are wanted.
         """
         
         # try to get acces to .model object:
@@ -872,6 +946,7 @@ class timeSeriesData:
                 sgCt += 1
             t += 1
                     
+    @staticmethod
     def _condsToIdx(condsList, subgroupIdx, xyuDim):
         i = 0
         xyuIdx = []
@@ -882,7 +957,6 @@ class timeSeriesData:
             i+=1
         return np.array(xyuIdx)
 
-    
     def giveNumExperiments(cls):
         """OUT = .giveNumExperiments()
         OUT: integer number of experiments stored in this timeSeriesData object 
@@ -921,7 +995,7 @@ class timeSeriesData:
         experiment: integer index for stored experiment
         trials:  ndarray of indices for stored trials in selected experiment
         times:   ndarray of indices for time steps in selected experiment
-        trials:  ndarray of indices for components of X        
+        dims:    ndarray of indices for components of X        
         OUT: ndarray of number of traces of selected components of X 
         """
         if cls._xyu == []:  # if no experiments added yet, _xyu is empty list
@@ -970,7 +1044,7 @@ class timeSeriesData:
         experiment: integer index for stored experiment
         trials:  ndarray of indices for stored trials in selected experiment
         times:   ndarray of indices for time steps in selected experiment
-        trials:  ndarray of indices for components of Y        
+        dims:    ndarray of indices for components of Y        
         OUT: ndarray of number of traces of selected components of Y 
         """
         if cls._xyu == []:  # if no experiments added yet, _xyu is empty list
@@ -1020,7 +1094,7 @@ class timeSeriesData:
         experiment: integer index for stored experiment
         trials:  ndarray of indices for stored trials in selected experiment
         times:   ndarray of indices for time steps in selected experiment
-        trials:  ndarray of indices for components of U        
+        dims:    ndarray of indices for components of U        
         OUT: ndarray of number of traces of selected components of U 
         """
         if cls._offsets[3] - cls._offsets[2] == 0: # if uDim = 0
@@ -1172,6 +1246,68 @@ class timeSeriesModel:
     To allow complex models with e.g. latent state hierachy (X ~ Poiss(exp(Z)),
     the variable groups Y, X and U can be further divided into subgroups.
 
+    INPUTS to constructor:
+    tsobject:     pointer to object that called the constructor. 
+                  Possibly is 'None', but usually a timeSeriesObject()
+    modelClass:   string specifying the model class, e.g.'stateSpace'
+    modelDescr:   string specifying the model type, e.g. 'LDS'
+    xGr:          np.ndarray of size xDim that specifies the assigned 
+                  subgroup of each latent variable. Implicitly defines 
+                  xDim with xGr.size!
+    yGr:          np.ndarray of size yDim that specifies the assigned 
+                  subgroup of each observed variable. Defines yDim! 
+    uGr:          np.ndarray of size uDim that specifies the assigned 
+                  subgroup of each input variable. Defines uDim!
+    dts:          np.ndarray that gives the relative time steps that 
+                  are relevant for evaluating the variables of the 
+                  current step. E.g. for a classic LDS, dt = -1 
+                  (dependency of x on x) and dt = 0 (dep. of y on x)
+                  are relevant and dts = np.array([-1,0]) in this case
+    deps:         list of np.ndarrays. Length of list has to match size
+                  of dts. Each entry of the list is a 2D binary array
+                  specifying which subgroups of X, Y depend on which
+                  other subgroups of X,Y and U. 
+    linkFunctions:     list of lists of strings specifying the types and
+                       parameters of the deterministic parts of the condi-
+                       tional distr.s linking subgroups of X, Y and U
+    noiseDistrs:       list of lists of strings specifying the types and
+                       parameters of the random parts of the conditional
+                       distributionss linking subgroups of X, Y and U
+    noiseInteractions: list of lists of strings specifying how the random
+                       and deterministic parts of the conditional distri-
+                       butions interact. E.g. '+', 'multiplicative', '^'
+    initDistrs:        list of lists of lists of strings specifying the
+                       probability distributions of the intial time steps.
+                       Length of outermost list has to match dts.size 
+    isHomogeneous: boolean that specifies whether the model is 
+                   homogeneous over time                      
+    
+    
+    VARIABLES and METHODS:
+    .objectDescr            - always equals 'state_space_model_model'   
+    .supportedModelClasses  - list of strings of supported model classes
+    .defaultModel()         - sets (a mostly blank) default model    
+    parsToUpdateParsList()  - interfaces between standard parameter
+                              collections as for LDS and the parameter
+                              convention of the timeSeries framework
+    .updatePars()           - updates stored parameters of the model
+    .givePars()             - returns pointer to parameters of the model
+    .giveVarDescr()         - returns pointer to model parameters description     
+    .giveFactorization()    - returns pointer to model parameters factorization
+    .giveModelDescription() - returns string modelDescr (see above)
+    .giveIfHomogeneous()    - returns boolean whether model is homogeneous 
+    .giveIfCausal()         - returns boolean whether model is causal
+    .giveMotherObject()     - returns object one step above in object hierarchy 
+    .fit()                  - fits the model, depending on model type
+    _fitLDS()               - fits model if LDS
+    _LDSlogLikelihood()     - log-likelihood of LDS model
+    _LDS_E_step()           - E-step of EM algorithm for LDS model
+    _KalmanFilter()         - part of E-step for LDS model
+    _KalmanSmoother()       - part of E-step for LDS model
+    _KalmanParsToMoments()  - translates posterior parameters to moments
+    _LDS_M_step             - M-step for EM algorithm for LDS model
+
+
     """
     objDescr = 'state_space_model_model'
     
@@ -1244,6 +1380,23 @@ class timeSeriesModel:
             experiment=0, 
             trials=None, 
             times=None):
+        """ OUT = .fit(maxIter,epsilon,initPars, 
+                 ifPlotProgress,experiment,trials,times)
+        maxIter:  maximum allowed iterations for iterative fitting (e.g. EM)
+        epsilon:  convergence criterion, e.g. difference of log-likelihoods
+        initPars: set of parameters to start fitting. If == None, the 
+                  parameters currently stored in the model will be used 
+        ifPlotProgress: boolean, specifying if fitting progress is visualized
+        experiment: integer index for stored experiment
+        trials:  ndarray of indices for stored trials in selected experiment
+        times:   ndarray of indices for time steps in selected experiment
+        OUT:     List of performance measures (e.g. log-likelihoods) produced 
+                 during the model fitting procedure
+        Fits the stored model to data stored in the 'empirical' object.
+        Will call other functions depending on the model type. 
+        
+        """        
+        
         try:
             data = cls._tsobject.giveMotherObject().giveEmpirical().giveData()
         except:
@@ -1310,6 +1463,18 @@ class timeSeriesModel:
                 epsilon=np.log(1.05), # stop if likelihood change < 5%
                 ifPlotProgress=False, 
                 xDim=None):
+        """ OUT = _fitLDS(y*,initPars, maxIter, epsilon, 
+                    ifPlotProgress,xDim)
+        initPars: set of parameters to start fitting. If == None, the 
+                  parameters currently stored in the model will be used,
+                  otherwise needs initPars = [A,Q,mu0,V0,C,R]
+        maxIter:  maximum allowed iterations for iterative fitting (e.g. EM)
+        epsilon:  convergence criterion, e.g. difference of log-likelihoods
+        ifPlotProgress: boolean, specifying if fitting progress is visualized
+        xDim:     dimensionality of (sole subgroup of) latent state X
+        Fits an LDS model to data stored in the 'empirical' object.
+        
+        """
         
         yDim = y.shape[0] 
                 
@@ -1508,6 +1673,14 @@ class timeSeriesModel:
 
     @staticmethod
     def _LDSlogLikelihood(A,Q,mu0,V0,C,R,Ext,Extxt,Extxtm1,y):
+        """ OUT=_LDSlogLikelihood(A*,Q*,mu0*,V0*,C*,R*,Ext*,Extxt*,Extxtm1*,y*)
+        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+        for formulas and input/output naming conventions   
+        CURRENTLY LACKS TERMS FOR ENTROPY OF POSTERIOR q AND PRODUCES 
+        WRONG RESULTS. DO NOT USE!
+        (E-step can directly LL from Kalman-filter forward pass)
+
+        """
         xDim  = Ext.shape[0]
         T     = Ext.shape[1]
         Trial = Ext.shape[2]    
@@ -1581,6 +1754,10 @@ class timeSeriesModel:
 
     @staticmethod
     def _LDS_E_step(A,Q,mu0,V0,C,R,y): 
+        """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*)
+        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+        for formulas and input/output naming conventions   
+        """
         [mu,V,P,K,c] = timeSeriesModel._KalmanFilter(A,Q,mu0,V0,C,R,y)
         [mu_h,V_h,J] = timeSeriesModel._KalmanSmoother(A, mu, V, P)
 
@@ -1592,6 +1769,10 @@ class timeSeriesModel:
 
     @staticmethod
     def _KalmanFilter(A,Q,mu0,V0,C,R,y):        
+        """ OUT = _KalmanFilter(A*,Q*,mu0*,V0*,C*,R*,y*)
+        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+        for formulas and input/output naming conventions   
+        """
         xDim  = A.shape[0]
         yDim  = y.shape[0]
         T     = y.shape[1]
@@ -1636,6 +1817,10 @@ class timeSeriesModel:
     
     @staticmethod
     def _KalmanSmoother(A, mu, V, P):        
+        """ OUT = _KalmanSmoother(A*,mu*,V*,P*)
+        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+        for formulas and input/output naming conventions   
+        """        
         xDim  = mu.shape[0]
         T     = mu.shape[1]
         Trial = mu.shape[2]
@@ -1664,6 +1849,10 @@ class timeSeriesModel:
 
     @staticmethod
     def _KalmanParsToMoments(mu_h, V_h, J):
+        """ OUT = _KalmanParsToMoments(mu)h*,V_h*,J*)
+        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+        for formulas and input/output naming conventions   
+        """                
         xDim = mu_h.shape[0]
         T    = mu_h.shape[1]
         Trial= mu_h.shape[2]
@@ -1691,7 +1880,11 @@ class timeSeriesModel:
         return [Ext, Extxt, Extxtm1]
 
     @staticmethod
-    def _LDS_M_step(Ext, Extxt, Extxtm1, y):        
+    def _LDS_M_step(Ext, Extxt, Extxtm1, y):   
+        """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*)
+        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+        for formulas and input/output naming conventions   
+        """                        
         xDim  = Ext.shape[0]
         T     = Ext.shape[1]
         Trial = Ext.shape[2]    
@@ -1734,8 +1927,24 @@ class timeSeriesModel:
 
         return [A,Q,mu0,V0,C,R]        
 
-    def updatePars(cls, linkPars, noisePars, initPars):        
-        # assemble pointers to containers for paramters
+    def updatePars(cls, linkPars=None, noisePars=None, initPars=None):  
+        """ updatePars(linkPars, noisePars, initPars)
+        linkFunctions:     list of lists of strings specifying the types and
+                           parameters of the deterministic parts of the condi-
+                           tional distr.s linking subgroups of X, Y and U
+        noiseDistrs:       list of lists of strings specifying the types and
+                           parameters of the random parts of the conditional
+                           distributionss linking subgroups of X, Y and U
+        noiseInteractions: list of lists of strings specifying how the random
+                           and deterministic parts of the conditional distri-
+                           butions interact. E.g. '+', 'multiplicative', '^'
+        initDistrs:        list of lists of lists of strings specifying the
+                           probability distributions of the intial time steps.
+                           Length of outermost list has to match dts.size 
+        Updates the parameters of a model 
+
+        """                       
+            # assemble pointers to containers for paramters
         linkFuns   = cls.giveFactorization().giveLinkFunctionList()
         noiseDists = cls.giveFactorization().giveNoiseDistrList()
         initDists  = cls.giveFactorization().giveInitialDistrList()
@@ -1747,32 +1956,132 @@ class timeSeriesModel:
             
         # apply parameter changes ...
         # ... to the deterministic parts of the conditional distributions
-        for i in range(xyuSubgroupTallies[0]):
-            if not linkPars[0][i] is None:
-                linkFuns[0][i].updatePars(linkPars[0][i])
-        for i in range(xyuSubgroupTallies[1]):
-            if not linkPars[1][i] is None:
-                linkFuns[1][i].updatePars(linkPars[1][i])
+        if not linkPars is None:            
+            if not isinstance(linkPars, list):
+                print('linkPars')
+                print( linkPars )
+                raise Exception(('argument linkPars has to be list. '
+                                 'It is not.'))
+            elif len(linkPars)!=2:
+                print('linkPars')
+                print( linkPars )
+                raise Exception(('argument linkPars has to contain two '
+                                 'lists - one each for the parameters of'
+                                 ' subgroups of X and Y, respectively.'))
+            elif len(linkPars[0])!=xyuSubgroupTallies[0]:
+                print('linkPars[0]')
+                print( linkPars[0] )
+                raise Exception(('linkPars[0] has to contain as many '
+                                 'entries as there are subgroups of X'))
+            elif len(linkPars[1])!=xyuSubgroupTallies[1]:
+                print('linkPars[1]')
+                print( linkPars[1] )
+                raise Exception(('linkPars[1] has to contain as many '
+                                 'entries as there are subgroups of Y'))
+            # if we got up to here, everything seems fine: 
+            for i in range(xyuSubgroupTallies[0]):
+                if not linkPars[0][i] is None:
+                    linkFuns[0][i].updatePars(linkPars[0][i])
+            for i in range(xyuSubgroupTallies[1]):
+                if not linkPars[1][i] is None:
+                    linkFuns[1][i].updatePars(linkPars[1][i])
 
         # ... to the random parts of the conditional distributions
-        for i in range(xyuSubgroupTallies[0]):
-            if not noisePars[0][i] is None:
-                noiseDists[0][i].updatePars(noisePars[0][i])
-        for i in range(xyuSubgroupTallies[1]):
-            if not noisePars[1][i] is None:
-                noiseDists[1][i].updatePars(noisePars[1][i])
+        if not noisePars is None:            
+            if not isinstance(noisePars, list):
+                print('noisePars')
+                print( noisePars )
+                raise Exception(('argument noisePars has to be list. '
+                                 'It is not.'))
+            elif len(noisePars)!=2:
+                print('noisePars')
+                print( noisePars )
+                raise Exception(('argument noisePars has to contain two '
+                                 'lists - one each for the parameters of'
+                                 ' subgroups of X and Y, respectively.'))
+            elif len(noisePars[0])!=xyuSubgroupTallies[0]:
+                print('noisePars[0]')
+                print( noisePars[0] )
+                raise Exception(('noisePars[0] has to contain as many '
+                                 'entries as there are subgroups of X'))
+            elif len(noisePars[1])!=xyuSubgroupTallies[1]:
+                print('noisePars[1]')
+                print( noisePars[1] )
+                raise Exception(('noisePars[1] has to contain as many '
+                                 'entries as there are subgroups of Y'))
+            # if we got up to here, everything seems fine: 
+            for i in range(xyuSubgroupTallies[0]):
+                if not noisePars[0][i] is None:
+                    noiseDists[0][i].updatePars(noisePars[0][i])
+            for i in range(xyuSubgroupTallies[1]):
+                if not noisePars[1][i] is None:
+                    noiseDists[1][i].updatePars(noisePars[1][i])
                 
         # ... to the initial distributions                    
-        for dti in np.where(dts<0):
-            for i in range(xyuSubgroupTallies[0]):
-                if not initPars[dti][0][i] is None:
-                    initDists[dti][0][i].updatePars(initPars[dti][0][i])
-            for i in range(xyuSubgroupTallies[1]):
-                if not initPars[dti][1][i] is None:
-                    initDists[dti][1][i].updatePars(initPars[dti][1][i])
+        if not initPars is None:
+            if not isinstance(initPars, list):
+                print('initPars')
+                print( initPars )
+                raise Exception(('argument noisePars has to be list. '
+                                 'It is not.'))
+            elif len(initPars)!=len(np.where(dts<0)):
+                print('initPars')
+                print( initPars )
+                raise Exception(('argument initPars has to contain as '
+                                 'many entries as there are relevant '
+                                 'time offsets dt stored in dts.'))
+            for dti in np.where(dts<0):
+                if len(initPars[dti])!=2:
+                    print('dti:')
+                    print( dti  )
+                    print('initPars[dti]')
+                    print( initPars[dti] )
+                    raise Exception(('argument initPars[dti] has to '
+                                     'contain two lists - one each for '
+                                     'the parameters of subgroups of X '
+                                     'and Y, respectively.'))
+                elif len(initPars[dti][0])!=xyuSubgroupTallies[0]:
+                    print('dti:')
+                    print( dti  )
+                    print('initPars[dti][0]')
+                    print( initPars[dti][0] )
+                    raise Exception(('initPars[dti][0] has to contain '
+                                     'as many entries as there are '
+                                     'subgroups of X'))
+                elif len(initPars[dti][1])!=xyuSubgroupTallies[1]:
+                    print('dti:')
+                    print( dti  )
+                    print('initPars[dti][1]')
+                    print( initPars[dti][1] )
+                    raise Exception(('initPars[dti][1] has to contain '
+                                     'as many entries as there are '
+                                     'subgroups of Y'))
+            # if we got up to here, everything seems fine: 
+            for dti in np.where(dts<0):
+                for i in range(xyuSubgroupTallies[0]):
+                    if not initPars[dti][0][i] is None:
+                        tmp = initPars[dti][0][i]
+                        initDists[dti][0][i].updatePars(tmp)
+                for i in range(xyuSubgroupTallies[1]):
+                    if not initPars[dti][1][i] is None:
+                        tmp = initPars[dti][1][i]
+                        initDists[dti][1][i].updatePars(tmp)
                     
     @staticmethod
     def parsToUpdateParsList(pars, modelDescr):
+        """ OUT = parsToUpdateParsList(pars*,modelDescr*)
+        pars:       list or dict of parameters as ordered and/or called in 
+                    standard descriptions of statistical models.
+        modelDescr: string specifying the model used, e.g. 'stateSpace_LDS'
+        OUT:        list of [linkPars, noisePars, initPars] as used by the
+                    timeSeries framework
+        Translates standard variable collections from model descriptions, 
+        such as e.g. [A,Q,mu0,V0,C,R] for the LDS, into the convention used
+        by the timeSeries framework as encoded in linkPars, noisePars, and
+        initPars. Can only be used for known and supported models. 
+        Using this method for new models will require updating the method!    
+
+        """
         if not isinstance(pars, (list, dict)):
             print('pars:')
             print(pars)
@@ -1894,6 +2203,16 @@ class timeSeriesModel:
         return [linkPars, noisePars, initPars]
 
     def givePars(cls):        
+        """ OUT = .givePars()
+        OUT:        list or dict of parameters as ordered and/or called in 
+                    standard descriptions of statistical models.
+        Translates the convention for parameter storage used as by the  
+        timeSeries framework and as encoded in linkPars, noisePars, initPars 
+        into a more widely used description of variables, such as e.g. 
+        [A,Q,mu0,V0,C,R] for the LDS. Can only be used for supported models. 
+        Using this method for new models will require updating the method!        
+
+        """        
         if cls._modelDescr == 'stateSpace_LDS':
             linkFuns   = cls.giveFactorization().giveLinkFunctionList()
             noiseDists = cls.giveFactorization().giveNoiseDistrList()
@@ -1918,6 +2237,11 @@ class timeSeriesModel:
                              'directly calling and individually updating.'))            
             
     def giveVarDescr(cls):   
+        """OUT = .giveVarDescr()
+        OUT: pointer to timeSeriesVariables() object describing subgroups of
+             variables X,Y,U and their high-level dependencies
+        """
+        
         if cls._modelClass in cls.supportedModelClasses:
             try:
                 return cls._varDescr
@@ -1929,6 +2253,11 @@ class timeSeriesModel:
                              ' variable description objects varDescr'))
             
     def giveFactorization(cls):
+        """OUT = .giveFactorization()
+        OUT: pointer to timeSeriesFactorization() object holding a 
+             description of the interrelation of subgroups of X,Y and U
+        """
+        
         if cls._modelClass in cls.supportedModelClasses:
             try:
                 return cls._factorization
@@ -1940,6 +2269,10 @@ class timeSeriesModel:
                              ' factorizaiton description objects'))
 
     def giveModelDescription(cls):
+        """OUT = .giveModelDescription()
+        OUT: pointer to string shortly describing the currently used model 
+        """
+        
         if cls._modelClass in cls.supportedModelClasses:
             return cls._modelDescr
         else:
@@ -1947,6 +2280,10 @@ class timeSeriesModel:
                              ' standard model description'))
             
     def giveIfHomogeneous(cls):
+        """OUT = .giveModelDescription()
+        OUT: boolean giving whether the model is homogeneous over time 
+        """
+        
         if cls._modelClass in cls.supportedModelClasses:
             return cls._isHomogeneous
         else:
@@ -1954,6 +2291,10 @@ class timeSeriesModel:
                              ' description in terms of temporal homogeneity'))
 
     def giveIfCausal(cls):
+        """OUT = .giveModelDescription()
+        OUT: boolean giving whether the model is causal 
+        """
+        
         if cls._modelClass in cls.supportedModelClasses:
             return cls._isCausal
         else:
@@ -1964,11 +2305,17 @@ class timeSeriesModel:
         """OUT = .returnMotherObject()
         OUT: object that called the constructor for this object (possibly None)
         """
+        
         return cls._tsobject
 
     
     @classmethod                            
     def defaultModel(cls, modelDescr='default'):
+        """OUT = .defaultModel(modelDescr)
+        modelDescr: string specifying the model used, e.g. 'stateSpace_LDS'
+        OUT:        pointer to timeSeriesModel() initialized in default state
+        
+        """        
         xGr=0
         yGr=0
         uGr=0
@@ -2005,6 +2352,43 @@ class stateSpaceModelVariables:
     
     Objects of this class serve to encode and store such subgroup structure 
     among X, Y, U. 
+    
+    INPUTS to the constructor:
+    xGr:   np.ndarray of size xDim that specifies the assigned 
+           subgroup of each latent variable. Implicitly defines 
+           xDim with xGr.size!
+    yGr:   np.ndarray of size yDim that specifies the assigned 
+           subgroup of each observed variable. Defines yDim! 
+    uGr:   np.ndarray of size uDim that specifies the assigned 
+           subgroup of each input variable. Defines uDim!
+    dts:   np.ndarray that gives the relative time steps that 
+           are relevant for evaluating the variables of the 
+           current step. E.g. for a classic LDS, dt = -1 
+           (dependency of x on x) and dt = 0 (dep. of y on x)
+           are relevant and dts = np.array([-1,0]) in this case
+    deps:  list of np.ndarrays. Length of list has to match size
+           of dts. Each entry of the list is a 2D binary array
+           specifying which subgroups of X, Y depend on which
+           other subgroups of X,Y and U.     
+    dtsX:  optional, gives relevant time offsets for X     
+    dtsY:  optional, gives relevant time offsets for Y   
+    dtsU:  optional, gives relevant time offsets for U   
+    
+    
+    VARIABLES and METHODS:
+    .objectDescr              - always equals 'state_space_model_varDescr'   
+    .giveVarDims()            - returns dimensionalities of variables X,Y,U
+    .giveVarSubgroupTallies() - returns the numbers of subgroups of X,Y,U
+    .giveVarSubgroupSizes()   - returns the sizes of subgroups of X,Y,U
+    .giveVarSubgroupLabels()  - returns the subgroup labels of each individual
+                                compoment of X,Y,U, respectively
+    .giveVarSubgroupIndices() - returns the components of X,Y,U that go with
+                                all variable subgroups, respectively
+    .giveVarTimeScope()       - return array of relevant time offsets for 
+                                evaluating the current state. 
+    .giveVarDependencies()    - return a list of arrays describing how the 
+                                subgroups of X,Y depend on subgroupf of X,Y,U
+    .checkVarDependencies()   - checks the consistency of variable dependencies
     
     """
     objDescr = 'state_space_model_varDescr'
@@ -2226,7 +2610,14 @@ class stateSpaceModelVariables:
                   
 
     def giveVarDims(cls, xyu='xyu'):
-        
+        """ OUT = .giveVarDims(xyu):
+        xyu: ordered subset of x, y and u, e.g. "yu", "x", "xyu"
+        OUT: if len(xyu)==1, then returns dimensionality of X,Y or U.
+             If len(xyu) >1, returns an array with selected dims. 
+        Returns the dimensionalities of variables X,Y,U. Can be called 
+        to return this information only for a specified subset of X,Y,U.  
+
+        """
         try:
             tmp = {'xyu' : np.array([cls._xDim, cls._yDim, cls._uDim]),
                    'xy' :  np.array([cls._xDim, cls._yDim           ]),
@@ -2242,6 +2633,15 @@ class stateSpaceModelVariables:
         return tmp
 
     def giveVarSubgroupTallies(cls, xyu='xyu'):
+        """ OUT = .giveVarSubgroupTallies(xyu):
+        xyu: ordered subset of x, y and u, e.g. "yu", "x", "xyu"
+        OUT: if len(xyu)==1, then returns number of subgroups of X,Y or U.
+             If len(xyu) >1, returns an array with numbers of subgroups of  
+                             selected subset of X,Y,U. 
+        Returns the numbers of subgroups of variables X,Y,U. Can be called 
+        to return this information only for a specified subset of X,Y,U. 
+
+        """
         
         try:
             tmp = {'xyu' : np.array([cls._xNumGr, cls._yNumGr, cls._uNumGr]),
@@ -2258,7 +2658,15 @@ class stateSpaceModelVariables:
         return tmp        
 
     def giveVarSubgroupSizes(cls, xyu='xyu'):
-        
+        """ OUT = .giveVarSubgroupSizes(xyu):
+        xyu: ordered subset of x, y and u, e.g. "yu", "x", "xyu"
+        OUT: if len(xyu)==1, then returns subgroup sizes of X,Y or U.
+             If len(xyu) >1, returns an array with subgroups sizes of a  
+                             selected subset of X,Y,U. 
+        Returns the sizes of subgroups of variables X,Y,U. Can be called 
+        to return this information only for a specified subset of X,Y,U. 
+
+        """        
         try:
             tmp = {
                 'xyu' : np.array([cls._xGrSize, cls._yGrSize, cls._uGrSize]),
@@ -2275,7 +2683,16 @@ class stateSpaceModelVariables:
         return tmp        
         
     def giveVarSubgroupLabels(cls, xyu='xyu'):
-        
+        """ OUT = .giveVarSubgroupLabels(xyu):
+        xyu: ordered subset of x, y and u, e.g. "yu", "x", "xyu"
+        OUT: if len(xyu)==1, then returns subgroup labels of X,Y or U.
+             If len(xyu) >1, returns an array with subgroups lables of a  
+                             selected subset of X,Y,U. 
+        Returns the subgroups labels for all individual components of the 
+        variables X,Y,U. Can be called to return this information only for 
+        a specified subset of X,Y,U. 
+
+        """        
         try:
             tmp = {'xyu' : np.array([cls._xGr, cls._yGr, cls._uGr]),
                    'xy' :  np.array([cls._xGr, cls._yGr          ]),
@@ -2291,7 +2708,15 @@ class stateSpaceModelVariables:
         return tmp        
        
     def giveVarSubgroupIndices(cls, xyu='xyu'):
-        
+        """ OUT = .giveVarSubgroupIndices(xyu):
+        xyu: ordered subset of x, y and u, e.g. "yu", "x", "xyu"
+        OUT: if len(xyu)==1, then returns subgroup indices of X,Y or U.
+             If len(xyu) >1, returns an array with subgroups indices of a  
+                             selected subset of X,Y,U. 
+        Returns the indices of subgroups of variables X,Y,U. Can be called 
+        to return this information only for a specified subset of X,Y,U. 
+
+        """        
         try:
             tmp = {'xyu' : np.array([cls._xGrIdx, cls._yGrIdx, cls._uGrIdx]),
                    'xy' :  np.array([cls._xGrIdx, cls._yGrIdx             ]),
@@ -2307,7 +2732,18 @@ class stateSpaceModelVariables:
         return tmp        
     
     def giveVarTimeScope(cls, xyu = None):
-        
+        """ OUT = .giveVarTimeScopes(xyu):
+        xyu: ordered subset of x, y and u, e.g. "yu", "x", "xyu"
+        OUT: if xyu is None, returns all relevant time offsets of the model
+             if len(xyu)==1, then returns relevant time offsets of X,Y or U.
+             If len(xyu) >1, returns an array with relevant time offsets of a  
+                             selected subset of X,Y,U. 
+        Returns the relevant time offsets of variables X,Y,U. Can be called 
+        to return this information only for a specified subset of X,Y,U, or
+        to return all the time offsets relevant to the model (usually the
+        union). 
+
+        """        
         if xyu is None:
             tmp = cls._dts
         else:
@@ -2327,7 +2763,15 @@ class stateSpaceModelVariables:
         return tmp
     
     def giveVarDependencies(cls, dts = None):
-        
+        """ OUT = .giveVarDependencies(dts):
+        dts: list of time offsets for which the dependencies are desired
+        OUT: list of arrays. The list contains 2D binary arrays specifying
+             the dependency structure of subgroups of X,Y on subgroups of 
+             X,Y and U at different time offsets dt. 
+        Returns the variable dependencies between (subgroups of) X,Y,U at 
+        selected time offsets. 
+
+        """
         if dts is None:
             dts = []
             i = 0
@@ -2353,6 +2797,17 @@ class stateSpaceModelVariables:
         return [cls._deps[np.where(cls._dts == i)[0]] for i in dts]
     
     def checkVarDependencies(cls, deps=None):
+        """ .checkVarDependencies(deps)
+        deps: list of arrays. The list contains 2D binary arrays specifying
+              the dependency structure of subgroups of X,Y on subgroups of 
+              X,Y and U at different time offsets dt. 
+        Checks the consistency of dependencies among subgroups of X,Y,U.
+        Checks e.g. whether the model describes an acyclic graph or not (the
+        latter preventing basic ancestral sampling).
+        Can be called without arguments (will check the 'deps' variable of the
+        current timeSeriesVariables() object) or with a specific deps argument
+
+        """
         
         if deps is None:
             deps = cls._deps
@@ -2500,6 +2955,51 @@ class stateSpaceModelFactorization:
     same stateSpaceModelFactor object), while retaining flexibility (each 
     pointer for each time point could in fact point to its own 
     stateSpaceModelFactor instantiation to model changes of Y|X over time). 
+    
+    INPUTS to constructor:
+    model:             pointer to object that called the constructor. 
+                       Possibly is 'None', but usually a timeSeriesModel()
+    linkFunctions:     list of lists of strings specifying the types and
+                       parameters of the deterministic parts of the condi-
+                       tional distr.s linking subgroups of X, Y and U
+    noiseDistrs:       list of lists of strings specifying the types and
+                       parameters of the random parts of the conditional
+                       distributionss linking subgroups of X, Y and U
+    noiseInteractions: list of lists of strings specifying how the random
+                       and deterministic parts of the conditional distri-
+                       butions interact. E.g. '+', 'multiplicative', '^'
+    initDistrs:        list of lists of lists of strings specifying the
+                       probability distributions of the intial time steps.
+                       Length of outermost list has to match dts.size    
+                       
+    VARIABLES and METHODS:
+    .objDescr                   - always is 'state_space_model_factorization'
+    .setFactorDetermPart()      - sets the link function of a cond. distr.
+    .setFactorRandomPart()      - sets the noise distr. of a cond. distr.
+    .setFactorInitialVar()      - sets the noise distr. of an initial distr.
+    .updateFactorDetermPart()   - update parameters of a link function
+    .updateFactorRandomPart()   - update parameters of a noise distribution
+    .updateFactorInitDistr()    - update parameters of an initial distribution
+    .giveLinkFunctionList()     - gives list (of lists) of all link functions 
+    .giveNoiseDistrList()       - gives list (of lists) of all noise distr.s
+    .giveInitialDistrList()     - gives list (of lists) of all initial distr.s
+    .giveConditionalLists()     - gives list (of lists) of all variable 
+                                  subgroups that the cond. distr.s depend on
+    .giveInitVarTimeScope()     - gives time offsets for initial distr.s
+    .giveSamplingHierarchy()    - gives suitable subgroup ordering for sampling
+    .giveInitialVarList()       - gives list of variable subgroups that need
+                                  their intial distribution specified
+    _getCondsFromDeps()         - gets lists of cond. distr. conditionals 
+                                  from variable dependencies stored in 'deps'
+    _getInDims()                - get dimensionalities of link function inputs 
+    _getDefaultLinkFunction()   - initializes link functions to default 
+    _getVarSubgroupGenerations()- establishes variable subgroup hierarchy
+    _getHierarchyFromGens()     - establishes ordering from subgroup hierarchy
+    _getInitialVarSubgroups()   - get list of variable subgroups that need
+                                  their intial distribution specified
+    ._checkFactorizationHomogeneous() - checks consistency of factorization
+    _checkIfOwnFather()         - checks if a given graph is acyiclic
+    .giveMotherObject()         - returns timeSeriesModel() object
     
     """
     objDescr = 'state_space_model_factorization'
@@ -2932,7 +3432,14 @@ class stateSpaceModelFactorization:
     def setFactorDetermPart(cls, 
                             varGroup, varSubgroup, 
                             linkFun):
-        
+        """ .setFactorDetermPart(varGroup*, varSubgroup*,linkFun*)
+        varGroup:    int giving the variable group, i.e. '0' for X, '1' for Y
+        varSubgroup: int giving the index of the variable subgroup
+        linkFun:     string specifying the link function type, e.g. 'linear'
+        Sets the deterministic part of a conditional distribution (also termed
+        link function) to a specific pre-stored function type. 
+
+        """
         if isinstance(linkFun,linkFunction):
             cls._determ[varGroup, varSubgroup] = linkFun
         elif isinstance(linkFun, str):
@@ -2963,7 +3470,15 @@ class stateSpaceModelFactorization:
     def setFactorRandomPart(cls,                             
                             varGroup, varSubgroup, 
                             noiseDis, noiseInt=None):
+        """ .setFactorRandomPart(varGroup*, varSubgroup*, noiseDis*, noiseInt)
+        varGroup:    int giving the variable group, i.e. '0' for X, '1' for Y
+        varSubgroup: int giving the index of the variable subgroup
+        noiseDis:    string specifying the noise distr. type, e.g. 'Gaussian'
+        noiseInt:    string specifying the noise interaction type, e.g. '+'
+        Sets the random part of a conditional distribution (also termed noise
+        distribution) to a specific pre-stored distribution type. 
 
+        """
         if noiseInt is None:
             noiseInt = '+' # default: additive noise 
                 
@@ -2991,7 +3506,13 @@ class stateSpaceModelFactorization:
     def setFactorInitialVar(cls,                             
                             varGroup, varSubgroup, 
                             initDis):
-                
+        """ .setFactorInitialVar(varGroup*, varSubgroup*, initDis*)
+        varGroup:    int giving the variable group, i.e. '0' for X, '1' for Y
+        varSubgroup: int giving the index of the variable subgroup
+        initDis:     string specifying the noise distr. type, e.g. 'Gaussian'
+        Sets an initial distribution to a specific pre-stored distribution type. 
+
+        """                
         if isinstance(initDis,initDisr):
             cls._init[varGroup, varSubgroup] = initDis
         elif isinstance(initDis, str):
@@ -3013,15 +3534,46 @@ class stateSpaceModelFactorization:
                              'initDistr object to be created'))
                         
     def updateFactorDetermPart(cls, varGroup, varSubgroup, pars):
+        """ .updateFactorDetermPart(varGroup*, varSubgroup*,pars*)
+        varGroup:    int giving the variable group, i.e. '0' for X, '1' for Y
+        varSubgroup: int giving the index of the variable subgroup
+        pars:        list of ndarrays giving the parameters of the link function
+        Sets the parameters of the deterministic part of a conditional distr. 
+        (also termed link function). 
+
+        """        
         cls._determ[varGroup, varSubgroup].updatePars(pars)
 
     def updateFactorRandomPart(cls, varGroup, varSubgroup, pars):
+        """ .updateFactorRandomPart(varGroup*, varSubgroup*,pars*)
+        varGroup:    int giving the variable group, i.e. '0' for X, '1' for Y
+        varSubgroup: int giving the index of the variable subgroup
+        pars:        list of ndarrays giving the parameters of the noise distr.
+        Sets the parameters of the random part of a conditional distr. 
+        (also termed noise distribution). 
+
+        """        
         cls._random[varGroup, varSubgroup].updatePars(pars)
 
     def updateFactorInitDistr( cls, varGroup, varSubgroup, pars):
+        """ .updateFactorInitDistr(varGroup*, varSubgroup*,pars*)
+        varGroup:    int giving the variable group, i.e. '0' for X, '1' for Y
+        varSubgroup: int giving the index of the variable subgroup
+        pars:        list of ndarrays giving the parameters of the init. distr.
+        Sets the parameters of an initial distribution. 
+
+        """                
         cls._init[  varGroup, varSubgroup].updatePars(pars)
         
     def giveLinkFunctionList(cls,xyu='xy'):
+        """ OUT = .giveLinkFunctionList(xy):
+        xy:  ordered subset of x, y, e.g. "y", "xy"
+        OUT: if len(xy)==1, returns list of link functions
+             If len(xy) >1, returns list of lists of link functions  
+        Returns the link functions for cond. distr.s of X,Y. Can be called 
+        to return this information only for a specified subset of X,Y. 
+
+        """        
         tmp = { 'xy' : cls._determ,
                 'x'  : cls._determ[0],
                 'y'  : cls._determ[1]
@@ -3029,6 +3581,14 @@ class stateSpaceModelFactorization:
         return tmp
 
     def giveNoiseDistrList(cls,xyu='xy'):
+        """ OUT = .giveNoiseDistrList(xy):
+        xy:  ordered subset of x, y, e.g. "y", "xy"
+        OUT: if len(xy)==1, returns list of noise distributions
+             If len(xy) >1, returns list of lists of noise distributions  
+        Returns the noise distributions for cond. distr.s of X,Y. Can be  
+        called to return this information only for a specified subset of X,Y. 
+
+        """        
         tmp = { 'xy' : cls._random,
                 'x'  : cls._random[0],
                 'y'  : cls._random[1]
@@ -3036,6 +3596,16 @@ class stateSpaceModelFactorization:
         return tmp
 
     def giveInitialDistrList(cls,xyu='xy'):
+        """ OUT = .giveInitialDistrList(xy):
+        xy:  ordered subset of x, y, e.g. "y", "xy"
+        OUT: if len(xy)==1, returns list of lists of initial distributions
+             If len(xy) >1, returns list of lists of lists of initial distr.s  
+        Returns the initial distributions for cond. distr.s of X,Y. Can be  
+        called to return this information only for a specified subset of X,Y.
+        Note that there is an extra outer list for different relevant time 
+        offsets.
+
+        """                
         tmp = { 'xy' : cls._init,
                 'x'  : [cls._init[dti][0] for dti in range(cls._dtsInit.size)],
                 'y'  : [cls._init[dti][1] for dti in range(cls._dtsInit.size)]
@@ -3043,6 +3613,15 @@ class stateSpaceModelFactorization:
         return tmp
     
     def giveConditionalLists(cls, xyu='xy'):
+        """ OUT = .giveConditionalLists(xy):
+        xy:  ordered subset of x, y, e.g. "y", "xy"
+        OUT: if len(xy)==1, returns list of conditioned-on variable subgroups
+             If len(xy) >1, returns list of lists conditioned-on subgroups  
+        Returns the variable subgroups that the link functions of X,Y depend  
+        on. Can be called to return this information only for a specified 
+        subset of X,Y. 
+
+        """                
         tmp = { 'xy' : cls._conds,
                 'x'  : cls._conds[0],
                 'y'  : cls._conds[1]
@@ -3050,19 +3629,44 @@ class stateSpaceModelFactorization:
         return tmp    
     
     def giveInitVarTimeScope(cls):
+        """ OUT = .giveInitVarTimeScope()
+        OUT: array of relevant time steps that require initial distributions
+        Returns array of the initial time steps for which the current model
+        requires initial distributions.
+
+        """
         return cls._dtsInit
     
     def giveSamplingHierarchy(cls):
+        """ OUT = .giveSamplingHierarchy()
+        OUT: list of variable group/subgroup pairs 
+        Returns a list of length-2 lists (= [variable group, variable subgroup]).
+        Their ordering constitutes a valid ancestral sampling ordering.
+
+        """            
         return cls._hierarchy
     
     def giveInitialVarList(cls, xyu='xy'):
+        """ OUT = .giveInitialVarList(xy):
+        xy:  ordered subset of x, y, e.g. "y", "xy"
+        OUT: if len(xy)==1, returns list of lists of variable subgroups that 
+                            require an initial distribution
+             If len(xy) >1, returns list of lists of lists of subgroups that
+                            require an initial distribution
+        Returns the variable subgroups of X,Y that require an initial dist.
+        to be specified. Can be called to return this information only for a 
+        specified subset of X,Y. 
+        Note that there is an extra outer list for different relevant time 
+        offsets.
+    
+        """                        
         tmp = { 'xy' : cls._initVars,
                 'x'  : [cls._initVars[dti][0] for dti in range(cls._dtsInit.size)],
                 'y'  : [cls._initVars[dti][1] for dti in range(cls._dtsInit.size)]
                }[xyu]
         return tmp
     
-    def _checkFactorizationHomogeneous(cls, conds):
+    def _checkFactorizationHomogeneous(cls, conds):        
         print('checking factorization of model ...')
         varDescr = cls._tsmodel.giveVarDescr()
         if not cls._tsmodel.giveIfCausal():
@@ -3277,6 +3881,25 @@ class noiseDistr:
     uncertainty involved in those distributions, e.g. specifying that 
     p(Y | X) = C*X + chol(R) * N(0, I), i.e. with Gaussian noise N(0, I)
     
+    INPUTS to constructor:
+    distrType:        string specifying selected noise distribution type
+    noiseInteraction: string specifying selected noise interaction type
+    dims:             dimensionality of random variables to be represented
+    pars:             parameters for this noise distr.
+    
+    VARIABLES and METHODS:
+    .objDescr                  - always is 'state_space_model_noiseDistr'
+    .supportedNoiseTypes       - list of strings giving supported noise types
+    .supportedInteractionTypes - list of strings giving supported noise 
+                                 interaction types
+    .setNoiseInteraction()     - sets the noise interaction type
+    .updatePars()              - updates parameters for this noise distr.
+    .givePars()                - returns parameters for this noise distr.
+    .giveDistrType()           - returns string specifying noise distribution
+    .giveNoiseInteraction()    - returns string specifying noise interaction
+    .transfNoiseSeed()         - transforms pre-seeded noise to match the
+                                 distribution of this noise distr.
+    
     """
     objDescr = 'state_space_model_noiseDistr'
      
@@ -3332,13 +3955,32 @@ class noiseDistr:
             
             
     def giveDistrType(cls):
+        """ OUT = .giveDistrType()
+        OUT: string specifying the current noise distribution type
+
+        """        
         return cls._distrType
         
     def giveNoiseInteraction(cls):
+        """ OUT = .giveNoiseInteraction()
+        OUT: string specifying the current noise interaction type
+
+        """        
         return cls._noiseInteraction
 
     def givePars(cls, whichPars=None):
-        
+        """ OUT = .givePars(whichPars)
+        whichPars: list of indices of parameters to return
+        OUT:       ndarray of parameters of this noise distr.
+        Returns pointer to the parameters of this noise distribution. Allows
+        choosing specific parameters by handing over a list of indices. 
+        Ordering of parameters is fixed and best seen from the code body of
+        the method. whichPars = None  returns all parameters
+        Example for 'Gaussian' noise distr:
+        It is pars[0] = mu, pars[1] = Sigma, pars[2] = chol(Sigma)
+        whichPars = [0,2] returns mu and chol(Sigma)
+
+        """         
         if whichPars is None:
             whichPars = np.arange(len(cls._pars))
         elif isinstance(whichPars, (numbers.Integral,float)):
@@ -3355,6 +3997,11 @@ class noiseDistr:
                              'asked for list of parameters that do not '
                              'all exist.'))
     def setNoiseInteraction(cls, noiseInteraction):
+        """ .setNoiseInteraction(noiseInteraction*)
+        noiseInteraction: string specifying selected noise interaction type
+        Sets the noise interaction type to the given value. Note that
+        only certain noise interaction types are allowed.
+        """        
         if noiseInteraction in cls.supportedInteractionTypes:
             cls._noiseInteraction = {
                         '+' :              np.add,
@@ -3373,7 +4020,27 @@ class noiseDistr:
         
         
     def updatePars(cls, pars, idxParsIn = None):
+        """ .updatePars(pars*, idxParsIn)
+        pars:      list of parameters for this noise distr. ndarrays will
+                   be interpreted as a list of length one, i.e. as the 
+                   first parameter of the distribution
+        idxParsIn: index set specifying which parameters are handed over
+        Sets the parameters of this noise distribution. The parameters 
+        for any distribution type are ordered, and the parameters have 
+        to be given in the right ordering. The argument idxParsIn allows
+        to hand over only specific parameters by telling which parameters
+        they are supposed to update. pars and idxParsIn need to have
+        same length.
+        Example for 'Gaussian' noise distr:
+        It is pars[0] = mu, pars[1] = Sigma, pars[2] = chol(Sigma)        
+        Handing over only newPars = [np.random.uniform(size=[dims,dims])
+        will result in an error, as pars[0] is a vector, not a matrix.
+        Handing over newPars and idxParsIn=[1] will overwrite Sigma, 
+        idxParsIn=[2] will overwrite chol(Sigma). 
+        The method only checks for correct dimensionalities of the new
+        parameters, not for contenxt, e.g. if Sigma truly is pos.def. !
         
+        """                         
         if isinstance(pars,list):
             numParsIn = len(pars)
         elif isinstance(pars,np.ndarray):
@@ -3452,7 +4119,14 @@ class noiseDistr:
 
                 
     def transfNoiseSeed(cls, xyuData):
-                             
+        """ OUT = .transfNoiseSeed(xyuData)
+        xyuData: ndarray of data with seeded noise
+        OUT:     same array as xyuData with transformed noise
+        Transforms pre-seeded standard noise to match the distribution of 
+        this noisDistr() object. For example shifts and re-forms Gaussian 
+        white noise to have correct mean and covariance structure
+        
+        """
         if len(xyuData.shape) > 2:
             print('data for noise transformation has shape:')
             print(xyuData.shape)
@@ -3492,7 +4166,19 @@ class initDistr:
     Objects of this class serve to encode and store the noise that gives the 
     uncertainty involved in those distributions, e.g. specifying that 
     p(X_1) = mu_0 + chol(V_0) * N(0, I), i.e. with Gaussian noise N(0, I)
+
+    INPUTS to constructor:
+    distrType:        string specifying selected noise distribution type
+    dims:             dimensionality of random variables to be represented
+    pars:             parameters for this initial distr.
     
+    VARIABLES and METHODS:
+    .objDescr                  - always is 'state_space_model_initDistr'
+    .supportedNoiseTypes       - list of strings giving supported noise types
+    .drawSample()              - generates samples from this initial distr.
+    .updatePars()              - updates parameters for this initial distr.
+    .givePars()                - returns parameters for this initial distr.
+    .giveDistrType()           - returns string specifying initial distribution
     """
     objDescr = 'state_space_model_initDistr'
      
@@ -3539,7 +4225,12 @@ class initDistr:
             self.updatePars(pars)                # brackets may be omitted
             
     def drawSample(cls, numSamples=1):
+        """ OUT = drawSample(numSamples)
+        numSamples: int specifying the desired number of samples
+        OUT:        array of drawn samples
+        Generates samples from an intial distribution. 
         
+        """        
         if not isinstance(numSamples,numbers.Integral):
             print('numSamples:')
             print(numSamples)
@@ -3556,10 +4247,25 @@ class initDistr:
                                          np.random.normal(size=[cls._dims]))
             
     def giveDistrType(cls):
+        """ OUT = .giveDistrType()
+        OUT: string specifying the current noise distribution type
+
+        """                
         return cls._distrType
         
     def givePars(cls, whichPars=None):
-        
+        """ OUT = .givePars(whichPars)
+        whichPars: list of indices of parameters to return
+        OUT:       ndarray of parameters of this noise distr.
+        Returns pointer to the parameters of this noise distribution. Allows
+        choosing specific parameters by handing over a list of indices. 
+        Ordering of parameters is fixed and best seen from the code body of
+        the method. whichPars = None  returns all parameters
+        Example for 'Gaussian' noise distr:
+        It is pars[0] = mu, pars[1] = Sigma, pars[2] = chol(Sigma)
+        whichPars = [0,2] returns mu and chol(Sigma)
+
+        """                 
         if whichPars is None:
             whichPars = np.arange(len(cls._pars))
         elif isinstance(whichPars, (numbers.Integral,float)):
@@ -3577,7 +4283,27 @@ class initDistr:
                              'all exist.'))        
         
     def updatePars(cls, pars, idxParsIn = None):
+        """ .updatePars(pars*, idxParsIn)
+        pars:      list of parameters for this noise distr. ndarrays will
+                   be interpreted as a list of length one, i.e. as the 
+                   first parameter of the distribution
+        idxParsIn: index set specifying which parameters are handed over
+        Sets the parameters of this noise distribution. The parameters 
+        for any distribution type are ordered, and the parameters have 
+        to be given in the right ordering. The argument idxParsIn allows
+        to hand over only specific parameters by telling which parameters
+        they are supposed to update. pars and idxParsIn need to have
+        same length.
+        Example for 'Gaussian' noise distr:
+        It is pars[0] = mu, pars[1] = Sigma, pars[2] = chol(Sigma)        
+        Handing over only newPars = [np.random.uniform(size=[dims,dims])]
+        will result in an error, as pars[0] is a vector, not a matrix.
+        Handing over newPars and idxParsIn=[1] will overwrite Sigma, 
+        idxParsIn=[2] will overwrite chol(Sigma). 
+        The method only checks for correct dimensionalities of the new
+        parameters, not for content, e.g. if Sigma truly is pos.def. !
         
+        """                         
         if isinstance(pars,list):
             numParsIn = len(pars)
         elif isinstance(pars,np.ndarray):
@@ -3674,6 +4400,20 @@ class linkFunction:
     but more complicated cases such as artificial neural networks are 
     also possible.
     
+    INPUTS to constructor:
+    functionType: string specifying the link function type, e.g. 'linear'
+    inDims:       list of dimensionality(s) of input(s) to this link function
+    outDims:      dimensionality of output of this link function
+    pars:         parameters for this initial distr.
+    
+    VARIABLES and METHODS:
+    .objDescr               - always is 'state_space_model_linkFunction'
+    .supportedFunctionTypes - list of string giving supported function types
+    .computeValue()         - evalues the link function given inputs
+    .giveFunctionType()     - returns string specifying the link function type
+    .givePars()             - returns parameters of this link function
+    .updatePars()           - updates parameters of this link function
+    
     """
     objDescr = 'state_space_model_linkFunction'
     
@@ -3732,7 +4472,7 @@ class linkFunction:
             
                                                                   
         # need to work on a databank of supported  distributions...    
-        ssm = ssm_placeholder()                                                    ### DELETE ME ONCE SSM EXPOERTED 
+        ssm = ssm_placeholder() # this might get exported in the future                                                    
                                  
         if self._functionType == 'identity':
             self._fun     = ssm.identity
@@ -3811,13 +4551,33 @@ class linkFunction:
             self.updatePars(pars)                # brackets may be omitted
                                    
     def computeValue(cls, x):
-        return cls._fun(x, cls._pars)
+        """ OUT = .computeValue(x*)
+        x:   (list of) inputs to link function 
+        OUT: value of evaluated link function
+        
+        """
+        return cls._fun(x, cls._pars)                                 
                                  
     def giveFunctionType(cls):
+        """ OUT = .giveFunctionType()
+        OUT: string specifying the current link function type
+
+        """                        
         return cls._functionType
     
     def givePars(cls, whichPars=None):
-        
+        """ OUT = .givePars(whichPars)
+        whichPars: list of indices of parameters to return
+        OUT:       ndarray of parameters of this link function
+        Returns pointer to the parameters of this link function. Allows
+        choosing specific parameters by handing over a list of indices. 
+        Ordering of parameters is fixed and best seen from the code body of
+        the method. whichPars = None  returns all parameters
+        Example for 'affineLinear' link function:
+        It is pars[0] = A, pars[1] = b, y = Ax + b
+        whichPars = [1] only returns parameter 'b'
+
+        """                 
         if whichPars is None:
             whichPars = range(cls._pars.size)
         elif isinstance(whichPars, (numbers.Integral,float)):
@@ -3836,7 +4596,26 @@ class linkFunction:
     
                                  
     def updatePars(cls, pars, idxParsIn=None):
+        """ .updatePars(pars*, idxParsIn)
+        pars:      list of parameters for this noise distr. ndarrays will
+                   be interpreted as a list of length one, i.e. as the 
+                   first parameter of the distribution
+        idxParsIn: index set specifying which parameters are handed over
+        Sets the parameters of this noise distribution. The parameters 
+        for any distribution type are ordered, and the parameters have 
+        to be given in the right ordering. The argument idxParsIn allows
+        to hand over only specific parameters by telling which parameters
+        they are supposed to update. pars and idxParsIn need to have
+        same length.
+        Example for 'affineLinear' link function:
+        It is pars[0] = A, pars[1] = b, y = Ax + b
+        Handing over only newPars = [np.ones([inDims[0]])]
+        will result in an error, as pars[0] is a matrix, not a vector.
+        Handing over newPars and idxParsIn=[1] will overwrite 'b' 
+        The method only checks for correct dimensionalities of the new
+        parameters, not for content, e.g. if 'b' contains any NaNs !
         
+        """                         
         if isinstance(pars,list):
             numParsIn = len(pars)
         elif isinstance(pars,np.ndarray):
