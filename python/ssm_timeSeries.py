@@ -9,7 +9,6 @@ from IPython import display  # for live plotting in jupyter
 
 
 """ *TBD* : - DEBUG
-            - COMPLETE DOCUMENTATION
             -Replace lists with arrays where appropriate-arrays can 
              be more memory overhead, but also be much faster!
             -Many arguments would be nice to be also providable as 
@@ -238,7 +237,7 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
     if seq is None:
         seq = timeSeries() # initiate from scratch
         
-        seq.giveEmpirical().setModel( 'stateSpace',           # modelClass
+        seq.giveEmpirical().setModel( 'stateSpace',      # modelClass
                                  ssmType,                # modelDescr
                                  xGr,                    
                                  yGr,                   
@@ -392,7 +391,8 @@ def toArray(x):
         raise Exception(('method "toArray" only converts from int, float, '
                          'list or ndarray'))
     return x
-        
+
+
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 class timeSeries:
@@ -440,6 +440,7 @@ class timeSeries:
     def giveEmpirical(cls):
         """ OUT = .giveEmpirical()
         OUT: returns timeSeriesObject 'empirical' containing training data
+        
         """
         return cls._empirical
                 
@@ -479,6 +480,7 @@ class timeSeriesObject:
     .fitModel()    - fits the model to data stored in the 'empirical' object
     .resetData()   - sets curent 'empirical' to an empty timeSeriesData object
     .addData()     - adds specified amount of data drawn from the current model
+    .loadData()    - loads specified data into the data storage object
     .giveData()    - returns pointer to the attached timeSeriesData object
     .giveModel()   - returns pointer to the attached timeSeriesModel object
     .giveMotherObject() - returns pointer provided at object instantiation, 
@@ -558,9 +560,8 @@ class timeSeriesObject:
                        homogeneous over time                      
         Sets a pre-stored (but potentially not yet configurated) model to 
         specific model type, variable description and parameter set.
-
-        """
         
+        """        
         if deps is None:
             print(('conditional dependency variables "deps" not provided. '
                    'Assuming no dependencies (fully independent model!)'))
@@ -604,8 +605,8 @@ class timeSeriesObject:
     def resetData(cls):
         """ .resetData()
         Resets the timeSeriesData object .data to zero stored experiments') 
-        """
         
+        """
         try:
             cls._model
         except:
@@ -613,6 +614,25 @@ class timeSeriesObject:
                              'specifying a model'))
             
         cls._data = timeSeriesData(cls)  
+        
+    def loadData(cls, y):
+        """ .loadData(y*)
+        y: activity of variables stored in an ndarray of shape 
+           [xyuDim,T,#Trials], or a list of multiple such ndarrays. 
+        'Loads' data into timeSeriesData() object. Primarily intended to get 
+        real data (interpreted as observed variables Y) into the framework,
+        then preferentially with a corresponding timeSeriesModel() object of
+        dedicated model class 'empirical'. Can also be used to load complete 
+        data sets (all X,Y,U) for other model classes.
+        Input arrays will be COPIED before adding them to the data object.
+
+        """
+        try: 
+            cls._data
+        except:
+            cls._resetData()
+        
+        cls._data.loadExperiment(y)        
         
     def addData(cls,
                 numTrials=np.array([1]),
@@ -626,8 +646,8 @@ class timeSeriesObject:
         object attached to this timeSeriesObject. Not specifying the random
         seed will always intialize it to the same value! Use an RNG and 
         provide it as third argument if random outcomes are wanted.
-        """
         
+        """        
         try:
             cls._data
         except:
@@ -638,8 +658,8 @@ class timeSeriesObject:
     def giveModel(cls):
         """ OUT = .giveModel()
         OUT: timeSeriesModel object "model" specifying the time series model
-        """
-        
+
+        """        
         try:
             return cls._model
         except:
@@ -649,8 +669,8 @@ class timeSeriesObject:
     def giveData(cls):
         """ OUT = .giveData()
         OUT: timeSeriesData object "data" containing the time series data        
-        """        
         
+        """                
         try:
             return cls._data
         except:
@@ -660,8 +680,8 @@ class timeSeriesObject:
     def giveMotherObject(cls):
         """OUT = .returnMotherObject()
         OUT: object that called the constructor for this object (possibly None)
-        """
         
+        """        
         return cls._seqObject            
                             
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
@@ -671,7 +691,7 @@ class timeSeriesData:
 
     Assumes the time series to consist of the complete-data series {X, Y} and 
     additionally observed inputs U. Not all three of these groups of variables
-    need to be contained in a timeSeriesData object, however. 
+    have to be contained in a timeSeriesData object, however. 
     To not include e.g. U, simply set uDim = 0. 
     
     The class of state-space model from which the data is generated is set by
@@ -685,7 +705,16 @@ class timeSeriesData:
     the distinction between subgroups of Y, X and U has to be considered,
     and seeding has to be adjusted potentially also with some non-built-in
     RNG functions.
-    
+    The most important variable of timeSeriesData() objects is of course the
+    data array. Internally, the data for all time points, all trials and all 
+    variables X, Y and U within one experiment are stored within one and the 
+    same np.ndarray. Translation between variable group/subgroup indexing 
+    and ndarray indexing happens automatically upon calling any relevant 
+    method that deals with the stored data. Data arrays for different 
+    experiments are listed for quick access and reference. 
+    An experiment is defined as a collection of trials with the same length.
+    Note that different-trial-length 'experiments' are also supported through
+    a number of single-trial experiments. 
     
     INPUT to constructor:
     tsobject:             pointer to object that called the constructor. 
@@ -693,7 +722,8 @@ class timeSeriesData:
 
     VARIABLES and METHODS:
     .objectDescr          always equals 'state_space_model_data' 
-    .addExperiment()      primary method of adding data to this data store
+    .loadExperiment()     primary method of loading data into this data store
+    .addExperiment()      primary method to generate data for this data store
     .giveNumExperiments() returns number of experiments
     .giveNumTrials()      returns number of trials for selected experiments
     .giveTrialLengths()   returns length of trials in selected experiments
@@ -724,7 +754,131 @@ class timeSeriesData:
         self._Ts        = np.zeros(0) # initialize to empty
         self._numTrials = np.zeros(0) # sets resp. 0, then
         self._numExperiments = self._numTrials.size   # add data 
-                            
+        
+        
+    def loadExperiment(cls,y):
+        """ .loadExperiment(y*)
+        y: activity of variables stored in an ndarray of shape 
+           [xyuDim,T,#Trials], or a list of multiple such ndarrays. 
+        'Loads' data into timeSeriesData() object. Primarily intended to get 
+        real data (interpreted as observed variables Y) into the framework,
+        then preferentially with a corresponding timeSeriesModel() object of
+        dedicated model class 'empirical'. Can also be used to load complete 
+        data sets (all X,Y,U) for other model classes.
+        Input arrays will be COPIED before adding them to the data object.
+
+        """
+        # try to get acces to .model object:
+        try:
+            model = cls._tsobject.giveModel()
+        except:
+            raise Exception(('model description for data model is '
+                             'required, but apparently not yet initialized'))
+        
+        if isinstance(y, list):             # handing over list of experiments
+            i = 0
+            xyuDim = y[0].shape[0]
+            while i < len(y):
+                if not isinstance(y[i],np.ndarray):
+                    print(('Error when trying to load several experiments at '
+                           'once.'))
+                    print('experiment #i, i = ')
+                    print(i)
+                    raise Exception(('All data sets have to be ndarrays. The '
+                                     'i-th data set is not.'))
+                elif y[i].shape[0] != xyuDim:
+                    print(('Error when trying to load several experiments at '
+                           'once.'))
+                    print('experiment #i, i = ')
+                    print(i)
+                    print('data dimensionality of first experiment:')
+                    print(xyuDim)
+                    print('data dimensionality of i-th experiment:')
+                    print(y[i].shape[0])
+                    raise Exception(('All data sets must have the same '
+                                     'data dimensionality.'))
+                i +=1                
+        elif not isinstance(y, np.ndarray): # handing over single experiment
+            raise Exception('data has to be of dtype ndarray. It is not.')
+        else:
+            xyuDim = y.shape[0]
+            
+        if model._modelClass == 'empirical': # default case for loading data 
+            # 'empirical' models should only know observed variables Y, 
+            # and neither X nor U.
+            if cls._offsets[3] == 0: # check if offsets initialized 
+                cls._offsets[2] += xyuDim                    # for finding 
+                cls._offsets[3]  = cls._offsets[2]           # the data
+            elif not np.all(cls._offsets[3] == np.array([0,0,xyuDim,xyuDim])):
+                print('Data dimensionality error:')
+                print('stored variable group index offsets:')
+                print(cls._offsets)
+                print('new total data dimensionality:')
+                print(xyuDim)
+                raise Exception('Dimensionality mismatch!')   
+            # else: we're fine, i.e. offsets are known and match new data                          
+        else: # if not 'empirical' model class, i.e. we actually have a model                           
+            try: 
+
+                model = cls._tsobject.giveModel()
+            except:
+                raise Exception(('model description for data model is '
+                                 'required, but apparently not yet '
+                                 'initialized'))                                        
+            try: 
+                varDescr = model.giveVarDescr()
+            except:
+                raise Exception(('variable description for data model is '
+                                 'required, but apparently not yet '
+                                 'initialized'))  
+            xyuSubgroupTallies = varDescr.giveVarSubgroupTallies() 
+            if xyuDim != np.sum(xyuSubgroupTallies):
+                print('model description:')
+                print(model.giveModelDescription())
+                print('number of dimensions of provided data:')
+                print(y.shape[0])
+                print('total number of variables of current model:')
+                print(np.sum(xyuSubgroupTallies))
+                raise Exception(('dimensionality of provided data does not '
+                                 'match dimensionality of model parameters.'))
+            else: # seems we're fine, but inform that we do some guessing:
+                print('loading data for stored model with description:')
+                print(model.giveModelDescription())
+                print('loaded data has dimensionality')
+                print(xyuDim)
+                print('model has total (dim(X)+dim(Y)+dim(U)) dimensionality')
+                print(np.sum(xyuSubgroupTallies))
+                print('will assume the first ')
+                print(xyuSubgroupTallies[0])
+                print(' dimensions to belong to X, the next ')
+                print(xyuSubgroupTallies[1])
+                print(' dimensions to belong to Y, and the rest to U')
+                                            
+            cls._offsets[0] = 0
+            cls._offsets[1] = cls._offsets[0] + varDescr.giveVarDims('x')
+            cls._offsets[2] = cls._offsets[1] + varDescr.giveVarDims('y')
+            cls._offsets[3] = cls._offsets[2] + varDescr.giveVarDims('u')
+                      
+        if isinstance(y, list):
+            Ts        = np.zeros(len(y))
+            numTrials = np.zeros(len(y))
+            i = 0
+            while i < len(y):
+                cls._xyu.append(y[i])
+                Ts[i]     = y[i].shape[1]
+                numTrials = y[i].shape[2]
+                i += 1
+        else: # checked before, has to be ndarray otherwise: 
+            cls._xyu.append(y)
+            Ts        = y[i].shape[1]
+            numTrials = y[i].shape[2]
+                      
+        # update data inventory
+        cls._Ts        = np.hstack([cls._Ts.copy(), Ts])
+        cls._numTrials = np.hstack([cls._numTrials.copy(), numTrials])
+        cls._numExperiments = cls._numTrials.size         
+
+        
     def addExperiment(cls,
                       numTrials=np.array([1]),
                       Ts=np.array([42]), 
@@ -843,6 +997,66 @@ class timeSeriesData:
             timeSeriesData._sampleModelGivenNoiseSeed(cls._xyu[i], tsmodel)
             i += 1
             
+    def simulateObservationScheme(cls, 
+                                  experiment=0, 
+                                  subpops=None, obsTimes=None,
+                                  mask=float('NaN')):
+        """ .simulateObservationScheme(experiment, subpops, times)
+        experiment: index of experiment to manipulate
+        subpops:    list of indices defining the subpopulations
+        obsTimes:   list of observation time ranges
+        mask:       default value for unobserved activity data 
+
+        """  
+        if isinstance(experiment, numbers.Integral) and experiment > 0:
+            print('experiment:')
+            print(experiment)
+            raise Exception('argument experiment has to be a positive int.')
+        if isinstance(subpops, list):            
+            numSubpops = len(subpops)
+        else:
+            raise Exception('argument subpops has to be a list. It is not')
+        if isinstance(obsTimes, list):            
+            numObsTime = len(obsTimes)
+        else:
+            raise Exception('argument obsTimes has to be a list. It is not')
+            
+        if numSubpops != numObsTimes:
+            print('number of subpopulations:')
+            print(numSubpops)
+            print('number of observation time ranges:')
+            print(numObsTimes)
+            raise Exception(('each observed populations has to have its own '
+                             'range of times at which it was observed. '
+                             'Mismatch detected. '))
+            
+        y = cls.giveTracesY(experiment) # all dims, time points and trials!
+
+        yRange = range(y.shape[0])
+        for i in len(subpops):
+            if not isinstance(subpops, (list, np.ndarray)):
+                print('i:')
+                print(i)
+                print('subpops[i]')
+                print( subpops[i])
+                raise Exception(('arguments subpops[i] have to be lists or '
+                                 'ndarrays for all provided i'))
+            if (not (    (isinstance(obsTime, np.ndarray) 
+                           and np.mod(obsTime.size,2==0))
+                      or (isinstance(obsTime, list) 
+                           and np.mod( len(obsTime,2)==0)) ) ):
+                print('i:')
+                print(i)
+                print('obsTime[i]')
+                print( obsTime[i] )
+                raise Exception(('arguments obsTimes[i] have to be lists or '
+                                 'ndarrays with a length that is a multiple '
+                                 'of two for all provided i'))
+            unobs = np.array([idx not in subpops[i] for idx in yRange])
+            for j in range(obsTimes[i].shape[0]):
+                y[np.ix_(unobs, range(obsTimes[j*2], obsTimes[j*2+1]))] = mask
+                                                     
+        cls._yObserved[experiment] = y
                 
                 
     @staticmethod                        
@@ -928,7 +1142,7 @@ class timeSeriesData:
                     
                     # noise is already seeded, now just need to transform it:
                     xyu_t[idxSgOutput[sgCt],t,tr] = \
-                       noiseDis.transfNoiseSeed(xyu_t[idxSgOutput[sgCt],t,tr])
+                       noiseDis._transfNoiseSeed(xyu_t[idxSgOutput[sgCt],t,tr])
                         
                     # now work on deterministic part of update equations: 
                     sgInput = [] # assemble input for deterministic part of  
@@ -960,33 +1174,36 @@ class timeSeriesData:
     def giveNumExperiments(cls):
         """OUT = .giveNumExperiments()
         OUT: integer number of experiments stored in this timeSeriesData object 
+        
         """
         
-        return cls._numExperiments
+        return cls._numExperiments.copy()
     
     def giveNumTrials(cls, experiment=None):
         """OUT = .giveNumTrials(experiments)
         experiments: ndarray of indices for stored experiments
         OUT: ndarray of number of trials in queried experiments 
+        
         """
         if experiment is None:
             experiment = np.arange(cls._numExperiments)
         else:
             experiment = toArray(experiment)
         
-        return cls._Trials[experiment]
+        return cls._Trials[experiment].copy()
     
     def giveTrialLengths(cls, experiment=None):
         """OUT = .giveTrialLengths(experiments)
         experiments: ndarray of indices for stored experiments
         OUT: ndarray of length of trials in queried experiments 
+        
         """
         if experiment is None:
             experiment = np.arange(cls._numExperiments)
         else:
             experiment = toArray(experiment)
         
-        return cls._Ts[experiment]
+        return cls._Ts[experiment].copy()
             
     
     
@@ -997,9 +1214,11 @@ class timeSeriesData:
         times:   ndarray of indices for time steps in selected experiment
         dims:    ndarray of indices for components of X        
         OUT: ndarray of number of traces of selected components of X 
+        Please note: This method returns a COPY of the desired data traces.
+        
         """
         if cls._xyu == []:  # if no experiments added yet, _xyu is empty list
-            return cls._xyu # and cannot be indexed as below. Return and quit.
+            return np.array([]) # and cannot be indexed as below.
 
         if not isinstance(experiment, numbers.Integral):
             raise Exception(('can only give input traces for individual '
@@ -1032,7 +1251,7 @@ class timeSeriesData:
         else: # transform to indices within cls._xyu
             dims += cls._offsets[0]
         try:
-            return cls._xyu[experiment][np.ix_(dims,times,trials)]
+            return cls._xyu[experiment][np.ix_(dims,times,trials)].copy()
         except:
             print('Data for X has size = (times,trials) =')
             print(cls._xyu[experiment].shape[1:3])
@@ -1046,9 +1265,11 @@ class timeSeriesData:
         times:   ndarray of indices for time steps in selected experiment
         dims:    ndarray of indices for components of Y        
         OUT: ndarray of number of traces of selected components of Y 
+        Please note: This method returns a COPY of the desired data traces.
+        
         """
         if cls._xyu == []:  # if no experiments added yet, _xyu is empty list
-            return cls._xyu # and cannot be indexed as below. Return and quit.
+            return np.array([]) # and cannot be indexed as below.
 
         if not isinstance(experiment, numbers.Integral):
             raise Exception(('can only give input traces for individual '
@@ -1081,7 +1302,7 @@ class timeSeriesData:
         else: # transform to indices within cls._xyu
             dims += cls._offsets[1]
         try:
-            return cls._xyu[experiment][np.ix_(dims,times,trials)]
+            return cls._xyu[experiment][np.ix_(dims,times,trials)].copy()
         except:
             print('Data for Y has size = (times,trials) =')
             print(cls._xyu[experiment].shape[1:3])
@@ -1095,10 +1316,12 @@ class timeSeriesData:
         trials:  ndarray of indices for stored trials in selected experiment
         times:   ndarray of indices for time steps in selected experiment
         dims:    ndarray of indices for components of U        
-        OUT: ndarray of number of traces of selected components of U 
+        OUT: ndarray of number of traces of selected components of U
+        Please note: This method returns a COPY of the desired data traces.
+        
         """
         if cls._offsets[3] - cls._offsets[2] == 0: # if uDim = 0
-            return cls._xyu # u is the only variable group that may be empty!
+            return np.array([]) # and cannot be indexed as below.
         
         if cls._xyu == []:  # if no experiments added yet, _xyu is empty list
             return cls._xyu # and cannot be indexed as below. Return and quit.
@@ -1135,7 +1358,7 @@ class timeSeriesData:
             dims += cls._offsets[2]
         
         try:
-            return cls._xyu[experiment][np.ix_(dims,times,trials)]
+            return cls._xyu[experiment][np.ix_(dims,times,trials)].copy()
         except:
             print('Data for U has size = (times,trials) =')
             print(cls._xyu[experiment].shape[1:3])
@@ -1153,9 +1376,11 @@ class timeSeriesData:
         times:   ndarray of indices for time steps in selected experiment
         dims:    ndarray of indices for components of X, Y, U. Overrules xyu        
         OUT: ndarray of number of traces of selected components of data 
+        Please note: This method returns a COPY of the desired data traces.
+        
         """
         if cls._xyu == []:  # if no experiments added yet, _xyu is empty list
-            return cls._xyu # and cannot be indexed as below. Return and quit.
+            return np.array([]) # and cannot be indexed as below.
 
         if not isinstance(experiment, numbers.Integral):
             raise Exception(('can only give input traces for individual '
@@ -1209,7 +1434,7 @@ class timeSeriesData:
             raise Exception(('requesting dimensions of larger than those '
                              'stored of X,Y,U combined'))
         try:
-            return cls._xyu[experiment][np.ix_(dims,times,trials)]
+            return cls._xyu[experiment][np.ix_(dims,times,trials)].copy()
         except:
             print('Data has size = (times,trials) =')
             print(cls._xyu[experiment].shape[1:3])
@@ -1219,6 +1444,7 @@ class timeSeriesData:
     def giveMotherObject(cls):
         """OUT = .returnMotherObject()
         OUT: object that called the constructor for this object (possibly None)
+        
         """
         return cls._tsobject
                             
@@ -1311,7 +1537,7 @@ class timeSeriesModel:
     """
     objDescr = 'state_space_model_model'
     
-    supportedModelClasses = ['stateSpace', 'default', 'unknown']
+    supportedModelClasses = ['stateSpace', 'default', 'unknown', 'none']
     
     def __init__(self,
                  tsobject = None,
@@ -1334,8 +1560,19 @@ class timeSeriesModel:
             print('supported model classes:')
             print(supportedModelClasses)
             raise Exception('selected model class not supported')
-            
-        if modelClass=='stateSpace':
+        
+        if modelClass=='empirical':
+            if not modelDescr == 'none':
+                print('modelDescr:')
+                print( modelDescr  )                
+                print(('WARNING: only allowed model description for model '
+                       'class "empirical" is modelDescr="none". Will use '
+                       'this instead.'))
+                self._modelDescr    = 'none'
+                self_.isCausal      = True  # some bold guesses regarding 
+                self._isHomogeneous = False # the state of the world
+                
+        elif modelClass=='stateSpace':
                         
             self._modelDescr    = ('stateSpace_' + modelDescr) 
             if isinstance(isHomogeneous, bool):
@@ -1449,7 +1686,7 @@ class timeSeriesModel:
             
         
         else:
-            print('selected model type:')
+            print('current model type:')
             print(cls._modelDescr)
             raise Exception(('fitting procedures for this model type are '
                              'not (yet) implemented!'))
@@ -1943,7 +2180,11 @@ class timeSeriesModel:
                            Length of outermost list has to match dts.size 
         Updates the parameters of a model 
 
-        """                       
+        """
+        if cls._modelClass == 'empirical':
+            print('"empirical" model has no parameters to update')
+            return None
+        
             # assemble pointers to containers for paramters
         linkFuns   = cls.giveFactorization().giveLinkFunctionList()
         noiseDists = cls.giveFactorization().giveNoiseDistrList()
@@ -2213,17 +2454,21 @@ class timeSeriesModel:
         Using this method for new models will require updating the method!        
 
         """        
+        if cls._modelClass == 'empirical':
+            print('"empirical" model has no parameters to update')
+            return None
+        
         if cls._modelDescr == 'stateSpace_LDS':
             linkFuns   = cls.giveFactorization().giveLinkFunctionList()
             noiseDists = cls.giveFactorization().giveNoiseDistrList()
             initDists  = cls.giveFactorization().giveInitialDistrList()
             
-            A =   linkFuns[0][0].givePars()[0]     
-            Q =   noiseDists[0][0].givePars()[1]
-            mu0 = initDists[0][0][0].givePars()[0]
-            V0  = initDists[0][0][0].givePars()[1]
-            C   = linkFuns[1][0].givePars()[0]
-            R =   noiseDists[1][0].givePars()[1]
+            A =   linkFuns[0][0].givePars()[0].copy()     
+            Q =   noiseDists[0][0].givePars()[1].copy()
+            mu0 = initDists[0][0][0].givePars()[0].copy()
+            V0  = initDists[0][0][0].givePars()[1].copy()
+            C   = linkFuns[1][0].givePars()[0].copy()
+            R =   noiseDists[1][0].givePars()[1].copy()
             
             return [A,Q,mu0,V0,C,R]
         
@@ -2240,7 +2485,11 @@ class timeSeriesModel:
         """OUT = .giveVarDescr()
         OUT: pointer to timeSeriesVariables() object describing subgroups of
              variables X,Y,U and their high-level dependencies
-        """
+             
+        """ 
+        if cls._modelClass == 'empirical':
+            print('"empirical" model has no variable description')
+            return None
         
         if cls._modelClass in cls.supportedModelClasses:
             try:
@@ -2256,7 +2505,11 @@ class timeSeriesModel:
         """OUT = .giveFactorization()
         OUT: pointer to timeSeriesFactorization() object holding a 
              description of the interrelation of subgroups of X,Y and U
+             
         """
+        if cls._modelClass == 'empirical':
+            print('"empirical" model has no variable factorization')
+            return None
         
         if cls._modelClass in cls.supportedModelClasses:
             try:
@@ -2271,10 +2524,10 @@ class timeSeriesModel:
     def giveModelDescription(cls):
         """OUT = .giveModelDescription()
         OUT: pointer to string shortly describing the currently used model 
-        """
         
+        """
         if cls._modelClass in cls.supportedModelClasses:
-            return cls._modelDescr
+            return cls._modelDescr.copy()
         else:
             raise Expection(('currently used model class does not support '
                              ' standard model description'))
@@ -2282,8 +2535,8 @@ class timeSeriesModel:
     def giveIfHomogeneous(cls):
         """OUT = .giveModelDescription()
         OUT: boolean giving whether the model is homogeneous over time 
-        """
         
+        """        
         if cls._modelClass in cls.supportedModelClasses:
             return cls._isHomogeneous
         else:
@@ -2680,7 +2933,7 @@ class stateSpaceModelVariables:
         except:
             raise Exception(('argument "xyu" has to be an ordered subset '
                            'of x, y and u, e.g. "yu", "x", "xyu"'))        
-        return tmp        
+        return tmp       
         
     def giveVarSubgroupLabels(cls, xyu='xyu'):
         """ OUT = .giveVarSubgroupLabels(xyu):
@@ -2705,7 +2958,7 @@ class stateSpaceModelVariables:
         except:
             raise Exception(('argument "xyu" has to be an ordered subset '
                            'of x, y and u, e.g. "yu", "x", "xyu"'))        
-        return tmp        
+        return tmp.copy()        
        
     def giveVarSubgroupIndices(cls, xyu='xyu'):
         """ OUT = .giveVarSubgroupIndices(xyu):
@@ -2729,7 +2982,7 @@ class stateSpaceModelVariables:
         except:
             raise Exception(('argument "xyu" has to be an ordered subset '
                            'of x, y and u, e.g. "yu", "x", "xyu"'))        
-        return tmp        
+        return tmp.copy()        
     
     def giveVarTimeScope(cls, xyu = None):
         """ OUT = .giveVarTimeScopes(xyu):
@@ -2760,7 +3013,7 @@ class stateSpaceModelVariables:
                 raise Exception(('argument "xyu" has to be an ordered '
                             'subset of x, y and u, e.g. "yu", "x", "xyu"'))        
         
-        return tmp
+        return tmp.copy()
     
     def giveVarDependencies(cls, dts = None):
         """ OUT = .giveVarDependencies(dts):
@@ -2794,7 +3047,7 @@ class stateSpaceModelVariables:
                              'int, float or a list/ndarray of indexes. '
                              'It is neither'))
         
-        return [cls._deps[np.where(cls._dts == i)[0]] for i in dts]
+        return [cls._deps[np.where(cls._dts == i)[0]] for i in dts].copy()
     
     def checkVarDependencies(cls, deps=None):
         """ .checkVarDependencies(deps)
@@ -3626,7 +3879,7 @@ class stateSpaceModelFactorization:
                 'x'  : cls._conds[0],
                 'y'  : cls._conds[1]
                }[xyu]
-        return tmp    
+        return tmp.copy()    
     
     def giveInitVarTimeScope(cls):
         """ OUT = .giveInitVarTimeScope()
@@ -3635,7 +3888,7 @@ class stateSpaceModelFactorization:
         requires initial distributions.
 
         """
-        return cls._dtsInit
+        return cls._dtsInit.copy()
     
     def giveSamplingHierarchy(cls):
         """ OUT = .giveSamplingHierarchy()
@@ -3644,7 +3897,7 @@ class stateSpaceModelFactorization:
         Their ordering constitutes a valid ancestral sampling ordering.
 
         """            
-        return cls._hierarchy
+        return cls._hierarchy.copy()
     
     def giveInitialVarList(cls, xyu='xy'):
         """ OUT = .giveInitialVarList(xy):
@@ -3664,7 +3917,7 @@ class stateSpaceModelFactorization:
                 'x'  : [cls._initVars[dti][0] for dti in range(cls._dtsInit.size)],
                 'y'  : [cls._initVars[dti][1] for dti in range(cls._dtsInit.size)]
                }[xyu]
-        return tmp
+        return tmp.copy()
     
     def _checkFactorizationHomogeneous(cls, conds):        
         print('checking factorization of model ...')
@@ -3897,7 +4150,7 @@ class noiseDistr:
     .givePars()                - returns parameters for this noise distr.
     .giveDistrType()           - returns string specifying noise distribution
     .giveNoiseInteraction()    - returns string specifying noise interaction
-    .transfNoiseSeed()         - transforms pre-seeded noise to match the
+    ._transfNoiseSeed()        - transforms pre-seeded noise to match the
                                  distribution of this noise distr.
     
     """
@@ -3987,7 +4240,7 @@ class noiseDistr:
             whichPars = [ int(whichPars) ] # allow calling with just integer
         
         try:
-            return [cls._pars[i] for i in whichPars]
+            return [cls._pars[i] for i in whichPars].copy()
         except:
             print('selected parameters to return:')
             print(whichPars)
@@ -3996,6 +4249,7 @@ class noiseDistr:
             raise Exception(('error returning selected pars. Most likely '
                              'asked for list of parameters that do not '
                              'all exist.'))
+                      
     def setNoiseInteraction(cls, noiseInteraction):
         """ .setNoiseInteraction(noiseInteraction*)
         noiseInteraction: string specifying selected noise interaction type
@@ -4118,8 +4372,8 @@ class noiseDistr:
                                  'not be updated can be handed over as None'))
 
                 
-    def transfNoiseSeed(cls, xyuData):
-        """ OUT = .transfNoiseSeed(xyuData)
+    def _transfNoiseSeed(cls, xyuData):
+        """ OUT = ._transfNoiseSeed(xyuData)
         xyuData: ndarray of data with seeded noise
         OUT:     same array as xyuData with transformed noise
         Transforms pre-seeded standard noise to match the distribution of 
@@ -4272,7 +4526,7 @@ class initDistr:
             whichPars = [ int(whichPars) ] # allow calling with just integer
         
         try:
-            return [cls._pars[i] for i in whichPars]
+            return [cls._pars[i] for i in whichPars].copy()
         except:
             print('selected parameters to return:')
             print(whichPars)
@@ -4584,7 +4838,7 @@ class linkFunction:
             whichPars = [ int(whichPars) ] # allow calling with just integer
         
         try:
-            return [cls._pars[i] for i in whichPars]
+            return [cls._pars[i] for i in whichPars].copy()
         except:
             print('selected parameters to return:')
             print(whichPars)
