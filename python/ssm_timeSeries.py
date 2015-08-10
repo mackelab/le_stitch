@@ -746,9 +746,13 @@ class timeSeriesData:
                  tsobject=None): # timeSeriesObject  
         
         self._tsobject = tsobject # communication with e.g. "timeSeriesModel"
-        del tsobject              # objects is organized via "timeSeriesObject"
+                                  # objects is organized via "timeSeriesObject"
 
-        self._xyu = []
+        self._xyu  = [] # list of real full data {X, Y, U} for each experiment
+        self._yObs = [] # observed data Y as seen under some (possibly only
+                        # partial) observation scheme
+        self._obsScheme = [] # observation scheme for each experiment
+        
         self._offsets = np.zeros(4,dtype=int)
         
         self._Ts        = np.zeros(0) # initialize to empty
@@ -756,10 +760,15 @@ class timeSeriesData:
         self._numExperiments = self._numTrials.size   # add data 
         
         
-    def loadExperiment(cls,y):
+    def loadExperiment(cls,y,xyu='xyu',experiment=None):
         """ .loadExperiment(y*)
         y: activity of variables stored in an ndarray of shape 
-           [xyuDim,T,#Trials], or a list of multiple such ndarrays. 
+           [xyuDim,T,#Trials], or a list of multiple such ndarrays
+        xyu:     string that defines for which of the variable groups X,Y,U
+                 data traces are to be returned. Possible values are e.g.  
+                 'xyu','xu','y' and other ordered substrings of 'xyu'           
+        experiment: integer index for stored experiment. Use the default 
+                    'None' to add a completely new experiment.
         'Loads' data into timeSeriesData() object. Primarily intended to get 
         real data (interpreted as observed variables Y) into the framework,
         then preferentially with a corresponding timeSeriesModel() object of
@@ -768,6 +777,11 @@ class timeSeriesData:
         Input arrays will be COPIED before adding them to the data object.
 
         """
+        if (not experiment is None  # convention: add new experiments
+              and not isinstance(experiment, (list, numbers.Integral))):
+            raise Exception(('argument experiment has to be None, int or a '
+                             'list of ints. It it neither.'))
+            
         # try to get acces to .model object:
         try:
             model = cls._tsobject.giveModel()
@@ -777,6 +791,16 @@ class timeSeriesData:
         
         if isinstance(y, list):             # handing over list of experiments
             i = 0
+            if not experiment is None and not isinstance(experiment, list):
+                raise Exception(('if argument y is a list, argument experiment'
+                                 ' also has to be a list. It is not'))
+            elif not experiment is None and len(y) != len(experiment):
+                print('len(y)')
+                print(len(y))
+                print('len(experiment)')
+                print(len(experiment))
+                raise Exception(('lengths of arguments y and experiment have '
+                                 'to match. They do not.'))
             xyuDim = y[0].shape[0]
             while i < len(y):
                 if not isinstance(y[i],np.ndarray):
@@ -797,9 +821,20 @@ class timeSeriesData:
                     print(y[i].shape[0])
                     raise Exception(('All data sets must have the same '
                                      'data dimensionality.'))
+                elif y[i].size == 0: # e.g. if xyu='u' in a no-input model
+                    raise Exception(('trying to load empty data array into '
+                                     'timeSeriesData object.'))
                 i +=1                
         elif not isinstance(y, np.ndarray): # handing over single experiment
             raise Exception('data has to be of dtype ndarray. It is not.')
+        elif y.size == 0:
+            raise Exception(('trying to load empty data array into '
+                             'timeSeriesData object.'))  
+        elif (not (experiment is None or isinstance(experiment, list)) 
+               and (experiment < 0 or experiment >= cls._numExperiments)):
+            print('experiment:')
+            print( experiment  )
+            raise Exception('argument experiment has to be non-negative int')
         else:
             xyuDim = y.shape[0]
             
@@ -819,7 +854,6 @@ class timeSeriesData:
             # else: we're fine, i.e. offsets are known and match new data                          
         else: # if not 'empirical' model class, i.e. we actually have a model                           
             try: 
-
                 model = cls._tsobject.giveModel()
             except:
                 raise Exception(('model description for data model is '
@@ -831,52 +865,72 @@ class timeSeriesData:
                 raise Exception(('variable description for data model is '
                                  'required, but apparently not yet '
                                  'initialized'))  
-            xyuSubgroupTallies = varDescr.giveVarSubgroupTallies() 
-            if xyuDim != np.sum(xyuSubgroupTallies):
+            xyuVarDims = varDescr.giveVarDims(xyu) 
+            if xyuDim != np.sum(xyuVarDims):
                 print('model description:')
                 print(model.giveModelDescription())
                 print('number of dimensions of provided data:')
-                print(y.shape[0])
-                print('total number of variables of current model:')
-                print(np.sum(xyuSubgroupTallies))
+                print(xyuDim)
+                print('selected variable groups (within X,Y,U)')
+                print(xyu)
+                print('number of selected variables of current model:')
+                print(np.sum(xyuVarDims))
                 raise Exception(('dimensionality of provided data does not '
                                  'match dimensionality of model parameters.'))
-            else: # seems we're fine, but inform that we do some guessing:
-                print('loading data for stored model with description:')
-                print(model.giveModelDescription())
-                print('loaded data has dimensionality')
-                print(xyuDim)
-                print('model has total (dim(X)+dim(Y)+dim(U)) dimensionality')
-                print(np.sum(xyuSubgroupTallies))
-                print('will assume the first ')
-                print(xyuSubgroupTallies[0])
-                print(' dimensions to belong to X, the next ')
-                print(xyuSubgroupTallies[1])
-                print(' dimensions to belong to Y, and the rest to U')
                                             
             cls._offsets[0] = 0
             cls._offsets[1] = cls._offsets[0] + varDescr.giveVarDims('x')
             cls._offsets[2] = cls._offsets[1] + varDescr.giveVarDims('y')
             cls._offsets[3] = cls._offsets[2] + varDescr.giveVarDims('u')
-                      
+        try:
+            idxDims   = { 'xyu' : np.arange(cls._offsets[0], cls._offsets[3]),
+                          'xy'  : np.arange(cls._offsets[0], cls._offsets[2]),
+                          'xu'  : np.concatenate(
+                                     [np.arange(cls._offsets[0], cls._offsets[1]),
+                                      np.arange(cls._offsets[2], cls._offsets[3])]
+                                                 ),
+                          'yu'  : np.arange(cls._offsets[1], cls._offsets[3]),
+                           'x'  : np.arange(cls._offsets[0], cls._offsets[1]),
+                           'y'  : np.arange(cls._offsets[1], cls._offsets[2]),
+                           'u'  : np.arange(cls._offsets[2], cls._offsets[3])
+                             }[xyu]
+        except:
+            raise Exception(('argument "xyu" has to be an ordered subset '
+                           'of x, y and u, e.g. "yu", "x", "xyu"'))        
+        
         if isinstance(y, list):
             Ts        = np.zeros(len(y))
             numTrials = np.zeros(len(y))
             i = 0
             while i < len(y):
-                cls._xyu.append(y[i])
-                Ts[i]     = y[i].shape[1]
-                numTrials = y[i].shape[2]
+                Ts[i]        = y[i].shape[1]
+                numTrials[i] = y[i].shape[2]
+                if experiment is None:
+                    cls._xyu.append(np.zeros([cls._offsets[3],
+                                              Ts[i],
+                                              numTrials[i]]))
+                    tmp = cls._numExperiments+i  # note this gives +1 to index  
+                    cls._yObs.append([]) # make space for possible observed Y
+                    cls._obsScheme.append([])
+                else:
+                    tmp = experiment[i]
+                cls._xyu[tmp][idxDims,:,:] = y[i].copy()
                 i += 1
         else: # checked before, has to be ndarray otherwise: 
-            cls._xyu.append(y)
-            Ts        = y[i].shape[1]
-            numTrials = y[i].shape[2]
+            Ts        = y.shape[1]
+            numTrials = y.shape[2]
+            if experiment is None:
+                tmp = cls._numExperiments # note this gives +1 to index
+                cls._xyu.append(np.zeros([cls._offsets[3], Ts, numTrials]))       
+                cls._yObs.append([]) # make space for possible observed Y
+                cls._obsScheme.append([])                
+            cls._xyu[tmp][idxDims,:,:] = y.copy()
                       
         # update data inventory
-        cls._Ts        = np.hstack([cls._Ts.copy(), Ts])
-        cls._numTrials = np.hstack([cls._numTrials.copy(), numTrials])
-        cls._numExperiments = cls._numTrials.size         
+        if experiment is None: # only need to update if adding new experiments
+            cls._Ts        = np.hstack([cls._Ts.copy(), Ts])
+            cls._numTrials = np.hstack([cls._numTrials.copy(), numTrials])
+            cls._numExperiments = cls._numTrials.size         
 
         
     def addExperiment(cls,
@@ -892,8 +946,8 @@ class timeSeriesData:
         object attached to this timeSeriesObject. Not specifying the random
         seed will always intialize it to the same value! Use an RNG and 
         provide it as third argument if random outcomes are wanted.
-        """
         
+        """        
         # try to get acces to .model object:
         try:
             model = cls._tsobject.giveModel()
@@ -983,7 +1037,10 @@ class timeSeriesData:
                                        varDescr.giveVarSubgroupIndices(), 
                                        varDescr.giveVarSubgroupSizes(),
                                        numTrials[t], Ts[t],   
-                                       distrType ) ) 
+                                       distrType ) 
+                           ) 
+            cls._yObs.append([]) # make space for observed version of Y
+            cls._obsScheme.append([])            
             t += 1
            
         # now fill the allocated space with actual data! 
@@ -997,66 +1054,171 @@ class timeSeriesData:
             timeSeriesData._sampleModelGivenNoiseSeed(cls._xyu[i], tsmodel)
             i += 1
             
-    def simulateObservationScheme(cls, 
-                                  experiment=0, 
-                                  subpops=None, obsTimes=None,
-                                  mask=float('NaN')):
-        """ .simulateObservationScheme(experiment, subpops, times)
+    def deleteExperiments(cls, experiment=0):
+        """ .deleteExperiment(experiment)
+        experiment: (list/array of) index of experiment(s) to manipulate
+        Deletes specified experiments from this timeSeriesData object.
+        
+        """        
+        if isinstance(experiment, np.ndarray):
+            experiment = experiment.tolist()            
+        cls._Ts        = cls._Ts.tolist()
+        cls._numTrials = cls._numTrials.tolist()
+        if isinstance(experiment, list):
+            experiment.sort()
+            experiment.reverse()
+            if experiment[0] >= cls._numExperiments:
+                print('maximum index of experiments:')
+                print(experiment[0])
+                print('number of currently stored experiments:')
+                print(cls._numExperiments)
+                raise Exception('cannot delete experiments that do no exist')
+                     
+            for i in range(len(experiment)):
+                cls._xyu.pop(      experiment[i])
+                cls._yObs.pop(     experiment[i])
+                cls._obsScheme.pop(experiment[i])
+                cls._Ts.pop(       experiment[i])
+                cls._numTrials.pop(experiment[i])
+        elif isinstance(experiment, numbers.Integral) and experiment >= 0:
+            cls._xyu.pop(      experiment)
+            cls._yObs.pop(     experiment)            
+            cls._obsScheme.pop(experiment)
+            cls._Ts.pop(       experiment)
+            cls._numTrials.pop(experiment)
+        else:
+            raise Exception(('argument experiment has to be a list, ndarray '
+                             'or non-negative int'))
+        cls._Ts        = np.array(cls._Ts)
+        cls._numTrials = np.array(cls._numTrials)
+        cls._numExperiments = cls._numTrials.size         
+                
+    def setObservationScheme(cls, 
+                             experiment,
+                             subpops, 
+                             obsTimes,
+                             obsPops):
+        """ .setObservationScheme(experiment,subpops*,obsTimes*,obsPops*)
         experiment: index of experiment to manipulate
         subpops:    list of indices defining the subpopulations
-        obsTimes:   list of observation time ranges
-        mask:       default value for unobserved activity data 
+        obsTimes:   array of switch times between subpopulations
+        obsPops:    array of populations observed after each switch
 
         """  
-        if isinstance(experiment, numbers.Integral) and experiment > 0:
+        if not isinstance(experiment, numbers.Integral) or experiment > 0:
             print('experiment:')
             print(experiment)
             raise Exception('argument experiment has to be a positive int.')
-        if isinstance(subpops, list):            
-            numSubpops = len(subpops)
-        else:
-            raise Exception('argument subpops has to be a list. It is not')
-        if isinstance(obsTimes, list):            
-            numObsTime = len(obsTimes)
-        else:
-            raise Exception('argument obsTimes has to be a list. It is not')
             
-        if numSubpops != numObsTimes:
-            print('number of subpopulations:')
-            print(numSubpops)
-            print('number of observation time ranges:')
-            print(numObsTimes)
-            raise Exception(('each observed populations has to have its own '
-                             'range of times at which it was observed. '
-                             'Mismatch detected. '))
-            
-        y = cls.giveTracesY(experiment) # all dims, time points and trials!
+        try:
+            cls._obsScheme[experiment]
+        except:
+            print('experiment:')
+            print( experiment )
+            print('number of stored experiments:')
+            print( cls._numExperiments )
+            raise Exception('experiment out of index of stored experiments')
 
-        yRange = range(y.shape[0])
-        for i in len(subpops):
-            if not isinstance(subpops, (list, np.ndarray)):
+        if not isinstance(subpops, list):            
+            raise Exception('argument subpops has to be a list. It is not')
+        if isinstance(obsTimes, list):
+            obsTimes = toArray(obsTimes)
+        elif not isinstance(obsTimes, np.ndarray):            
+            raise Exception('argument obsTimes has to be a list or ndarray. '
+                            'It is not')
+        if len(subpops) < np.max(obsPops):
+            print('number of subpopulations:')
+            print(len(subpops))
+            print('maximum index of subpopulations given to be observed:')
+            print(np.max(obsPops))
+            raise Exception(('gave observation time for non-defined '
+                             'subpopulation.'))
+        
+        for i in range(len(subpops)):
+            if not isinstance(subpops[i], (list, np.ndarray)):
                 print('i:')
                 print(i)
                 print('subpops[i]')
-                print( subpops[i])
+                print( subpops[i] )
                 raise Exception(('arguments subpops[i] have to be lists or '
-                                 'ndarrays for all provided i'))
-            if (not (    (isinstance(obsTime, np.ndarray) 
-                           and np.mod(obsTime.size,2==0))
-                      or (isinstance(obsTime, list) 
-                           and np.mod( len(obsTime,2)==0)) ) ):
+                                 'ndarrays for all provided i'))                
+            
+        cls._obsScheme[experiment] = {'subpops':  subpops,
+                                      'obsTimes': obsTimes,
+                                      'obsPops':  obsPops}
+            
+    def simulateObservationScheme(cls, 
+                                  experiment=0, 
+                                  subpops=None,
+                                  obsTimes=None,
+                                  obsPops=None,
+                                  mask=float('NaN')):
+        """.simulateObservationScheme(experiment,subpops,obsTimes,obsPops,mask)
+        experiment: index of experiment to manipulate
+        subpops:    list of indices defining the subpopulations
+        obsTimes:   array of switch times between subpopulations
+        obsPops:    array of populations observed after each switch
+        mask:       default value for unobserved activity data 
+
+        """  
+        if not isinstance(experiment, numbers.Integral) or experiment > 0:
+            print('experiment:')
+            print(experiment)
+            raise Exception('argument experiment has to be a positive int.')
+        if not (subpops is None or isinstance(subpops, list)):  
+            print('subpops:')
+            print( subpops  )
+            raise Exception('argument subpops has to be a list. It is not')
+        if isinstance(obsTimes, list):
+            obsTimes = toArray(obsTimes)
+        elif not (obsTimes is None or isinstance(obsTimes, np.ndarray)):            
+            raise Exception('argument obsTimes has to be a list or ndarray. '
+                            'It is not')
+        if subpops is None:
+            subpops  = cls._obsScheme[experiment]['subpops']
+        if obsTimes is None:
+            obsTimes = cls._obsScheme[experiment]['obsTimes']
+        if obsPops is None:
+            obsPops  = cls._obsScheme[experiment]['obsPops']
+            
+        if len(subpops) < np.max(obsPops):
+            print('number of subpopulations:')
+            print(len(subpops))
+            print('maximum index of subpopulations given to be observed:')
+            print(np.max(obsPops))
+            raise Exception(('gave observation time for non-defined '
+                             'subpopulation.'))
+            
+        y = cls.giveTracesY(experiment) # all dims, time points and trials!
+
+        yDims = range(y.shape[0])
+        for i in range(len(subpops)):
+            if isinstance(subpops[i], list):
+                jRange = range(len(subpops[i]))
+            elif isinstance(subpops[i], np.ndarray):
+                jRange = range(subpops[i].size)
+            else:
                 print('i:')
                 print(i)
-                print('obsTime[i]')
-                print( obsTime[i] )
-                raise Exception(('arguments obsTimes[i] have to be lists or '
-                                 'ndarrays with a length that is a multiple '
-                                 'of two for all provided i'))
-            unobs = np.array([idx not in subpops[i] for idx in yRange])
-            for j in range(obsTimes[i].shape[0]):
-                y[np.ix_(unobs, range(obsTimes[j*2], obsTimes[j*2+1]))] = mask
+                print('subpops[i]')
+                print( subpops[i] )
+                raise Exception(('arguments subpops[i] have to be lists or '
+                                 'ndarrays for all provided i'))                
+            if np.any([not subpops[i][j] in yDims for j in jRange]):
+                print('subpops[i]')
+                print( subpops[i] )
+                print('number of dimensions of Y:')
+                print(y.shape[0])
+                raise Exception(('arguments subpops[i] must not contain '
+                                 'non-existent oberved variables Y for any '
+                                 'i.'))
+        unobs = np.array([j not in subpops[obsPops[0]] for j in yDims])
+        y[np.ix_(unobs, range(obsTimes[0]))] = mask        
+        for i in range(1,obsTimes.size):
+            unobs = np.array([j not in subpops[obsPops[i]] for j in yDims])
+            y[np.ix_(unobs, range(obsTimes[i-1], obsTimes[i]))] = mask
                                                      
-        cls._yObserved[experiment] = y
+        cls._yObs[experiment] = y
                 
                 
     @staticmethod                        
@@ -1177,7 +1339,7 @@ class timeSeriesData:
         
         """
         
-        return cls._numExperiments.copy()
+        return cls._numExperiments
     
     def giveNumTrials(cls, experiment=None):
         """OUT = .giveNumTrials(experiments)
@@ -1190,7 +1352,7 @@ class timeSeriesData:
         else:
             experiment = toArray(experiment)
         
-        return cls._Trials[experiment].copy()
+        return cls._numTrials[experiment]
     
     def giveTrialLengths(cls, experiment=None):
         """OUT = .giveTrialLengths(experiments)
@@ -1203,7 +1365,7 @@ class timeSeriesData:
         else:
             experiment = toArray(experiment)
         
-        return cls._Ts[experiment].copy()
+        return cls._Ts[experiment]
             
     
     
@@ -1308,6 +1470,80 @@ class timeSeriesData:
             print(cls._xyu[experiment].shape[1:3])
             raise Exception('Queried data outside of these bounds')
 
+            
+    def giveObservationScheme(cls, experiment=0):
+        """ .giveSimulationScheme(experiment)
+        experiment: index of experiment to manipulate. Use experiment=None
+                    to return a list of all stored observation schemes.
+        OUT: dict with keys 'subpops', 'obsTimes', 'obsPops'
+        Please note: This method returns a COPY of the desired information.
+        
+        """  
+        if experiment is None:
+            return cls._obsScheme
+        elif not isinstance(experiment, numbers.Integral) or experiment > 0:
+            print('experiment:')
+            print(experiment)
+            raise Exception('argument experiment has to be a positive int.')            
+        try:
+            cls._obsScheme[experiment]
+        except:
+            print('experiment:')
+            print( experiment )
+            print('number of stored experiments:')
+            print( cls._numExperiments )
+            raise Exception('experiment out of index of stored experiments')
+
+        return cls._obsScheme[experiment].copy()   
+            
+            
+    def giveTracesYobs(cls, experiment=0,trials=None,times=None,dims=None):
+        """OUT = .giveTracesYobs(experiment,trials,times,dims)
+        experiment: integer index for stored experiment
+        trials:  ndarray of indices for stored trials in selected experiment
+        times:   ndarray of indices for time steps in selected experiment
+        dims:    ndarray of indices for components of Y        
+        OUT: ndarray of number of observed traces of selected components of Y 
+        Please note: This method returns a COPY of the desired data traces.
+        
+        """
+        if not isinstance(experiment, numbers.Integral):
+            raise Exception(('can only give input traces for individual '
+                             'experiments indexed by a single integer'))
+        if experiment >= cls._numExperiments:
+            print('number of experiments stored: ')
+            print(cls._numExperiments)
+            raise Exception(('experiment index too high - asking for an '
+                             'experiment that was not (yet) added'))     
+        if cls._yObs[experiment] == []: # if not added yet, is empty list
+            return np.array([])         # and cannot be indexed as below.
+            
+        if trials is None:
+            trials = np.arange(cls._yObs[experiment].shape[2])
+            
+        if times  is None:
+            times  = np.arange(cls._yObs[experiment].shape[1])
+            
+        if dims   is None:
+            dims   = np.arange(cls._yObs[experiment].shape[0])
+            
+        dims   = toArray(dims)            
+        trials = toArray(trials)
+        times  = toArray(times)
+        
+        if np.amax(dims) > cls._yObs[experiment].shape[0]:
+            print('requested highest dimension of Y:')
+            print(np.amax(dims))
+            print('stored highest dimension of Y:')
+            print(cls._yObs[experiment].shape[0])
+            raise Exception(('requesting dimensions of Y beyond those '
+                             'that are stored'))
+        try:
+            return cls._yObs[experiment][np.ix_(dims,times,trials)].copy()
+        except:
+            print('Data for Y has size = (times,trials) =')
+            print(cls._yObs[experiment].shape[1:3])
+            raise Exception('Queried data outside of these bounds')
 
     
     def giveTracesU(cls, experiment=0, trials=None, times=None, dims=None):
@@ -2527,7 +2763,7 @@ class timeSeriesModel:
         
         """
         if cls._modelClass in cls.supportedModelClasses:
-            return cls._modelDescr.copy()
+            return cls._modelDescr
         else:
             raise Expection(('currently used model class does not support '
                              ' standard model description'))
