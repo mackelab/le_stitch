@@ -99,8 +99,8 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
                              'containing the parameters defining an LDS. '
                              'It is neither.'))
                                    
-        xGr = np.zeros(dims[0],dtype=int)
-        yGr = np.zeros(dims[1],dtype=int)
+        xGr = np.zeros(xDim,dtype=int)
+        yGr = np.zeros(yDim,dtype=int)
         uGr = np.zeros(      0,dtype=int)
 
         dts = toArray([-1,0])
@@ -132,6 +132,99 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
         
         noiseIntActTypes[0] = [ '+' ] # noise is additive
         noiseIntActTypes[1] = [ '+' ] # noise is additive
+        
+        initDistrs.append([[],[]]) # variable initializations for  t = 1
+        initDistrs[0][0] = ['Gaussian']  # initDistrs[dt][X] = list(...)
+        initDistrs[0][1] = [  None    ]  # initDistrs[dt][Y] = list(...)
+        
+        updateParsList = [A,Q,mu0,V0,C,R]
+        
+
+    if ssmType == 'stitchLDS':
+                       
+        if dims.size != 2:
+            print('dims:')
+            print(dims)
+            raise Exception(('LDS has two groups of variables, X and Y, and '
+                             'dims hence needs to be of size two'))
+        [xDim,yDim] = checkInDims(dims)
+        
+        if pars is None: # populate default parameters
+            A    = np.identity(xDim)
+            Q    = np.identity(xDim)
+            mu0  = np.zeros(xDim)
+            V0   = np.identity(xDim)
+            C = []
+            R = []
+            for i in range(len(yDim)):
+                C.append(np.ones([yDim[i],xDim]))
+                R.append(np.identity(yDim[i]))
+                
+        elif isinstance(pars, (list,np.ndarray)):
+            if   isinstance(pars,np.ndarray): 
+                if np.size(pars)!=6:
+                    print('number of parameters handed over:')
+                    print(np.size(pars))
+                    raise Exception(('LDS is defined by exactly 6 parameters: '
+                                     '{A,Q,mu0,V0,C,R}. Mismatch!'))            
+            elif isinstance(pars,list):
+                if len(pars)!=6:
+                    print('number of parameters handed over:')
+                    print(len(pars))
+                    raise Exception(('LDS is defined by exactly 6 parameters: '
+                                     '{A,Q,mu0,V0,C,R}. Mismatch!'))
+            A    = pars[0]
+            Q    = pars[1]
+            mu0  = pars[2]
+            V0   = pars[3]
+            C    = pars[4] # has to be a list of length #subpopulations !
+            R    = pars[5]
+        else:
+            raise Exception(('argument pars has to be list or ndarray '
+                             'containing the parameters defining an LDS. '
+                             'It is neither.'))
+                                   
+        xGr = np.zeros(       xDim, dtype=int)
+        yGr = np.zeros(np.sum(yDim),dtype=int)
+        for i in range(1,len(yDim)):
+            yGr[np.sum(yDim[0:i]):np.sum(yDim[0:i+1])] = i    
+        uGr = np.zeros(           0,dtype=int)
+
+        dts = toArray([-1,0])
+            
+        tmp = np.zeros([3,2], dtype=np.ndarray)         # dt = -1
+        tmp[0,0] =  np.ones( [1,        1],dtype=bool) # X|X  
+        tmp[1,0] =  np.zeros([len(yDim),1],dtype=bool) # X|Y   
+        tmp[2,0] =  np.zeros([1,        1],dtype=bool) # X|U            
+        tmp[0,1] =  np.zeros([1,len(yDim)],dtype=bool) # Y|X         
+        tmp[1,1] =  np.zeros([len(yDim),len(yDim)],dtype=bool) # Y|Y
+        tmp[2,1] =  np.zeros([1,len(yDim)],dtype=bool) # Y|U
+        deps.append( tmp )
+
+        tmp = np.zeros([3,2], dtype=np.ndarray)         # dt = 0
+        tmp[0,0] =  np.zeros([1,        1],dtype=bool) # X|X
+        tmp[1,0] =  np.zeros([len(yDim),1],dtype=bool) # X|Y
+        tmp[2,0] =  np.zeros([1,        1],dtype=bool) # X|U
+        tmp[0,1] =  np.ones( [1,len(yDim)],dtype=bool) # Y|X 
+        tmp[1,1] =  np.zeros([len(yDim),len(yDim)],dtype=bool) # Y|Y
+        tmp[2,1] =  np.zeros([1,len(yDim)],dtype=bool) # Y|U
+        deps.append( tmp )
+        del tmp
+
+        linkFunctions[0] = ['linear']            # x = f(fa_x)                    
+        linkFunctions[1] = []                    # y = f(fa_y)
+        for i in range(1,len(yDim)):
+            linkFunctions[1].append('linear')
+            
+        noiseDistrs[0] = ['Gaussian']            # noise on x
+        noiseDistrs[1] = []                      # noise on y
+        for i in range(1,len(yDim)):
+            noiseDistrs[1].append('Gaussian')
+        
+        noiseIntActTypes[0] = [ '+' ] # noise is additive
+        noiseIntActTypes[1] = []      # noise is additive
+        for i in range(1,len(yDim)):
+            noiseIntActTypes[1].append('+')
         
         initDistrs.append([[],[]]) # variable initializations for  t = 1
         initDistrs[0][0] = ['Gaussian']  # initDistrs[dt][X] = list(...)
@@ -193,9 +286,9 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
                              'containing the parameters defining an input '
                              'auto-regressive LDS. It is neither.'))
                                    
-        xGr = np.zeros(dims[0],dtype=int)
-        yGr = np.zeros(dims[1],dtype=int)
-        uGr = np.zeros(dims[2],dtype=int)
+        xGr = np.zeros(xDim,dtype=int)
+        yGr = np.zeros(yDim,dtype=int)
+        uGr = np.zeros(uDim,dtype=int)
 
         dts = toArray([-1,0])
             
@@ -298,6 +391,10 @@ def checkInDims(dims):
         xDim = dims[0][0]
     elif isinstance(dims[0], numbers.Integral):
         xDim = dims[0]
+    elif (isinstance(dims[0], list) and 
+          np.all([isinstance(dims[0][i], numbers.Integral) for 
+                  i in range(len(dims[0]))])   ):
+        xDim = dims[0]
     else: 
         print('dims[0]:')
         print(dims[0])
@@ -308,6 +405,10 @@ def checkInDims(dims):
         (isinstance(dims[1], np.ndarray) and dims[1].size == 1)):
         yDim = dims[1][0]
     elif isinstance(dims[1], numbers.Integral):
+        yDim = dims[1]
+    elif (isinstance(dims[1], list) and 
+          np.all([isinstance(dims[1][i], numbers.Integral) for 
+                  i in range(len(dims[1]))])   ):
         yDim = dims[1]
     else: 
         print('dims[1]:')
@@ -322,6 +423,10 @@ def checkInDims(dims):
             (isinstance(dims[2], np.ndarray) and dims[2].size == 1)):
             uDim = dims[2][0]
         elif isinstance(dims[2], numbers.Integral):
+            uDim = dims[2]
+        elif (isinstance(dims[2], list) and 
+              np.all([isinstance(dims[2][i], numbers.Integral) for 
+                      i in range(len(dims[2]))])   ):
             uDim = dims[2]
         else: 
             print('dims[2]:')
@@ -598,8 +703,8 @@ class timeSeriesObject:
         times:   ndarray of indices for time steps in selected experiment
         Fits the stored model to data stored in the 'empirical' object.
         """
-        LLs = cls._model.fit(maxIter,epsilon,initPars,ifPlotProgress,
-                             experiment,trials,times)
+        LLs = cls._model.fit(maxIter,epsilon,initPars,
+                             experiment,trials,times,ifPlotProgress)
         return LLs
 
     def resetData(cls):
@@ -912,6 +1017,8 @@ class timeSeriesData:
                     tmp = cls._numExperiments+i  # note this gives +1 to index  
                     cls._yObs.append([]) # make space for possible observed Y
                     cls._obsScheme.append([])
+                    cls.setObservationScheme(len(cls._obsScheme)-1, # initialize
+                                             None, None, None)      # 
                 else:
                     tmp = experiment[i]
                 cls._xyu[tmp][idxDims,:,:] = y[i].copy()
@@ -923,7 +1030,10 @@ class timeSeriesData:
                 tmp = cls._numExperiments # note this gives +1 to index
                 cls._xyu.append(np.zeros([cls._offsets[3], Ts, numTrials]))       
                 cls._yObs.append([]) # make space for possible observed Y
-                cls._obsScheme.append([])                
+                cls._obsScheme.append([])    
+                cls.setObservationScheme(len(cls._obsScheme)-1, # initialize
+                                         None, None, None)      # 
+
             cls._xyu[tmp][idxDims,:,:] = y.copy()
                       
         # update data inventory
@@ -1040,7 +1150,10 @@ class timeSeriesData:
                                        distrType ) 
                            ) 
             cls._yObs.append([]) # make space for observed version of Y
-            cls._obsScheme.append([])            
+            cls._obsScheme.append([])        
+            cls.setObservationScheme(len(cls._obsScheme)-1, # initialize
+                                     None, None, None)      # 
+
             t += 1
            
         # now fill the allocated space with actual data! 
@@ -1096,13 +1209,13 @@ class timeSeriesData:
     def setObservationScheme(cls, 
                              experiment,
                              subpops, 
-                             obsTimes,
+                             obsTime,
                              obsPops):
-        """ .setObservationScheme(experiment,subpops*,obsTimes*,obsPops*)
+        """ .setObservationScheme(experiment,subpops*,obsTime*,obsPops*)
         experiment: index of experiment to manipulate
         subpops:    list of indices defining the subpopulations
-        obsTimes:   array of switch times between subpopulations
-        obsPops:    array of populations observed after each switch
+        obsTime:    array of switch times between subpopulations
+        obsPops:    array of populations observed before each switch
 
         """  
         if not isinstance(experiment, numbers.Integral) or experiment > 0:
@@ -1119,12 +1232,18 @@ class timeSeriesData:
             print( cls._numExperiments )
             raise Exception('experiment out of index of stored experiments')
 
+        # 'Hidden' use: set default observation scheme (observe everything)
+        if (subpops is None) and (obsTime is None) and (obsPops is None):
+            subpops  = [list(range(0, cls._offsets[2]-cls._offsets[1]))]
+            obsPops  = [0] # only observed subpopulation: whole population!
+            obsTime  = [cls._Ts[experiment]] # switch to next at t = T
+            
         if not isinstance(subpops, list):            
             raise Exception('argument subpops has to be a list. It is not')
-        if isinstance(obsTimes, list):
-            obsTimes = toArray(obsTimes)
-        elif not isinstance(obsTimes, np.ndarray):            
-            raise Exception('argument obsTimes has to be a list or ndarray. '
+        if isinstance(obsTime, list):
+            obsTime = toArray(obsTime)
+        elif not isinstance(obsTime, np.ndarray):            
+            raise Exception('argument obsTime has to be a list or ndarray. '
                             'It is not')
         if len(subpops) < np.max(obsPops):
             print('number of subpopulations:')
@@ -1144,19 +1263,19 @@ class timeSeriesData:
                                  'ndarrays for all provided i'))                
             
         cls._obsScheme[experiment] = {'subpops':  subpops,
-                                      'obsTimes': obsTimes,
+                                      'obsTime':  obsTime,
                                       'obsPops':  obsPops}
             
     def simulateObservationScheme(cls, 
                                   experiment=0, 
                                   subpops=None,
-                                  obsTimes=None,
+                                  obsTime=None,
                                   obsPops=None,
                                   mask=float('NaN')):
-        """.simulateObservationScheme(experiment,subpops,obsTimes,obsPops,mask)
+        """.simulateObservationScheme(experiment,subpops,obsTime,obsPops,mask)
         experiment: index of experiment to manipulate
         subpops:    list of indices defining the subpopulations
-        obsTimes:   array of switch times between subpopulations
+        obsTime:    array of switch times between subpopulations
         obsPops:    array of populations observed after each switch
         mask:       default value for unobserved activity data 
 
@@ -1169,15 +1288,20 @@ class timeSeriesData:
             print('subpops:')
             print( subpops  )
             raise Exception('argument subpops has to be a list. It is not')
-        if isinstance(obsTimes, list):
-            obsTimes = toArray(obsTimes)
-        elif not (obsTimes is None or isinstance(obsTimes, np.ndarray)):            
-            raise Exception('argument obsTimes has to be a list or ndarray. '
+        if isinstance(obsTime, list):
+            obsTime = toArray(obsTime)
+        elif not (obsTime is None or isinstance(obsTime, np.ndarray)):            
+            raise Exception('argument obsTime has to be a list or ndarray. '
+                            'It is not')
+        if isinstance(obsPops, list):
+            obsPops = toArray(obsPops)
+        elif not (obsPops is None or isinstance(obsPops, np.ndarray)):            
+            raise Exception('argument obsPops has to be a list or ndarray. '
                             'It is not')
         if subpops is None:
             subpops  = cls._obsScheme[experiment]['subpops']
-        if obsTimes is None:
-            obsTimes = cls._obsScheme[experiment]['obsTimes']
+        if obsTime is None:
+            obsTime = cls._obsScheme[experiment]['obsTime']
         if obsPops is None:
             obsPops  = cls._obsScheme[experiment]['obsPops']
             
@@ -1213,10 +1337,10 @@ class timeSeriesData:
                                  'non-existent oberved variables Y for any '
                                  'i.'))
         unobs = np.array([j not in subpops[obsPops[0]] for j in yDims])
-        y[np.ix_(unobs, range(obsTimes[0]))] = mask        
-        for i in range(1,obsTimes.size):
+        y[np.ix_(unobs, range(obsTime[0]))] = mask        
+        for i in range(1,obsTime.size):
             unobs = np.array([j not in subpops[obsPops[i]] for j in yDims])
-            y[np.ix_(unobs, range(obsTimes[i-1], obsTimes[i]))] = mask
+            y[np.ix_(unobs, range(obsTime[i-1], obsTime[i]))] = mask
                                                      
         cls._yObs[experiment] = y
                 
@@ -1475,7 +1599,7 @@ class timeSeriesData:
         """ .giveSimulationScheme(experiment)
         experiment: index of experiment to manipulate. Use experiment=None
                     to return a list of all stored observation schemes.
-        OUT: dict with keys 'subpops', 'obsTimes', 'obsPops'
+        OUT: dict with keys 'subpops', 'obsTime', 'obsPops'
         Please note: This method returns a COPY of the desired information.
         
         """  
@@ -1849,10 +1973,10 @@ class timeSeriesModel:
             maxIter=1000, 
             epsilon=np.log(1.05), # stop if likelihood change < 5%
             initPars=None,
-            ifPlotProgress=False,
             experiment=0, 
             trials=None, 
-            times=None):
+            times=None,
+            ifPlotProgress=False):
         """ OUT = .fit(maxIter,epsilon,initPars, 
                  ifPlotProgress,experiment,trials,times)
         maxIter:  maximum allowed iterations for iterative fitting (e.g. EM)
@@ -1875,12 +1999,15 @@ class timeSeriesModel:
         except:
             raise Exception(('error trying to fit model to data. Could not '
                              'find empirical data object!'))
+            
         y = data.giveTracesY(experiment, trials, times) # get all the
-        u = data.giveTracesU(experiment, trials, times) # observed data
+        u = data.giveTracesU(experiment, trials, times) # observed data  
+        
+        obsScheme = data.giveObservationScheme(experiment)
 
         if cls._modelDescr == 'stateSpace_LDS':
             if initPars is None:                # use current pars as init
-                [A, Q, mu0, V0, C, R] = cls.givePars().copy() 
+                [A, Q, mu0, V0, C, R] = cls.givePars().copy()                 
             elif isinstance(initPars, list) and len(initPars)==6: 
                 [A, Q, mu0, V0, C, R] = initPars
             elif isinstance(initPars, dict):
@@ -1894,13 +2021,17 @@ class timeSeriesModel:
                 if 'V0' in initPars.keys():
                     V0  = initPars['V0']
                 if 'C' in initPars.keys():                    
-                    C = initPars['C']
+                    C = initPars['C']  
                 if 'R' in initPars.keys():                    
-                    R = initPars['R']
+                    R = initPars['R']   
                     
+            C = [C]                    #
+            R = [R]                    # adhere to stitchLDS convention
+            
             xDim = cls._varDescr.giveVarDims('x')
             [As, Qs, mu0s, V0s, Cs, Rs, LLs] = \
                            timeSeriesModel._fitLDS(y, 
+                                                   obsScheme,
                                                    [A, Q, mu0, V0, C, R], 
                                                    maxIter, 
                                                    epsilon, 
@@ -1931,26 +2062,41 @@ class timeSeriesModel:
                   # additional data such as parameters or variable  
                   # dimensionalities- everything has to be handed over !
     def _fitLDS(y, 
+                obsScheme,
                 initPars=None, 
                 maxIter=1000, 
                 epsilon=np.log(1.05), # stop if likelihood change < 5%
                 ifPlotProgress=False, 
                 xDim=None):
-        """ OUT = _fitLDS(y*,initPars, maxIter, epsilon, 
+        """ OUT = _fitLDS(y*,obsScheme*,initPars, maxIter, epsilon, 
                     ifPlotProgress,xDim)
-        initPars: set of parameters to start fitting. If == None, the 
-                  parameters currently stored in the model will be used,
-                  otherwise needs initPars = [A,Q,mu0,V0,C,R]
-        maxIter:  maximum allowed iterations for iterative fitting (e.g. EM)
+        y:         data array
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        initPars:  set of parameters to start fitting. If == None, the 
+                   parameters currently stored in the model will be used,
+                   otherwise needs initPars = [A,Q,mu0,V0,C,R]
+        maxIter:   maximum allowed iterations for iterative fitting (e.g. EM)
         epsilon:  convergence criterion, e.g. difference of log-likelihoods
         ifPlotProgress: boolean, specifying if fitting progress is visualized
-        xDim:     dimensionality of (sole subgroup of) latent state X
+        xDim:      dimensionality of (sole subgroup of) latent state X
         Fits an LDS model to data stored in the 'empirical' object.
         
         """
         
         yDim = y.shape[0] 
-                
+        
+        try:
+            subpops = obsScheme['subpops'];
+            obsTime = obsScheme['obsTime'];
+            obsPops = obsScheme['obsPops'];
+        except:
+            print('obsScheme:')
+            print(obsScheme)
+            raise Exception(('provided obsScheme dictionary does not have '
+                             'the required fields: subpops, obsTimes, '
+                             'and obsPops.'))        
+                        
         if not (isinstance(maxIter, numbers.Integral) and maxIter > 0):
             print('maxIter:')
             print(maxIter)
@@ -1990,6 +2136,9 @@ class timeSeriesModel:
                 xDim = initPars[3].shape[0] # ... or from V0
             elif  not initPars[4] is None and isinstance(initPars[4],np.array):
                 xDim = initPars[4].shape[1] # ... or from C
+            elif (not initPars[4] is None and isinstance(initPars[4],list) 
+                                      and isinstance(initPars[4][0],np.array)):
+                xDim = initPars[4][0].shape[1] # ... or from C of subpop. #1
             else: 
                 raise Exception(('could not obtain xDim. Need to provide '
                                  'either xDim, or initializations for at '
@@ -2046,37 +2195,74 @@ class timeSeriesModel:
             raise Exception(('Bad initialization for LDS parameter V0.'
                              'Shape not matching dimensionality of x'))
         if initPars[4] is None:
-            C   =       np.random.normal(size=[yDim, xDim])            
-        elif np.all(initPars[4].shape==(yDim,xDim)): 
+            C = [];
+            i = 0
+            while i < len(subpops):
+                C.append( np.random.normal(size=[len(subpops[i]), xDim]) )
+                i += 1
+        elif (isinstance(initPars[4], np.ndarray) and 
+              np.all(initPars[4].shape==(yDim,xDim))):
+            C = [initPars[4].copy()]
+        elif (isinstance(initPars[4], list) and
+              len(initPars[4])==len(subpops) and 
+              np.all( [np.all(initPars[4][i].shape==(len(subpops[i]),xDim)) 
+                       for i in range(len(subpops))] )
+              ): 
             C   = initPars[4].copy()
         else:
             print('xDim:')
             print(xDim)
             print('yDim:')
             print(yDim)
-            print('C.shape:')
-            print(initPars[4].shape)
+            try:
+                print('C.shape:')
+                print(initPars[4].shape)  # if this works ...
+            except: # if C is list ...
+                print('len(C):')
+                print(len(initPars[4]))
+                raise Exception(('Bad initialization for LDS parameter C.'
+                             'C has to be a list of correctly shaped ' 
+                             'matrices, one per observed subpopulation. '))
+                                          # ... we jump to here: 
             raise Exception(('Bad initialization for LDS parameter C.'
-                             'Shape not matching dimensionality of y, x'))
+                             'Shape not matching dimensionality of y, x'))                  
         if initPars[5] is None:
-            R   =       np.identity(yDim)            
-        elif np.all(initPars[5].shape==(yDim,yDim)): 
+            R = [];
+            i = 0
+            while i < len(subpops):
+                R.append( np.identity(yDim)  )
+                i += 1
+        elif (isinstance(initPars[5], np.ndarray) and 
+              np.all(initPars[5].shape==(yDim,yDim))):
+            R = [initPars[5].copy()]
+        elif (isinstance(initPars[5], list) and
+              len(initPars[5])==len(subpops) and 
+              np.all( [np.all(initPars[5][i].shape==(yDim,yDim)) 
+                       for i in range(len(subpops))] )
+              ): 
             R   = initPars[5].copy()
         else:
             print('yDim:')
             print(yDim)
-            print('R.shape:')
-            print(initPars[5].shape)
-            raise Exception(('Bad initialization for LDS parameter R.'
-                             'Shape not matching dimensionality of y'))
+            try:
+                print('R.shape:')
+                print(initPars[R].shape)  # if this works ...
+            except: # if C is list ...
+                print('len(R):')
+                print(len(initPars[5]))
+                raise Exception(('Bad initialization for LDS parameter R.'
+                             'R has to be a list of correctly shaped ' 
+                             'matrices, one per observed subpopulation. '))
+                                          # ... we jump to here: 
+            raise Exception(('Bad initialization for LDS parameter C.'
+                             'Shape not matching dimensionality of y'))                    
 
         E_step = timeSeriesModel._LDS_E_step # greatly improves
         M_step = timeSeriesModel._LDS_M_step # readability ...
-        LL     = timeSeriesModel._LDSlogLikelihood 
         
         # evaluate initial state       
-        [Ext, Extxt, Extxtm1, LLtr] = E_step(A, Q, mu0, V0, C, R, y)
-        #LL_new                = LL(A,Q,mu0,V0,C,R,Ext,Extxt,Extxtm1,y)      
+        [Ext, Extxt, Extxtm1, LLtr] = E_step(A, Q, mu0, V0, C, R, y, 
+                                             obsScheme)
         LL_new = np.sum(LLtr)
         LL_old = -float('Inf')
         dLL = []              # performance trace for status plotting
@@ -2101,7 +2287,7 @@ class timeSeriesModel:
             [A,Q,mu0,V0,C,R]      = M_step(Exts[stepCount], 
                                            Extxts[stepCount], 
                                            Extxtm1s[stepCount],
-                                           y)
+                                           y, obsScheme)
             As.append(A.copy())
             Qs.append(Q.copy())
             mu0s.append(mu0.copy())
@@ -2110,13 +2296,17 @@ class timeSeriesModel:
             Rs.append(R.copy())    
             stepCount += 1            
             
+            print(C)
+            print(R)
+            
             [Ext, Extxt, Extxtm1, LLtr] = E_step(As[stepCount], 
                                                  Qs[stepCount], 
                                                  mu0s[stepCount], 
                                                  V0s[stepCount], 
                                                  Cs[stepCount], 
                                                  Rs[stepCount],
-                                                 y)
+                                                 y,
+                                                 obsScheme)
             Exts.append(Ext.copy())
             Extxts.append(Extxt.copy())
             Extxtm1s.append(Extxtm1.copy())
@@ -2130,6 +2320,7 @@ class timeSeriesModel:
                 display.clear_output(wait=True)
 
             if LL_new < LL_old:
+                raise Exception('')
                 print('LL_new - LL_old')
                 print( LL_new - LL_old )
                 print(('WARNING! Lower bound decreased during EM '
@@ -2143,96 +2334,19 @@ class timeSeriesModel:
                 
         LLs = toArray(LLs)        
         return [As, Qs, mu0s, V0s, Cs, Rs, LLs]
-
+    
+    
     @staticmethod
-    def _LDSlogLikelihood(A,Q,mu0,V0,C,R,Ext,Extxt,Extxtm1,y):
-        """ OUT=_LDSlogLikelihood(A*,Q*,mu0*,V0*,C*,R*,Ext*,Extxt*,Extxtm1*,y*)
+    def _LDS_E_step(A,Q,mu0,V0,C,R,y,obsScheme): 
+        """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*)
         see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
-        for formulas and input/output naming conventions   
-        CURRENTLY LACKS TERMS FOR ENTROPY OF POSTERIOR q AND PRODUCES 
-        WRONG RESULTS. DO NOT USE!
-        (E-step can directly LL from Kalman-filter forward pass)
-
+        for formulas and input/output naming conventions
+        The variable obsScheme is a dictionary that contains information
+        on observed subpopulations of y that are observed at each time point
         """
-        xDim  = Ext.shape[0]
-        T     = Ext.shape[1]
-        Trial = Ext.shape[2]    
-        yDim  = y.shape[0]
-
-        # pre-compute statistics important for the terms related to x_1    
-        V0inv = np.linalg.inv(V0)
-        sMu0mMu1V0Inv = 0 # sum over (mu0 - mu1_h)' V0^-1 (mu0 - mu1_h)
-        sV0invV1_h    = 0 # sum over trace(V0^-1 V1_h)
-        tr = 0
-        while tr < Trial:
-            V1_h  = Extxt[:,:,0,tr] - np.outer(Ext[:,0,tr], Ext[:,0,tr])
-            sV0invV1_h    += np.trace(np.dot(V0inv, V1_h))
-            sMu0mMu1V0Inv += np.inner(mu0 - Ext[:,0,tr], 
-                                      np.dot(V0inv, mu0-Ext[:,0,tr])) 
-            tr += 1
-            
-        # pre-compute statistics important for  terms related to x_t | x_{t-1}
-        sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
-        sExtxt2toN   = np.sum(             Extxt[:,:,1:T,:], (2,3) )  # sums 
-        sExtxt1toN   = sExtxt2toN + np.sum(Extxt[:,:,  0,:],2)  # over 
-        sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2)  # E[x_t x_t']
-
-        # pre-compute statistics important for the terms related to y_t | x_t
-        Rinv  = np.linalg.inv(R)
-        syRinvCExt = 0 # sum over quadratics y_t' R^-1 E[x_t]                                 
-        syRinvy    = 0 # sum over quadratics y_t' R^-1 y_t'                                  
-        tr = 0
-        while tr < Trial:
-            t = 0
-            while t < T:
-                Rinvy = np.dot(Rinv, y[:,t,tr])
-                syRinvCExt += np.inner(  y[:,t,tr],           Rinvy)
-                syRinvy    += np.inner(np.dot(C,Ext[:,t,tr]), Rinvy)                                   
-                t += 1
-            tr += 1    
-
-        LL = 0
-
-        # add E_q[log p(x_1 | Y, \theta)], i.e. cross-entropy of q(x_1), p(x_1)
-        LL -= 1/2 * ( Trial * np.log(np.linalg.det(V0))
-                    + sV0invV1_h
-                    + sMu0mMu1V0Inv
-                    + Trial * xDim * np.log(2*sp.pi)  # + constant in mu0, V0 
-                    ) 
-        # add E_q[log p(x_t, x_{t-1} | Y, \theta)] for t = 2, ..., T
-        Qinv   = np.linalg.inv(Q)    
-        QinvA  = np.dot(Qinv, A)
-        AQinvA = np.dot(A.transpose(), QinvA)    
-        LL -= 1/2 * ( Trial * (T-1) * np.log(np.linalg.det(Q))
-                    +     np.sum(  Qinv  * sExtxt2toN ) 
-                    - 2 * np.sum(  QinvA * sExtxtm1 )
-                    +     np.sum( AQinvA * sExtxt1toNm1 )
-                    + Trial*(T-1)*xDim*np.log(2*sp.pi)  # + constant in A, Q 
-                    ) 
-        # add E_q[log p(y_t, x_t     |  \theta)  ] for t = 1, ..., T
-        CRinvC = np.dot(np.dot( C.transpose(), Rinv), C)    
-        LL -= 1/2 * ( Trial * T * np.log(np.linalg.det(R)) 
-                    +     syRinvy 
-                    - 2 * syRinvCExt 
-                    +     np.sum( CRinvC * sExtxt1toN ) 
-                    + Trial*T*yDim*np.log(2*sp.pi)      # + constant in C, R
-                    )
-        # add - E_q[log q( x )], i.e. the entropy of q(x) 
-        #LL += 1/2 * ( Trial * np.log(np.linalg.det(V0)) # from H[x_1]
-        #            + Trial *(T-1)*np.log(np.linalg.det(Q)) # H[x_n|x_{n-1}] 
-        #            + Trial *T*xDim*np.log(2*sp.pi) # + constant in A, Q 
-        #            )
-
-        return LL
-
-    @staticmethod
-    def _LDS_E_step(A,Q,mu0,V0,C,R,y): 
-        """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*)
-        see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
-        for formulas and input/output naming conventions   
-        """
-        [mu,V,P,K,c] = timeSeriesModel._KalmanFilter(A,Q,mu0,V0,C,R,y)
-        [mu_h,V_h,J] = timeSeriesModel._KalmanSmoother(A, mu, V, P)
+        [mu,V,P,K,c] = timeSeriesModel._KalmanFilter(A,Q,mu0,V0,C,R,y,
+                                                     obsScheme)
+        [mu_h,V_h,J] = timeSeriesModel._KalmanSmoother(A,mu,V,P)
 
         [Ext,Extxt,Extxtm1]=timeSeriesModel._KalmanParsToMoments(mu_h,V_h,J)
 
@@ -2241,10 +2355,12 @@ class timeSeriesModel:
         return [Ext, Extxt, Extxtm1, LL]
 
     @staticmethod
-    def _KalmanFilter(A,Q,mu0,V0,C,R,y):        
-        """ OUT = _KalmanFilter(A*,Q*,mu0*,V0*,C*,R*,y*)
+    def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):        
+        """ OUT = _KalmanFilter(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*)
         see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
         for formulas and input/output naming conventions   
+        The variable obsScheme is a dictionary that contains information
+        on observed subpopulations of y that are observed at each time point
         """
         xDim  = A.shape[0]
         yDim  = y.shape[0]
@@ -2257,34 +2373,57 @@ class timeSeriesModel:
         c  = np.zeros([          T,Trial])
         mvnpdf = sp.stats.multivariate_normal.pdf
         Id = np.identity(xDim)
-        tr = 0
 
+        try:
+            subpops = obsScheme['subpops'];
+            obsTime = obsScheme['obsTime'];
+            obsPops = obsScheme['obsPops'];
+        except:
+            print('obsScheme:')
+            print(obsScheme)
+            raise Exception(('provided obsScheme dictionary does not have '
+                             'the required fields: subpops, obsTimes, '
+                             'and obsPops.'))
+        xRange = range(xDim)
         Atr = A.transpose()
-        Ctr = C.transpose()
+        
+        tr = 0
         while tr < Trial:
             # first time step: [mu0,V0] -> [mu1,V1]
-            Cmu0    = np.dot(C,mu0)
-            P0      = V0 # = np.dot(np.dot(A, V0), Atr) + Q
-            CPCR    = np.dot(np.dot(C,P0), Ctr) + R
+            j   = obsPops[0]
+            idx = subpops[j]
+            Ctr = C[j].transpose()
+            Cmu0 = np.dot(C[j],mu0)
+            P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
+            CPCR = np.dot(np.dot(C[j],P0), Ctr) + R[j]
             CPCRinv = np.linalg.inv(CPCR)
-            K[:,:,0,tr] = np.dot(np.dot(P0,Ctr),CPCRinv)
-            mu[ :,0,tr] = mu0 + np.dot(K[:,:,0,tr],y[:,0,tr]-Cmu0)
-            V[:,:,0,tr] = np.dot(Id - np.dot(K[:,:,0,tr],C),P0)
+            Ktmp    = np.dot(np.dot(P0,Ctr),CPCRinv)
+            Kslice  = K[:,:,0,tr]
+            Kslice[np.ix_(xRange,idx)] = Ktmp.copy()
+            del Kslice # just for safety ...
+            mu[ :,0,tr] = mu0 + np.dot(Ktmp,y[idx,0,tr]-Cmu0)
+            V[:,:,0,tr] = np.dot(Id - np.dot(Ktmp,C[j]),P0)
             P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
-            c[    0,tr] = mvnpdf(y[:,0,tr], mean=Cmu0, cov=CPCR)
+            c[    0,tr] = mvnpdf(y[idx,0,tr], mean=Cmu0, cov=CPCR)
             t = 1 # now start with second time step ...
-            while t < T:
-                Amu  = np.dot(A,mu[:,t-1,tr])
-                CAmu = np.dot(C,Amu)
-                PCtr = np.dot(P[:,:,t-1,tr], Ctr)
-                CPCR    = np.dot(C, PCtr) + R
-                CPCRinv = np.linalg.inv(CPCR)
-                K[:,:,t,tr] = np.dot(PCtr,CPCRinv)
-                mu[ :,t,tr] = Amu + np.dot(K[:,:,t,tr],y[:,t,tr]-CAmu)
-                V[:,:,t,tr] = np.dot(Id - np.dot(K[:,:,t,tr],C),P[:,:,t-1,tr])
-                P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
-                c[    t,tr] = mvnpdf(y[:,t,tr], mean=CAmu, cov=CPCR)
-                t += 1
+            for i in range(len(obsTime)):
+                while t < obsTime[i]: # switch to new subpop, i.e. C[i], R[i]
+                    j   = obsPops[i]
+                    idx = subpops[j]
+                    Ctr = C[j].transpose()                  
+                    Amu  = np.dot(A,mu[:,t-1,tr])
+                    CAmu = np.dot(C[j],Amu)
+                    PCtr = np.dot(P[:,:,t-1,tr], Ctr)                          
+                    CPCR    = np.dot(C[j], PCtr) + R[j]
+                    CPCRinv = np.linalg.inv(CPCR)
+                    Kslice  = K[:,:,t,tr]
+                    Kslice[np.ix_(xRange,idx)] = Ktmp.copy()
+                    del Kslice # just for safety ...
+                    mu[ :,t,tr] = Amu + np.dot(Ktmp,y[idx,t,tr]-CAmu)
+                    V[:,:,t,tr] = np.dot(Id - np.dot(Ktmp,C[j]),P[:,:,t-1,tr])
+                    P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
+                    c[    t,tr] = mvnpdf(y[idx,t,tr], mean=CAmu, cov=CPCR)
+                    t += 1
             tr += 1
         return [mu,V,P,K,c]
     
@@ -2324,7 +2463,9 @@ class timeSeriesModel:
     def _KalmanParsToMoments(mu_h, V_h, J):
         """ OUT = _KalmanParsToMoments(mu)h*,V_h*,J*)
         see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
-        for formulas and input/output naming conventions   
+        for formulas and input/output naming conventions  
+        The variable obsScheme is a dictionary that contains information
+        on observed subpopulations of y that are observed at each time point 
         """                
         xDim = mu_h.shape[0]
         T    = mu_h.shape[1]
@@ -2353,50 +2494,73 @@ class timeSeriesModel:
         return [Ext, Extxt, Extxtm1]
 
     @staticmethod
-    def _LDS_M_step(Ext, Extxt, Extxtm1, y):   
-        """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*)
+    def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme):   
+        """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*)
         see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
         for formulas and input/output naming conventions   
+        The variable obsScheme is a dictionary that contains information
+        on observed subpopulations of y that are observed at each time point
         """                        
         xDim  = Ext.shape[0]
         T     = Ext.shape[1]
         Trial = Ext.shape[2]    
         yDim  = y.shape[0]
+        
+        try:
+            subpops = obsScheme['subpops'];
+            obsTime = obsScheme['obsTime'];
+            obsPops = obsScheme['obsPops'];
+        except:
+            print('obsScheme:')
+            print(obsScheme)
+            raise Exception(('provided obsScheme dictionary does not have '
+                             'the required fields: subpops, obsTimes, '
+                             'and obsPops.'))
+        
 
         sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
         sExtxt2toN   = np.sum(             Extxt[:,:,1:T,:], (2,3) )  # sums 
         sExtxt1toN   = sExtxt2toN + np.sum(Extxt[:,:,  0,:],2)  # over 
         sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2)  # E[x_t x_t']  
-        syExt = np.zeros([yDim,xDim]) # sum over outer product y_t x_t'                                 
-        syy   = np.zeros([yDim,yDim]) # sum over outer product y_t y_t'                                  
+        syExt = [] # sum over outer product y_t x_t'
+        syy   = [] # sum over outer product y_t y_t'
+        i = 0
+        while i < len(subpops):
+            syExt.append(np.zeros([len(subpops[i]),    xDim]       ) )           
+            syy.append(  np.zeros([len(subpops[i]),len(subpops[i])]) )   
+            i += 1                                  
         tr = 0
         while tr < Trial:
             t = 0
-            while t < T:
-                syExt += np.outer(y[:,t,tr], Ext[:,t,tr])
-                syy   += np.outer(y[:,t,tr],   y[:,t,tr])                                   
-                t += 1
+            for i in range(len(obsTime)):
+                while t < obsTime[i]: # switch to new subpop, i.e. C[i], R[i]
+                    j   = obsPops[i]
+                    idx = subpops[j]
+                    syExt[j] += np.outer(y[idx,t,tr], Ext[:,t,tr])
+                    syy[j]   += np.outer(y[idx,t,tr],   y[idx,t,tr])                                   
+                    t += 1
             tr += 1
 
-        mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 ) 
-        V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0) 
+        mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                              
+        V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)      
 
         A = np.dot(  sExtxtm1, np.linalg.inv(sExtxt1toNm1) )                                    
         Atr = A.transpose()
         sExtxtm1Atr = np.dot(sExtxtm1, Atr)
-        Q = 1/(Trial*(T-1)) * (  sExtxt2toN  
+        Q = 1/(Trial*(T-1)) * (  sExtxt2toN   
                                - sExtxtm1Atr.transpose()
                                - sExtxtm1Atr 
                                + np.dot(np.dot(A, sExtxt1toNm1), Atr) ) 
-
-        C = np.dot(syExt, np.linalg.inv(sExtxt1toN))
-        Ctr = C.transpose()
-        syExtCtr = np.dot(syExt, Ctr)
-        R = 1/(Trial*T) * (  syy 
-                           - syExtCtr.transpose()
-                           - syExtCtr
-                           + np.dot(np.dot(C, sExtxt1toN), Ctr) )
-
+        C = []
+        R = []
+        for j in range(len(subpops)):
+            C.append(np.dot(syExt[j], np.linalg.inv(sExtxt1toN)))             # will need to adjust 1/(Trial*T) for stitching!
+            Ctr = C[j].transpose()
+            syExtCtr = np.dot(syExt[j], Ctr)
+            R.append(1/(Trial*T) * (  syy[j]                                  # will need to adjust 1/(Trial*T) for stitching!
+                                 - syExtCtr.transpose()
+                                 - syExtCtr
+                                 + np.dot(np.dot(C[j], sExtxt1toN), Ctr) ))
 
         return [A,Q,mu0,V0,C,R]        
 
@@ -2595,6 +2759,7 @@ class timeSeriesModel:
                 noisePars[1] = [ [None, R] ]                 
                 initPars[0][0] = [ [mu0, V0] ]
                 initPars[0][1] = [   None    ]  
+                
             elif isinstance(pars, dict):
                 linkPars[0] = [ None ]       
                 linkPars[1] = [ None ]      
@@ -2607,13 +2772,70 @@ class timeSeriesModel:
                 if 'C' in pars.keys():
                     linkPars[1][0] = pars['C']
                 if 'Q' in pars.keys():
-                    noisePars[0][1] = pars['Q']
+                    noisePars[0][0][1] = pars['Q']
                 if 'R' in pars.keys():
-                    noisePars[1][1] = pars['R']
+                    noisePars[1][0][1] = pars['R']
+                if 'mu0' in pars.keys():
+                    initPars[0][0][0][0] = pars['mu0']
+                if 'V0' in pars.keys():
+                    initPars[0][0][0][1] = pars['V0']     
+                    
+                    
+        elif modelDescr == 'stateSpace_stitchLDS':
+            if (isinstance(pars, list) and  len(pars) != 6):
+                print('len(pars):')
+                print(len(pars))
+                raise Exception(('for LDS, argument pars has to have '
+                                 'a length of exactly 6! It does not.'))
+                
+            elif isinstance(pars, list):                         
+                A   = pars[0]
+                Q   = pars[1]
+                mu0 = pars[2]
+                V0  = pars[3]
+                C   = pars[4] # now is list of length #subpopulations
+                R   = pars[5]
+                # make sure the ordering of parameters follows a sorting
+                # by [dt,varGroup,varSubgroup], i.e. first have those 
+                # parameters for the smallest dt (dt=-1 before dt=0 etc.),  
+                # then in a nested loop sorted by varGroup (X before Y) 
+                #  and then by subgroup index.
+                linkPars[0] = [ A ]       
+                linkPars[1] =   C    # C is list already        
+                noisePars[0] = [ [None, Q] ]
+                noisePars[1] = []
+                for i in range(len(R)):
+                    noisePars[1].append( [None, R[i]] )                    
+                initPars[0][0] = [ [mu0, V0] ]
+                initPars[0][1] = []  
+                for i in range(len(C)):
+                    initPars[0][1].append( None )                    
+                    
+            elif isinstance(pars, dict):
+                linkPars[0] = [ None ]       
+                linkPars[1] = [ None ]      
+                noisePars[0] = [ [None, None] ]
+                noisePars[1] = []
+                for i in range(len(R)):
+                    noisePars[1].append( [None, None] )                    
+                initPars[0][0] = [ [None, None] ]
+                initPars[0][1] = []  
+                for i in range(len(C)):
+                    initPars[0][1].append( None )                    
+                    
+                if 'A' in pars.keys():
+                    linkPars[0][0] = pars['A']
+                if 'C' in pars.keys():
+                    linkPars[1]    = pars['C']            # C is list already
+                if 'Q' in pars.keys():
+                    noisePars[0][0][1] = pars['Q']
+                if 'R' in pars.keys():
+                    for i in range(len(R)):
+                        noisePars[1][i][1] = pars['R'][i] # R is list of R[i]'s                    
                 if 'mu0' in pars.keys():
                     initPars[0][0][0] = pars['mu0']
                 if 'V0' in pars.keys():
-                    initPars[0][0][1] = pars['V0']                              
+                    initPars[0][0][1] = pars['V0']                             
             
         elif modelDescr == 'stateSpace_inputARLDS':
             if isinstance(pars, list) and  len(pars) != 11:
@@ -2657,17 +2879,17 @@ class timeSeriesModel:
                 if 'D' in pars.keys():
                     linkPars[1][2] = pars['D']                                
                 if 'Q' in pars.keys():
-                    noisePars[0][1] = pars['Q']
+                    noisePars[0][0][1] = pars['Q']
                 if 'R' in pars.keys():
-                    noisePars[1][1] = pars['R']
+                    noisePars[1][0][1] = pars['R']
                 if 'mu0' in pars.keys():
-                    initPars[0][0][0] = pars['mu0']
+                    initPars[0][0][0][0] = pars['mu0']
                 if 'V0' in pars.keys():
-                    initPars[0][0][1] = pars['V0']                                   
+                    initPars[0][0][0][1] = pars['V0']                                   
                 if 'nu0' in pars.keys():
-                    initPars[0][1][0] = pars['nu0']
+                    initPars[0][1][0][0] = pars['nu0']
                 if 'W0' in pars.keys():
-                    initPars[0][1][1] = pars['W0']               
+                    initPars[0][1][0][1] = pars['W0']               
         else: 
             print('modelDescr:')
             print(modelDescr)
