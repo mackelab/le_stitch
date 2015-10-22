@@ -1,0 +1,178 @@
+\documentclass[10pt,letterpaper]{article}
+% Use adjustwidth environment to exceed column width (see example table in text)
+\usepackage{changepage}
+
+% Use Unicode characters when possible
+\usepackage[utf8]{inputenc}
+
+% textcomp package and marvosym package for additional characters
+\usepackage{textcomp,marvosym}
+
+% fixltx2e package for \textsubscript
+\usepackage{fixltx2e}
+
+% amsmath and amssymb packages, useful for mathematical formulas and symbols
+\usepackage{amsmath,amssymb}
+
+% cite package, to clean up citations in the main text. Do not remove.
+\usepackage{cite}
+
+% Use nameref to cite supporting information files (see Supporting Information section for more info)
+\usepackage{nameref,hyperref}
+
+% line numbers
+\usepackage[right]{lineno}
+
+% ligatures disabled
+\usepackage{microtype}
+\DisableLigatures[f]{encoding = *, family = * }
+
+% rotating package for sideways tables
+\usepackage{rotating}
+
+\usepackage{color}
+% Remove comment for double spacing
+%\usepackage{setspace} 
+%\doublespacing
+
+\usepackage{dsfont}
+\newcommand{\jhm}[1]{   {\bf \color{red}jhm[#1]}  }
+\newcommand{\mn}[1]{   {\bf \color{blue}mn[#1]}  }
+\newcommand{\cb}[1]{   {\bf \color[rgb]{0,0.6,0}cb[#1]}  }
+
+\setlength{\parindent}{0.5cm}
+\textwidth 5.25in 
+\textheight 8.75in
+
+% Bold the 'Figure #' in the caption and separate it from the title/caption with a period
+% Captions will be left justified
+\usepackage[aboveskip=1pt,labelfont=bf,labelsep=period,justification=raggedright,singlelinecheck=off]{caption}
+
+% Remove brackets from numbering in List of References
+\makeatletter
+\renewcommand{\@biblabel}[1]{\quad#1.}
+\makeatother
+
+% Leave date blank
+\date{}
+
+% Super-handy maths abbreviations
+\newcommand{\xb}{\mathbf{x}}
+\newcommand{\ub}{\mathbf{u}}
+\newcommand{\wb}{\mathbf{w}}
+\newcommand{\yb}{\mathbf{y}}
+\newcommand{\vb}{\mathbf{v}}
+
+%% END MACROS SECTION
+
+
+\begin{document}
+
+\title{le bla}
+\maketitle
+\section{Mutli-timescale stitching}
+
+\noindent{}We want to allow having different time discretisation step lengths $\Delta{}t_k$ over different intervals of the time series $\yb_n$, $n = 0, \ldots, N$. 
+As the dynamics of the temporally evolving latent variables depend on the time scale of the time series, different time scales will go along a change in the values of the model parameters $\theta$ (e.g. $\theta = \{A,b,B,e,Q,C,d,D,f,R, \mu_0, V_0 \}$ for the affine-LDS) at the time of switching from one $\Delta{}t_k$ to another. \\
+\noindent{}The gap between the different time scales can be closed by looking at the continuous-time representation of the system. 
+As we will show below for the case of the classical LDS with inputs, the parameters of the discrete-time representation(s) for given $\Delta{}t$ can be read of the continuous-time representation. \\
+The equations for the discrete-time input LDS (i.e. ignoring drift vectors $b,e$ and emission offsets $d,f$ of the more general case for the moment) are 
+\begin{align}
+\xb_{n+1} &= A \xb_n + B \ub_n + G \epsilon_n 
+\label{eq:inputLDS_discTime} \\
+\yb_{n} &= C \xb_n  + D \ub_n + H \eta_n
+\end{align}
+where $\epsilon_n$, $\eta_n$ are independent $p$- and $q$-dimensional Gaussian noise vectors. \\
+\noindent{}We start out with laying down the generative model in continuous time. 
+\begin{align}
+d{\xb_t} &= \tilde{A} \xb_t dt + \tilde{B} \ub_t dt + \tilde{G} d\wb_t
+\label{eq:inputLDS_contTime} \\
+d{\yb_t} &= C \left( \sum_{n+0}^\infty \delta{}(t - n\Delta{}t) \xb_t \right) dt + \tilde{D} \ub_t dt + \tilde{H} d\vb_t  
+\end{align}
+with $p$-dimensional and $q$-dimensional Brownian noise $\wb$, $\vb$. Note that there is a certain degree of freedom in how we set up the emission of $\yb_t$ given $\xb_t$ and $\ub_t$. We just need to be careful with being consistent and with taking into account all consequences of our design choices. In the above approach, we enforce the observed values $\yb_t$ to only depend on the latent trajectory $\xb_t$ evaluated at discrete points in time. We can do similar with $\tilde{D}\ub_t$ and $\tilde{H}d\vb_t$ (see below). In either case, the general solution for $\xb_t$ can be given as
+\begin{align}
+\xb_t = \Phi_t \left( \xb_0 + \int_0^t \Phi_s^{-1} \tilde{B} \ub_s ds + \int_0^t \Phi_s^{-1} \tilde{G} \wb_s d\wb_s \right) \label{eq:inputLDS_contTime_solution} 
+\end{align}
+with $\Phi_t$ being the general solution to the \mn{find actual term} purely linear dynamics $d\xb_t = \tilde{A} \xb_t dt$ (would also exist if $\tilde{A}_t$ were to change over time). For constant $\tilde{A}$, it is $\Phi_t = \exp(\tilde{A} t) \xb_0$. \\
+Setting time $t =(n+1)\Delta{}t$ in eq \ref{eq:inputLDS_contTime_solution} gives an expression in terms of $\Delta{}t$-discretised time for $\xb_{(n+1)\Delta{}t}$ as function of $\xb_{n\Delta{}t}$ and the input $\ub_s$ and noise $\wb_s$ for $s \in [n\Delta{}t, (n+1)\Delta{}t]$. 
+\begin{align}
+\xb_{(n+1)\Delta{}t} &= \exp(\tilde{A}\Delta{}t) \left( \xb_{n\Delta{}t} + \int_{n\Delta{}t}^{(n+1)\Delta{}t} \exp(-\tilde{A}s) \tilde{B} \ub_s ds + \int_{n\Delta{}t}^{(n+1)\Delta{}t} \exp(-\tilde{A}s) \tilde{G} \wb_s d\wb_s \right)
+ \label{eq:inputLDS_contTime_solution_discrete} 
+\end{align}
+The dynamics given in eq. \ref{eq:inputLDS_contTime} are autonomous beyond the external influences $\ub_t$, $\wb_t$, so for any given fixed $n \in \mathbb{N}_{>0}$ we can time-shift all of $\xb_t, \ub_t, \wb_t$ with $t \leftarrow t - n \Delta{}t$ to keep notation clean. 
+\begin{align}
+\xb_{\Delta{}t} &= \exp(\tilde{A}\Delta{}t) \xb_{0} + \int_{0}^{\Delta{}t} \exp(\tilde{A}(\Delta{}t -s)) \tilde{B} \ub_s ds + \int_{0}^{\Delta{}t} \exp(\tilde{A}(\Delta{}t -s)) \tilde{G} \wb_s d\wb_s 
+\label{eq:inputLDS_contTime_solution_discrete_centered} 
+\end{align}
+% &= A \xb_0 + F_\ub(\{\ub_s | 0 \leq s \leq \Delta{}t\},\tilde{A},\tilde{B}) + \int_{0}^{\Delta{}t} \exp(\tilde{A}(\Delta{}t -s)) \tilde{G} \wb_s d\wb_s
+\noindent{}The right-hand side consists of three additive terms, each dependent only on one of the relevant variables $\xb, \ub, \wb$. The target at this point is to arrive at a version of eq. \ref{eq:inputLDS_contTime_solution_discrete_centered} that looks like the familiar discrete-time version eq. \ref{eq:inputLDS_discTime}, i.e. to identify the parameters $A, B$, and $G$ \\
+\noindent{}The discrete-time dynamics matrix can be read off immediately as $A = \exp(\tilde{A}\Delta{}t)$. \\ 
+\noindent{}To solve the integral involving $\ub_t$, we can either assume that the input between the $n+1$-th and $n$-th sampling point is constant, $\ub_t = \bar{\ub}$. Then we can read off $B = \int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - s)) ds \tilde{B}$. Alternatively, we can set the input to come in delta-pulses centered at time $t^*$, $t^* \in [0, \Delta{}t[$, so that $B = \exp(\tilde{A}(\Delta{}t-t^*))\tilde{B}$, which entails $B \rightarrow \tilde{B}$ for $t^* \rightarrow \Delta{}t$. In the general case, we can solve the integral numerically. We then however lack a single well-defined vector $\ub_n$ to which we can assign the input $\ub_t$, $n\Delta{}t \leq t \leq (n+1)\Delta{}t$ in discrete time. Hence we might have to give up the distinction between $\ub_n$ and $B$ and fit the model directly with an effective input $\tilde{\ub}_n$. \\
+\noindent{}The integral involving $\wb_t$ can be solved using Ito's calculus for stochastic integrals. When dealing with the integral, we ought to keep in mind that its solution will be the effective innovation noise added to $\xb_0$ after time $\Delta{}t$, i.e. the random vector $G\epsilon_0$ from eq. \ref{eq:inputLDS_discTime}. We know it is Gaussian, hence we care for its mean and variance. A (multivariate) Ito integral is written as 
+\begin{align}
+\int_0^\infty Y_t dW_t = \int_0^\infty Y(t,\omega) dW(t,\omega)
+\end{align}
+for stochastic integrand $Y(t,\omega) \in \mathbb{R}^{m \times p}$ and Brownian motion $W(t,\omega) \in \mathbb{R}^p$. The notation on the right-hand side is less common, but makes explicit the dependence on a given random draw $\omega \in \Omega$ from the underlying probability space $(\Omega, \mathbb{F}, P)$. $W(t, \omega)$ can in principle also be something other (more general) than Brownian motion, but that does not concern us here. Our integrand, $Y_t = \exp(\tilde{A}(\Delta{}t - t) \tilde{G} \in \mathbb{R}^{p \times p}$ for $0 \leq t \leq \Delta{t}$ and $Y_t = 0$ for $t > \Delta{}t$, is 
+\begin{itemize}
+\item measurable \mn{should really show that}, 
+\item adapted (meaning that $Y_t$ does not peek into the future of $W_t$) and 
+\item has finite norm $|| Y ||_V = \int_0^\infty || Y_s^2 || ds = \int_0^{\Delta{}t}|| Y_s^2 || ds$.
+\end{itemize} 
+It furthermore also is non-stochastic. Sufficing the three above-listed conditions means that our $Y_t$ is well-behaved enough for the integral to possess a valid solution and to apply some equalities from Ito's calculus. The solution of an Ito integral over process $Y_t$ is constructed from so-called simple processes $Y^*(t,\omega) = \sum_{i=0}^\infty \alpha_i(\omega) \bf{1}_{[t_i,t_{i=1}]}$ with increasing sequence $\{t_i\}_{i\geq0}$. For a simple process, the Ito integral is defined as 
+\begin{align}
+\int_0^\infty Y^*_t dW_t = \sum_{i=1} \alpha_i (W(t_{i+1},\omega) - W(t_{i},\omega))
+\end{align}
+for the same increasing sequence $\{t_i\}_{i\geq0}$. Our integrand being well-behaved according to the above three conditions means that there exists a sequence of simple processes $\{Y^*_n\}_n$ for whose distances it holds that $||Y^*_n - Y||_V \rightarrow 0$ as $0 \rightarrow \infty$. The Ito integral of $Y_t$ is taken as the limit of the integrals of $\{Y^*_n\}_n$. Proving that this limit exists and is independent of the actual approximating sequence is not easy. \\
+Next we compute the expected value of the integral (i.e. the mean of discrete-time innovation noise $G \epsilon$) for each individual component $i \in \{1, \ldots, p\}$. The vector-valued expected value expected value is with respect to the underlying probability measure $P(\omega)$ and hence over the space of all possible white noise trajectories $W_t$. The equations are given by
+\begin{align}
+\mbox{E}\left[\int_0^\infty \exp(\tilde{A}(\Delta{}t - t)) \tilde{G} dW_t\right]_i &=  
+\mbox{E} \left[\int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - t)) \tilde{G} dW_t \right]_i + \mbox{E} \left[\int_{\Delta{}t}^\infty \exp(\tilde{A}(\Delta{}t - t)) \tilde{G} dW_t \right]_i \\
+&= \mbox{E} \left[\int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - t)) \tilde{G} dW_t \right]_i + \mbox{E} \left[\int_{\Delta{}t}^\infty 0 dW_t \right]_i \\
+&= \sum_{j=1}^p \mbox{E}\left[\int_0^\infty \left[\exp(\tilde{A}(\Delta{}t - t))\right]_{ij} \tilde{G} dW_{(j,t)}\right] = \sum_{j=1}^p 0 = 0
+\end{align}
+Here we used that a well-defined Ito integral can be split along its integration interval border at $0 \leq \Delta{}t \leq \infty$, that the Ito integral of the zero integrand is zero, that an entry in the vector-valued multivariate Ito integral can be computed in analogy to the rules of matrix multiplication, and lastly, that the expected Ito integral over any uni-variate stochastic process is always zero. For the pair-wise moments, we turn to 
+
+\begin{align}
+& \mbox{E}\left[\left[\int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - t)) \tilde{G} dW_t\right]_i \left[\int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - t)) \tilde{G} dW_t\right]_j \right] \\
+&= \mbox{E}\left[\left(\sum_{k=1}^p \int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{ik} dW_{(k,t)}\right) \left(\sum_{l=1}^p \int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{jl} dW_{(l,t)}\right) \right] \\
+&= \sum_{k=1}^p \sum_{l=1}^p \mbox{E}\left[\left(\int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{ik} dW_{(k,t)}\right) \left(\int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{jl} dW_{(l,t)}\right) \right]  \\
+&= \sum_{k=1}^p \mbox{E}\left[\left(\int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{ik} dW_{(k,t)}\right) \left(\int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{jk} dW_{(k,t)}\right) \right] \\
+&= \sum_{k=1}^p \mbox{E}\left[\int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{ik} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{jk} dt \right] \\
+&= \int_0^{\Delta{}t} \sum_{k=1}^p  \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{ik} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\right]_{jk} dt  \\
+&= \int_0^{\Delta{}t} \left[\exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\tilde{G}^T  \exp(\tilde{A}(\Delta{}t - t))^T  \right]_{ij} dt
+\end{align}
+where we used the relation of multivariate Ito integrals to the uni-variate case, the linearity of the expected value, the fact that Ito integrals over independent noise processes are independent (collapsing the sum), the bivariate version of the Ito isometry (relating $dW_t$ to $dt$), the fact that our integrand is non-stochastic, and lastly basic linear algebra. \\
+\noindent{}Since the first moments are all zero, the above results for the pair-wise moments coincide with the covariance matrix of the integral. As already noted above, the solution of the integral corresponds to the discrete-time innovation noise $G\epsilon$. Together, this gives
+\begin{align}
+\mbox{Cov}[G\epsilon_0] = G G^T = \int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\tilde{G}^T  \exp(\tilde{A}(\Delta{}t - t))^T dt
+\end{align}
+
+\noindent{}To summarize, we for any given $\Delta{}t$ can identify the discrete-time versions of the dynamics parameters from the continuous-time version as
+\begin{align}
+A &= \exp(\tilde{A} \Delta{}t)) \\
+B &= \exp(\tilde{A}(\Delta{}t-t^*))\tilde{B} \hspace{2cm} \mbox{(depending on how we set up the input)}\\
+G &= \mbox{chol}\left( \int_0^{\Delta{}t} \exp(\tilde{A}(\Delta{}t - t)) \tilde{G}\tilde{G}^T  \exp(\tilde{A}(\Delta{}t - t))^T dt \right) 
+\end{align}
+
+\subsection{Data generation}
+We assume to have time-continuous dynamics with known parameters $\tilde{A}, \tilde{B}, \tilde{G}$ and some known input signal $\ub_t$ that is fed into the latent dynamics either as piece-wise constant between multiples of $\Delta{}t$ or in the form of delta pulses. To generate data in this context, we for each subsequence of indices $n$ with the same $\Delta{}t$, we compute $A, B, G$ from $\tilde{A}, \tilde{B}, \tilde{G}$ and $\Delta{}t$, and sample the data using ancestral sampling as usual. 
+
+\subsection{E-step}
+
+
+
+\end{document}
+
+
+
+
+
+
+
+
+
+
+
+
+\nolinenumbers
+
