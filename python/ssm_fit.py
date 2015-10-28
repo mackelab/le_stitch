@@ -168,30 +168,19 @@ def _fitLDS(y,
         print(y.shape)            
         raise Exception(('Bad initialization for LDS parameter C.'
                          'Shape not matching dimensionality of y, x'))  
-    if ifRDiagonal:
-        if initPars[5] is None:
-            R = np.ones(yDim)  
-        elif np.all(initPars[5].shape==(yDim,)):
-            R = initPars[5].copy()
-        else:
-            print('yDim:')
-            print(yDim)
-            print('R.shape:')
-            print(initPars[R].shape)  # if this works ...
-            raise Exception(('Bad initialization for LDS parameter C.'
-                             'Shape not matching dimensionality of y'))                    
+    if initPars[5] is None:
+        R = np.ones(yDim)  
+    elif np.all(initPars[5].shape==(yDim,)):
+        R = initPars[5].copy()
+    elif np.all(initPars[5].shape==(yDim,yDim)):
+        R = initPars[5].diagonal().copy()
     else:
-        if initPars[5] is None:
-            R = np.identity(yDim)  
-        elif np.all(initPars[5].shape==(yDim,yDim)):
-            R = initPars[5].copy()
-        else:
-            print('yDim:')
-            print(yDim)
-            print('R.shape:')
-            print(initPars[R].shape)  # if this works ...
-            raise Exception(('Bad initialization for LDS parameter C.'
-                             'Shape not matching dimensionality of y'))                    
+        print('yDim:')
+        print(yDim)
+        print('R.shape:')
+        print(initPars[R].shape)  # if this works ...
+        raise Exception(('Bad initialization for LDS parameter C.'
+                         'Shape not matching dimensionality of y'))                    
 
     E_step = _LDS_E_step # greatly improves
     M_step = _LDS_M_step # readability ...
@@ -282,7 +271,7 @@ def _fitLDS(y,
     if ifTraceParamHist:    
         return [As, Qs, mu0s, V0s, Cs, Rs, LLs]
     else:
-        return [A,  Q,  mu0,  V0,  C,  R,  LLs]
+        return [[A],  [Q],  [mu0],  [V0],  [C],  [R],  LLs]
         
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
@@ -339,7 +328,15 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
         
     if np.all(R.shape == (yDim,yDim)):
         R = R.diagonal()
-        
+    elif not np.all(R.shape == (yDim,)):
+        print('yDim:')
+        print( yDim  )
+        print('R.shape:')
+        print( R.shape  )
+        raise Exception(('Variable R is assumed to be diagonal. '
+                         'Please provide the diagonal entries as'
+                         ' (yDim,)-array'))
+            
     xRange = range(xDim)
     Atr = A.transpose()        
     Iq = np.identity(xDim)
@@ -382,8 +379,6 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
                        - np.dot(CtrRyDiff_Cmu0, np.dot(Kcore, CtrRyDiff_Cmu0)) 
                        + logdetCPCR
                       )
-         
-        print(logdetCPCR)
                 
         t = 1 # now start with second time step ...
         for i in range(len(obsTime)):
@@ -394,10 +389,6 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
             Cj   = C[np.ix_(idx,xRange)]                    # all these
             Rinv = 1/R[idx]                                 # operations 
             CtrRinv = Cj.transpose() * Rinv                 # are order
-            
-            print(Cj.transpose())
-            print(Rinv)
-            print(CtrRinv)
             CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
                                                    
             while t < obsTime[i]: 
@@ -408,8 +399,8 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
                 CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)     # O(yDim)
                                                    
                 # compute Kalman gain components                                       
-                Pinv   = sp.linalg.inv(P[:,:,t-1,tr])      
-                Kcore  = sp.linalg.inv(CtrRinvC+Pinv)                                                   
+                Pinv   = sp.linalg.inv(P[:,:,t-1,tr])       
+                Kcore  = sp.linalg.inv(CtrRinvC+Pinv)                                        
                 Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
                 PKsht  = np.dot(P[:,:,t-1,tr],  Kshrt) 
                 KC     = np.dot(PKsht, CtrRinvC)
@@ -420,7 +411,7 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
                 P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
                                                    
                 # compute marginal probability y_t | y_0, ..., y_{t-1}
-                M    = sp.linalg.cholesky(P[:,:,t-1,tr])                               
+                M    = sp.linalg.cholesky(P[:,:,t-1,tr])                                 
                 logdetCPCR = (  np.sum(np.log(R[idx]))                                  
                                  + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),np.dot(CtrRinvC,M))))
                              )
@@ -432,7 +423,7 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
                                                    
                 t += 1
                                      
-    logc = -1/2 * (logc + xDim * np.log(2*np.pi))
+    logc = -1/2 * (logc + yDim * np.log(2*np.pi))
     
     return [mu,V,P,logc]
 
@@ -488,8 +479,6 @@ def _KalmanFilterFullR(A,Q,mu0,V0,C,R,y,obsScheme):
         P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
         yzero   = y[idx,0,tr] - Cmu0
         logc[ 0,tr] = np.log(sp.linalg.det(CPCR))  + np.dot(yzero, np.dot(CPCRinv, yzero))
-         
-        print(np.log(sp.linalg.det(CPCR)))
         
         t = 1 # now start with second time step ...
         for i in range(len(obsTime)):
@@ -516,7 +505,7 @@ def _KalmanFilterFullR(A,Q,mu0,V0,C,R,y,obsScheme):
                                      
                     
                     
-    logc = -1/2 * (logc + xDim * np.log(2*np.pi))
+    logc = -1/2 * (logc + yDim * np.log(2*np.pi))
     return [mu,V,P,K,logc]
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
@@ -581,7 +570,134 @@ def _KalmanParsToMoments(mu_h, V_h, J):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):   
+def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):   
+    """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*,syy)
+    see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+    for formulas and input/output naming conventions   
+    The variable obsScheme is a dictionary that contains information
+    on observed subpopulations of y that are observed at each time point
+    The optional variable syy is the mean outer product of observations
+    y. If not provided, it will be computed on the fly.
+    The optional variable Ti counts the number of times that variables
+    y_i, i=1,..,yDim occured. If not provided, it will be computed on the fly.
+    
+    """                        
+    xDim  = Ext.shape[0]
+    T     = Ext.shape[1]
+    Trial = Ext.shape[2]    
+    yDim  = y.shape[0]
+    
+    xRange = range(xDim)
+    
+    try:
+        subpops = obsScheme['subpops'];
+        obsTime = obsScheme['obsTime'];
+        obsPops = obsScheme['obsPops'];
+    except:
+        print('obsScheme:')
+        print(obsScheme)
+        raise Exception(('provided obsScheme dictionary does not have '
+                         'the required fields: subpops, obsTimes, '
+                         'and obsPops.'))
+    
+    sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
+    sExtxt2toN   = np.sum(             Extxt[:,:,1:T,:], (2,3) )  # sums 
+    sExtxt1toN   = sExtxt2toN + np.sum(Extxt[:,:,  0,:],2)        # over 
+    sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2)        # E[x_t x_t']  
+
+    if syy is None:
+        syy   = np.zeros(yDim) # sum over outer product y_t y_t'
+        for tr in range(Trial):
+            ytr = y[:,:,tr]            
+            for i in range(len(obsTime)):
+                j   = obsPops[i]
+                idx = subpops[j]
+                if i == 0:
+                    ts  = range(0, obsTime[i])                                            
+                else:
+                    ts  = range(obsTime[i-1],obsTime[i])                 
+                ytmp = ytr[np.ix_(idx,ts)]
+                syy[idx] += np.sum(y*y,(1,2))  
+    
+    if Ti is None:
+        Ti = np.zeros([yDim]);
+        for tr in range(Trial):
+            for i in range(len(obsTime)):
+                j   = obsPops[i]
+                idx = subpops[j]
+                if i == 0:
+                    Ti[idx] += obsTime[0] # - 0, for t = 0                                                
+                else:
+                    Ti[idx] += obsTime[i] - obsTime[i-1]                                       
+                
+    syExts = np.zeros([yDim, xDim, len(obsTime)]) # sum over outer product y_t x_t'
+    for tr in range(Trial):
+        ytr = y[:,:,tr]
+        for i in range(len(obsTime)):
+            j   = obsPops[i]
+            idx = subpops[j]            
+            syExts[idx,:,i] += np.einsum('in,jn->ij', 
+                                         ytr[np.ix_(idx,ts)], 
+                                         Ext[:,ts,tr])             
+            
+    myExt = np.sum(syExts,2)               # normalize sum_t( y_t * x_t')
+    for i in range(yDim):                  # row by row with the number 
+        myExt[i,:] = myExt[i,:] / Ti[i]    # of times that y(i) was observed                                  
+    
+                                             
+    mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                              
+    V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)      
+
+    A = np.dot( sExtxtm1, sp.linalg.inv(sExtxt1toNm1) )                                    
+    Atr = A.transpose()
+    sExtxtm1Atr = np.dot(sExtxtm1, Atr)
+    Q = 1/(Trial*(T-1)) * (  sExtxt2toN   
+                           - sExtxtm1Atr.transpose()
+                           - sExtxtm1Atr 
+                           + np.dot(np.dot(A, sExtxt1toNm1), Atr) ) 
+    
+       
+    C = (Trial*T) * np.dot(myExt, sp.linalg.inv(sExtxt1toN))                
+    
+    
+    syExtCtr    = np.zeros(yDim)
+    CsExtxtCtr  = np.zeros(yDim)
+    for tr in range(Trial):
+        for i in range(0,len(obsTime)):
+            j   = obsPops[i]
+            idx = subpops[j]
+            if i == 0:
+                ts  = range(0, obsTime[i])
+            else:
+                ts  = range(obsTime[i-1],obsTime[i])
+            Cj  = C[np.ix_(idx,xRange)]
+            Ctr = Cj.transpose()                                                  
+
+            ix_idx = np.ix_(idx,idx)
+            CsExtxtCtr[idx] += np.einsum('ij,ik,jk->i', Cj, Cj, np.sum(Extxt[:,:,ts,tr], 2)) 
+            syExtCtr[idx]   += np.sum(syExts[idx,:,i] * Cj, 1)    
+    R = (  syy
+         - 2 * syExtCtr
+         + CsExtxtCtr ) / Ti
+    
+    
+#    print('')
+#    print('M-step')
+#    print('')
+#    print('myExt')
+#    print(myExt)
+#    #print('y')
+#    #print(y[:,:,0].transpose())
+#    print('C')
+#    print( C )
+#    print('R')
+#    print( R )    
+    
+    return [A,Q,mu0,V0,C,R,syy,Ti]        
+
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _LDS_M_stepFullR(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):   
     """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*,syy)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
@@ -703,18 +819,5 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):
     R = (  syy
          - (syExtCtr.transpose() + syExtCtr)
          + CsExtxtCtr ) / Tij
-    
-    
-    print('')
-    print('M-step')
-    print('')
-    print('myExt')
-    print(myExt)
-    #print('y')
-    #print(y[:,:,0].transpose())
-    print('C')
-    print( C )
-    print('R')
-    print( R )    
-    
+        
     return [A,Q,mu0,V0,C,R,syy,Tij]        

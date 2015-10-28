@@ -2060,6 +2060,10 @@ class timeSeriesModel:
 
         if cls._modelDescr == 'stateSpace_LDS':
             
+            ifRDiagonal = True  # default: assume diagonal observation noise
+            
+            ifTraceParamHist = False # default: only return final parameters
+            
             print('ifUseObsData')
             print(ifUseObsData)
             
@@ -2119,7 +2123,13 @@ class timeSeriesModel:
                                                    maxIter, 
                                                    epsilon, 
                                                    ifPlotProgress,
+                                                   ifTraceParamHist,
+                                                   ifRDiagonal,
                                                    xDim)
+                
+            if ifRDiagonal:
+                Rs[-1] = np.diag(Rs[-1])
+                
             [linkPars, noisePars, initPars] = \
                 timeSeriesModel.parsToUpdateParsList([As[-1],Qs[-1],
                                                       mu0s[-1],V0s[-1],
