@@ -16,6 +16,7 @@ def _fitLDS(y,
             epsilon=np.log(1.05), # stop if likelihood change < 5%
             ifPlotProgress=False, 
             ifTraceParamHist=False,
+            ifRDiagonal=True,
             xDim=None):
     """ OUT = _fitLDS(y*,obsScheme*,initPars, maxIter, epsilon, 
                     ifPlotProgress,xDim)
@@ -31,7 +32,8 @@ def _fitLDS(y,
         ifTraceParamHist: boolean, specifying if entire parameter updates 
                           history or only the current state is kept track of 
         xDim:      dimensionality of (sole subgroup of) latent state X
-        Fits an LDS model to data stored in the 'empirical' object.
+        ifRDiagonal: boolean, specifying diagonality of observation noise
+        Fits an LDS model to data.
 
         """
 
@@ -68,6 +70,11 @@ def _fitLDS(y,
         print('ifTraceParamHist:')
         print(ifTraceParamHist)
         raise Exception('argument ifTraceParamHist has to be a boolean')
+     
+    if not isinstance(ifRDiagonal, bool):
+        print('ifRDiagonal:')
+        print(ifRDiagonal)
+        raise Exception('argument ifRDiagonal has to be a boolean')   
         
     # we will work with continuously changing working copies of
     # the parameter initializations (no memory track along updates):
@@ -160,25 +167,38 @@ def _fitLDS(y,
         print(initPars[4].shape)  # if this works ...
         print(y.shape)            
         raise Exception(('Bad initialization for LDS parameter C.'
-                         'Shape not matching dimensionality of y, x'))                  
-    if initPars[5] is None:
-        R = np.identity(yDim)  
-    elif np.all(initPars[5].shape==(yDim,yDim)):
-        R = initPars[5].copy()
+                         'Shape not matching dimensionality of y, x'))  
+    if ifRDiagonal:
+        if initPars[5] is None:
+            R = np.ones(yDim)  
+        elif np.all(initPars[5].shape==(yDim,)):
+            R = initPars[5].copy()
+        else:
+            print('yDim:')
+            print(yDim)
+            print('R.shape:')
+            print(initPars[R].shape)  # if this works ...
+            raise Exception(('Bad initialization for LDS parameter C.'
+                             'Shape not matching dimensionality of y'))                    
     else:
-        print('yDim:')
-        print(yDim)
-        print('R.shape:')
-        print(initPars[R].shape)  # if this works ...
-        raise Exception(('Bad initialization for LDS parameter C.'
-                         'Shape not matching dimensionality of y'))                    
+        if initPars[5] is None:
+            R = np.identity(yDim)  
+        elif np.all(initPars[5].shape==(yDim,yDim)):
+            R = initPars[5].copy()
+        else:
+            print('yDim:')
+            print(yDim)
+            print('R.shape:')
+            print(initPars[R].shape)  # if this works ...
+            raise Exception(('Bad initialization for LDS parameter C.'
+                             'Shape not matching dimensionality of y'))                    
 
     E_step = _LDS_E_step # greatly improves
     M_step = _LDS_M_step # readability ...
     
     # evaluate initial state       
     [Ext, Extxt, Extxtm1, LLtr] = E_step(A, Q, mu0, V0, C, R, y, 
-                                         obsScheme)
+                                         obsScheme, ifRDiagonal)
     LL_new = np.sum(LLtr)
     LL_old = -float('Inf')
     dLL = []              # performance trace for status plotting
@@ -234,7 +254,8 @@ def _fitLDS(y,
                                              C, 
                                              R,
                                              y,
-                                             obsScheme)
+                                             obsScheme,
+                                             ifRDiagonal)
         LL_new = np.sum(LLtr) # discarding distinction between trials
         LLs.append(LL_new.copy())
 
@@ -265,14 +286,19 @@ def _fitLDS(y,
         
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _LDS_E_step(A,Q,mu0,V0,C,R,y,obsScheme): 
-    """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*)
+def _LDS_E_step(A,Q,mu0,V0,C,R,y,obsScheme,ifRDiagonal=True): 
+    """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*,ifRDiagonal)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions
     The variable obsScheme is a dictionary that contains information
     on observed subpopulations of y that are observed at each time point
+    The boolean ifRDiagonal gives if the observation noise is diagonal or not.
     """
-    [mu,V,P,K,logc] = _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme)
+    if ifRDiagonal:
+        [mu,V,P,logc]   = _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme)
+    else:
+        [mu,V,P,K,logc] = _KalmanFilterFullR(A,Q,mu0,V0,C,R,y,obsScheme)
+        
     [mu_h,V_h,J]    = _KalmanSmoother(A,mu,V,P)
 
     [Ext,Extxt,Extxtm1]= _KalmanParsToMoments(mu_h,V_h,J)
@@ -284,6 +310,135 @@ def _LDS_E_step(A,Q,mu0,V0,C,R,y,obsScheme):
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):        
+    """ OUT = _KalmanFilter(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*)
+    see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+    for formulas and input/output naming conventions   
+    The variable obsScheme is a dictionary that contains information
+    on observed subpopulations of y that are observed at each time point
+    """
+    xDim  = A.shape[0]
+    yDim  = y.shape[0]
+    T     = y.shape[1]
+    Trial = y.shape[2]
+    mu    = np.zeros([xDim,     T,Trial])
+    V     = np.zeros([xDim,xDim,T,Trial])
+    P     = np.zeros([xDim,xDim,T,Trial])
+    logc  = np.zeros([          T,Trial])
+    Id = np.identity(xDim)
+
+    try:
+        subpops = obsScheme['subpops'];
+        obsTime = obsScheme['obsTime'];
+        obsPops = obsScheme['obsPops'];
+    except:
+        print('obsScheme:')
+        print(obsScheme)
+        raise Exception(('provided obsScheme dictionary does not have '
+                         'the required fields: subpops, obsTimes, '
+                         'and obsPops.'))
+        
+    if np.all(R.shape == (yDim,yDim)):
+        R = R.diagonal()
+        
+    xRange = range(xDim)
+    Atr = A.transpose()        
+    Iq = np.identity(xDim)
+    
+    for tr in range(Trial):
+        # first time step: [mu0,V0] -> [mu1,V1]
+        j   = obsPops[0]
+        idx = subpops[j]
+
+        # pre-compute for this group of observed variables
+        Cj   = C[np.ix_(idx,xRange)]                    # all these
+        Rinv = 1/R[idx]                                 # operations    
+        CtrRinv = Cj.transpose() * Rinv                 # are order
+        CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !            
+        
+        # pre-compute for this time step                                   
+        Cmu0 = np.dot(Cj,mu0)
+        yDiff  = y[idx,0,tr] - Cmu0                     # O(yDim)                                       
+        CtrRyDiff_Cmu0 = np.dot(CtrRinv, yDiff)         # O(yDim)
+        P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
+                
+        # compute Kalman gain components
+        Pinv   = sp.linalg.inv(P0)                
+        Kcore  = sp.linalg.inv(CtrRinvC+Pinv)                                                      
+        Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
+        PKsht  = np.dot(P0,    Kshrt) 
+        KC     = np.dot(PKsht, CtrRinvC)        
+        
+        # update posterior estimates
+        mu[ :,0,tr] = mu0 + np.dot(PKsht,CtrRyDiff_Cmu0)
+        V[:,:,0,tr] = np.dot(Id - KC, P0)
+        P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
+
+        # compute marginal probability y_0
+        M    = sp.linalg.cholesky(P0)
+        logdetCPCR    = (  np.sum(np.log(R[idx])) 
+                         + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),np.dot(CtrRinvC,M))))
+                        )
+        logc[ 0,tr] = (  np.dot(yDiff * Rinv, yDiff)       
+                       - np.dot(CtrRyDiff_Cmu0, np.dot(Kcore, CtrRyDiff_Cmu0)) 
+                       + logdetCPCR
+                      )
+         
+        print(logdetCPCR)
+                
+        t = 1 # now start with second time step ...
+        for i in range(len(obsTime)):
+            j   = obsPops[i]
+            idx = subpops[j]
+                                                   
+            # pre-compute for this group of observed variables
+            Cj   = C[np.ix_(idx,xRange)]                    # all these
+            Rinv = 1/R[idx]                                 # operations 
+            CtrRinv = Cj.transpose() * Rinv                 # are order
+            
+            print(Cj.transpose())
+            print(Rinv)
+            print(CtrRinv)
+            CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
+                                                   
+            while t < obsTime[i]: 
+                                                   
+                # pre-compute for this time step                                   
+                Amu    = np.dot(A,mu[:,t-1,tr])
+                yDiff  = y[idx,t,tr] - np.dot(Cj,Amu)       # O(yDim)                                              
+                CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)     # O(yDim)
+                                                   
+                # compute Kalman gain components                                       
+                Pinv   = sp.linalg.inv(P[:,:,t-1,tr])      
+                Kcore  = sp.linalg.inv(CtrRinvC+Pinv)                                                   
+                Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
+                PKsht  = np.dot(P[:,:,t-1,tr],  Kshrt) 
+                KC     = np.dot(PKsht, CtrRinvC)
+
+                # update posterior estimates
+                mu[ :,t,tr] = Amu + np.dot(PKsht,CtrRyDiff_CAmu)
+                V[:,:,t,tr] = np.dot(Id - KC,P[:,:,t-1,tr])
+                P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
+                                                   
+                # compute marginal probability y_t | y_0, ..., y_{t-1}
+                M    = sp.linalg.cholesky(P[:,:,t-1,tr])                               
+                logdetCPCR = (  np.sum(np.log(R[idx]))                                  
+                                 + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),np.dot(CtrRinvC,M))))
+                             )
+
+                logc[ t,tr] = (  np.dot(yDiff * Rinv, yDiff) 
+                               - np.dot(CtrRyDiff_CAmu, np.dot(Kcore, CtrRyDiff_CAmu))
+                               + logdetCPCR
+                              )
+                                                   
+                t += 1
+                                     
+    logc = -1/2 * (logc + xDim * np.log(2*np.pi))
+    
+    return [mu,V,P,logc]
+
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _KalmanFilterFullR(A,Q,mu0,V0,C,R,y,obsScheme):        
     """ OUT = _KalmanFilter(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
@@ -311,6 +466,7 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
         raise Exception(('provided obsScheme dictionary does not have '
                          'the required fields: subpops, obsTimes, '
                          'and obsPops.'))
+        
     xRange = range(xDim)
     Atr = A.transpose()        
     for tr in range(Trial):
@@ -322,7 +478,7 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
         Cmu0 = np.dot(Cj,mu0)
         P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
         CPCR = np.dot(np.dot(Cj,P0), Ctr) + R[np.ix_(idx,idx)]
-        CPCRinv = np.linalg.inv(CPCR)
+        CPCRinv = sp.linalg.inv(CPCR)
         Ktmp    = np.dot(np.dot(P0,Ctr),CPCRinv)
         Kslice  = K[:,:,0,tr]
         Kslice[np.ix_(xRange,idx)] = Ktmp.copy()
@@ -331,8 +487,9 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
         V[:,:,0,tr] = np.dot(Id - np.dot(Ktmp,Cj),P0)
         P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
         yzero   = y[idx,0,tr] - Cmu0
-        logc[ 0,tr] = np.log(np.linalg.det(CPCR)) + np.dot(yzero, np.dot(CPCRinv, yzero))
+        logc[ 0,tr] = np.log(sp.linalg.det(CPCR))  + np.dot(yzero, np.dot(CPCRinv, yzero))
          
+        print(np.log(sp.linalg.det(CPCR)))
         
         t = 1 # now start with second time step ...
         for i in range(len(obsTime)):
@@ -345,7 +502,7 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
                 CAmu = np.dot(Cj,Amu)
                 PCtr = np.dot(P[:,:,t-1,tr], Ctr)                          
                 CPCR    = np.dot(Cj, PCtr) + R[np.ix_(idx,idx)]
-                CPCRinv = np.linalg.inv(CPCR)
+                CPCRinv = sp.linalg.inv(CPCR)
                 Ktmp    = np.dot(np.dot(P[:,:,t-1,tr],Ctr),CPCRinv)
                 Kslice  = K[:,:,t,tr]
                 Kslice[np.ix_(xRange,idx)] = Ktmp.copy()
@@ -354,9 +511,11 @@ def _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme):
                 V[:,:,t,tr] = np.dot(Id - np.dot(Ktmp,Cj),P[:,:,t-1,tr])
                 P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
                 yzero   = y[idx,t,tr] - CAmu
-                logc[ t,tr] = np.log(np.linalg.det(CPCR)) + np.dot(yzero, np.dot(CPCRinv, yzero))
+                logc[ t,tr] = np.log(sp.linalg.det(CPCR)) + np.dot(yzero, np.dot(CPCRinv, yzero))
                 t += 1
                                      
+                    
+                    
     logc = -1/2 * (logc + xDim * np.log(2*np.pi))
     return [mu,V,P,K,logc]
 
@@ -382,7 +541,7 @@ def _KalmanSmoother(A, mu, V, P):
         while t >= 0:
             Amu         = np.dot(A,mu[:,t,tr])             
             J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
-                                 np.linalg.inv(P[:,:,t,tr]))
+                                 sp.linalg.inv(P[:,:,t,tr]))
             mu_h[ :,t,tr] = ( mu[:,t,tr] 
                             + np.dot(J[:,:,t,tr],mu_h[:,t+1,tr] - Amu) )
             V_h[:,:,t,tr] = (V[:,:,t,tr] 
@@ -462,6 +621,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):
     if syy is None:
         syy   = np.zeros([yDim, yDim]) # sum over outer product y_t y_t'
         for tr in range(Trial):
+            ytr = y[:,:,tr]            
             for i in range(len(obsTime)):
                 j   = obsPops[i]
                 idx = subpops[j]
@@ -511,7 +671,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):
     mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                              
     V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)      
 
-    A = np.dot( sExtxtm1, np.linalg.inv(sExtxt1toNm1) )                                    
+    A = np.dot( sExtxtm1, sp.linalg.inv(sExtxt1toNm1) )                                    
     Atr = A.transpose()
     sExtxtm1Atr = np.dot(sExtxtm1, Atr)
     Q = 1/(Trial*(T-1)) * (  sExtxt2toN   
@@ -520,7 +680,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):
                            + np.dot(np.dot(A, sExtxt1toNm1), Atr) ) 
     
        
-    C = (Trial*T) * np.dot(myExt, np.linalg.inv(sExtxt1toN))
+    C = (Trial*T) * np.dot(myExt, sp.linalg.inv(sExtxt1toN))
 
     syExtCtr    = np.zeros([yDim, yDim])
     CsExtxtCtr  = np.zeros([yDim, yDim])
