@@ -16,8 +16,8 @@ clc
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
 
-load(['/home/mackelab/Desktop/Projects/Stitching/code/repo/',...
-      'python/LDS_data.mat'])
+load(['/home/mackelab/Desktop/Projects/Stitching/code/le_stitch/python',...
+      '/LDS_data.mat'])
 % gives data traces x, y, data length T
 % also gives true parameters {A,Q,mu0,V0,C,R} used to generate the data
 % also gives E-step results (E[xt], E[x_t x_t'], E[x_t x_{t-1}']) as
@@ -278,7 +278,7 @@ set(gca,'TickDir', 'out')
 title('A (python)')
 subplot(2,4,4)
 M = max([max(matparamsOut.model.A(:)), max(pyparamsOut.model.A(:))]);
-m = max([min(matparamsOut.model.A(:)), min(pyparamsOut.model.A(:))]);
+m = min([min(matparamsOut.model.A(:)), min(pyparamsOut.model.A(:))]);
 plot(-1000,-1000, '.', 'color', clrs(end,:), 'markerSize', 10)
 hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
@@ -453,17 +453,17 @@ M = max([max(pyparamsIn.model.C(:)), ...
          max(matparamsOut.model.C(:)), ...
          max(pyparamsOut.model.C(:))]);subplot(2,4,1)
 subplot(2,4,1)
-imagesc(pyparamsIn.model.C)
+imagesc(squeeze(pyparamsIn.model.C))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('C (initialization)')
 subplot(2,4,2)
-imagesc(matparamsOut.model.C)
+imagesc(squeeze(matparamsOut.model.C))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('C (Matlab)')
 subplot(2,4,3)
-imagesc(pyparamsOut.model.C)
+imagesc(squeeze(pyparamsOut.model.C))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('C (python)')
@@ -496,17 +496,21 @@ M = max([max(pyparamsIn.model.R(:)), ...
          max(matparamsOut.model.R(:)), ...
          max(pyparamsOut.model.R(:))]);subplot(2,4,1)
 subplot(2,4,5)
-imagesc(pyparamsIn.model.R)
+imagesc(squeeze(pyparamsIn.model.R))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('R (initialization)')
 subplot(2,4,6)
-imagesc(matparamsOut.model.R)
+imagesc(squeeze(matparamsOut.model.R))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('R (Matlab)')
 subplot(2,4,7)
-imagesc(pyparamsOut.model.R)
+if min(size(pyparamsOut.model.R))==1
+    imagesc(diag(squeeze(pyparamsOut.model.R)))
+else   
+    imagesc(squeeze(pyparamsOut.model.R))
+end
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('R (python)')
@@ -519,19 +523,33 @@ plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
 axis(1.1*[m,M,m,M])
-plot(pyparamsOut.model.R(:), ...
-     matparamsOut.model.R(:), '.', 'color', clrs(end,:))
-plot(eig(pyparamsOut.model.R), ...
-     eig(matparamsOut.model.R), 'o', 'color', clrs(1,:))
+if min(size(pyparamsOut.model.R))==1
+  plot(pyparamsOut.model.R(:), ...
+       diag(matparamsOut.model.R), '.', 'color', clrs(end,:))    
+else
+  plot(pyparamsOut.model.R(:), ...
+       matparamsOut.model.R(:), '.', 'color', clrs(end,:))
+  plot(eig(squeeze(pyparamsOut.model.R)), ...
+       eig(squeeze(matparamsOut.model.R)), 'o', 'color', clrs(1,:))
+end
 set(gca,'TickDir', 'out')
 box off
 xlabel('python')
 ylabel('Matlab')
 legend('R_{ij}', '[eig(R)]_i', 'location', 'NorthWest')
 legend boxoff
-MSE_R = mean( (matparamsOut.model.R(:) - pyparamsOut.model.R(:)).^2 );
-MSE_Reig = mean( (eig(matparamsOut.model.R)-eig(pyparamsOut.model.R)).^2 );
+if min(size(pyparamsOut.model.R))==1
+  MSE_R = mean( (diag(matparamsOut.model.R) - pyparamsOut.model.R(:)).^2 );
+  MSE_Reig = MSE_R;
+  corr_R = corr(diag(matparamsOut.model.R), pyparamsOut.model.R(:));
+
+else
+  MSE_R = mean( (matparamsOut.model.R(:) - pyparamsOut.model.R(:)).^2 );
+  MSE_Reig = mean( (eig(squeeze(matparamsOut.model.R))-...
+                    eig(squeeze(pyparamsOut.model.R))).^2 );
+  corr_R = corr(matparamsOut.model.R(:), pyparamsOut.model.R(:));
+                
+end
 text(0.3*M, 0.5*m, ['MSE (eig): ', num2str(MSE_Reig)])
 text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_R)])
-corr_R = corr(matparamsOut.model.R(:), pyparamsOut.model.R(:));
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_R)])

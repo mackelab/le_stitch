@@ -283,11 +283,8 @@ def _LDS_E_step(A,Q,mu0,V0,C,R,y,obsScheme,ifRDiagonal=True):
     on observed subpopulations of y that are observed at each time point
     The boolean ifRDiagonal gives if the observation noise is diagonal or not.
     """
-    if ifRDiagonal:
-        [mu,V,P,logc]   = _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme)
-    else:
-        [mu,V,P,K,logc] = _KalmanFilterFullR(A,Q,mu0,V0,C,R,y,obsScheme)
-        
+    [mu,V,P,logc]   = _KalmanFilter(A,Q,mu0,V0,C,R,y,obsScheme)
+
     [mu_h,V_h,J]    = _KalmanSmoother(A,mu,V,P)
 
     [Ext,Extxt,Extxtm1]= _KalmanParsToMoments(mu_h,V_h,J)
@@ -589,6 +586,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):
     
     xRange = range(xDim)
     
+    # unpack observation scheme
     try:
         subpops = obsScheme['subpops'];
         obsTime = obsScheme['obsTime'];
@@ -600,11 +598,13 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):
                          'the required fields: subpops, obsTimes, '
                          'and obsPops.'))
     
+    # compute scatter matrices from posterior means for the latent states
     sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
     sExtxt2toN   = np.sum(             Extxt[:,:,1:T,:], (2,3) )  # sums 
     sExtxt1toN   = sExtxt2toN + np.sum(Extxt[:,:,  0,:],2)        # over 
     sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2)        # E[x_t x_t']  
 
+    # compute (diagonal of) scatter matrix for observed states
     if syy is None:
         syy   = np.zeros(yDim) # sum over outer product y_t y_t'
         for tr in range(Trial):
@@ -617,8 +617,9 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):
                 else:
                     ts  = range(obsTime[i-1],obsTime[i])                 
                 ytmp = ytr[np.ix_(idx,ts)]
-                syy[idx] += np.sum(y*y,(1,2))  
+                syy[idx] += np.sum(ytmp*ytmp,1)  
     
+    # count occurence of each observed component (for normalisation purposes)
     if Ti is None:
         Ti = np.zeros([yDim]);
         for tr in range(Trial):
@@ -630,24 +631,32 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):
                 else:
                     Ti[idx] += obsTime[i] - obsTime[i-1]                                       
                 
+    # compute (diagonal of) scatter matrix accros observed and latent states
     syExts = np.zeros([yDim, xDim, len(obsTime)]) # sum over outer product y_t x_t'
-    for tr in range(Trial):
+    for tr in range(Trial):              # collapse over trials ...
         ytr = y[:,:,tr]
-        for i in range(len(obsTime)):
+        for i in range(len(obsTime)):    # ... but keep subpopulations apart
             j   = obsPops[i]
-            idx = subpops[j]            
+            idx = subpops[j]         
+            if i == 0:
+                ts  = range(0, obsTime[i])                                            
+            else:
+                ts  = range(obsTime[i-1],obsTime[i])                    
             syExts[idx,:,i] += np.einsum('in,jn->ij', 
                                          ytr[np.ix_(idx,ts)], 
-                                         Ext[:,ts,tr])             
-            
+                                         Ext[:,ts,tr])                         
     myExt = np.sum(syExts,2)               # normalize sum_t( y_t * x_t')
     for i in range(yDim):                  # row by row with the number 
         myExt[i,:] = myExt[i,:] / Ti[i]    # of times that y(i) was observed                                  
     
-                                             
+    
+    # Start computing (closed-form) updated parameters
+    
+    # initial distribution parameters
     mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                              
     V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)      
 
+    # latent dynamics paramters
     A = np.dot( sExtxtm1, sp.linalg.inv(sExtxt1toNm1) )                                    
     Atr = A.transpose()
     sExtxtm1Atr = np.dot(sExtxtm1, Atr)
@@ -657,8 +666,8 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):
                            + np.dot(np.dot(A, sExtxt1toNm1), Atr) ) 
     
        
-    C = (Trial*T) * np.dot(myExt, sp.linalg.inv(sExtxt1toN))                
-    
+    # observed state parameters
+    C = (Trial*T) * np.dot(myExt, sp.linalg.inv(sExtxt1toN))                    
     
     syExtCtr    = np.zeros(yDim)
     CsExtxtCtr  = np.zeros(yDim)
@@ -672,152 +681,11 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Ti=None):
                 ts  = range(obsTime[i-1],obsTime[i])
             Cj  = C[np.ix_(idx,xRange)]
             Ctr = Cj.transpose()                                                  
-
-            ix_idx = np.ix_(idx,idx)
             CsExtxtCtr[idx] += np.einsum('ij,ik,jk->i', Cj, Cj, np.sum(Extxt[:,:,ts,tr], 2)) 
             syExtCtr[idx]   += np.sum(syExts[idx,:,i] * Cj, 1)    
     R = (  syy
          - 2 * syExtCtr
          + CsExtxtCtr ) / Ti
     
-    
-#    print('')
-#    print('M-step')
-#    print('')
-#    print('myExt')
-#    print(myExt)
-#    #print('y')
-#    #print(y[:,:,0].transpose())
-#    print('C')
-#    print( C )
-#    print('R')
-#    print( R )    
-    
     return [A,Q,mu0,V0,C,R,syy,Ti]        
 
-#----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
-def _LDS_M_stepFullR(Ext, Extxt, Extxtm1, y, obsScheme, syy=None, Tij=None):   
-    """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*,syy)
-    see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
-    for formulas and input/output naming conventions   
-    The variable obsScheme is a dictionary that contains information
-    on observed subpopulations of y that are observed at each time point
-    The optional variable syy is the mean outer product of observations
-    y. If not provided, it will be computed on the fly.
-    The optional variable Tij counts the number of times that variables
-    y_i and y_j co-occured. If not provided, it will be computed on the fly.
-    
-    """                        
-    xDim  = Ext.shape[0]
-    T     = Ext.shape[1]
-    Trial = Ext.shape[2]    
-    yDim  = y.shape[0]
-    
-    xRange = range(xDim)
-    
-    """                                                               exchange input: y to simulateObservationScheme(y)! """
-    
-    try:
-        subpops = obsScheme['subpops'];
-        obsTime = obsScheme['obsTime'];
-        obsPops = obsScheme['obsPops'];
-    except:
-        print('obsScheme:')
-        print(obsScheme)
-        raise Exception(('provided obsScheme dictionary does not have '
-                         'the required fields: subpops, obsTimes, '
-                         'and obsPops.'))
-    
-    sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
-    sExtxt2toN   = np.sum(             Extxt[:,:,1:T,:], (2,3) )  # sums 
-    sExtxt1toN   = sExtxt2toN + np.sum(Extxt[:,:,  0,:],2)        # over 
-    sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2)        # E[x_t x_t']  
-
-    if syy is None:
-        syy   = np.zeros([yDim, yDim]) # sum over outer product y_t y_t'
-        for tr in range(Trial):
-            ytr = y[:,:,tr]            
-            for i in range(len(obsTime)):
-                j   = obsPops[i]
-                idx = subpops[j]
-                if i == 0:
-                    ts  = range(0, obsTime[i])                                            
-                else:
-                    ts  = range(obsTime[i-1],obsTime[i])                 
-                ytmp = ytr[np.ix_(idx,ts)]
-                syy[np.ix_(idx,idx)] += np.einsum('in,jn->ij', ytmp, ytmp)          
-    
-    if Tij is None:
-        Tij = np.zeros([yDim, yDim]);
-        for tr in range(Trial):
-            for i in range(len(obsTime)):
-                j   = obsPops[i]
-                idx = subpops[j]
-                if i == 0:
-                    ts  = range(0, obsTime[i])
-                    Tij[np.ix_(idx,idx)] += obsTime[0] # - 0, for t = 0                                                
-                else:
-                    ts  = range(obsTime[i-1],obsTime[i])                    
-                    Tij[np.ix_(idx,idx)] += obsTime[i] - obsTime[i-1]                   
-
-        for i in range(yDim):     # if two entries i,j of y are never
-            for j in range(yDim): # observed together, E[y[i]*y[j]] = 0
-                if Tij[i,j] == 0: # hence and we divide zero by Tij[i,j] = 0  
-                    Tij[i,j] = 1; # To avoid 0/0, we hence set Tij[i,j] = 1                      
-                    
-                
-    syExts = np.zeros([yDim, xDim, len(obsTime)]) # sum over outer product y_t x_t'
-    for tr in range(Trial):
-        ytr = y[:,:,tr]
-        for i in range(len(obsTime)):
-            j   = obsPops[i]
-            idx = subpops[j]            
-            syExts[idx,:,i] += np.einsum('in,jn->ij', 
-                                         ytr[np.ix_(idx,ts)], 
-                                         Ext[:,ts,tr])             
-            
-    myExt = np.sum(syExts,2)               # normalize sum_t( y_t * x_t')
-    for i in range(yDim):                  # row by row with the number 
-        myExt[i,:] = myExt[i,:] / Tij[i,i] # of times that y(i) was observed                      
-            
-    
-    """                                                                 need to adapt the above not to devide by zero ! """
-                                             
-    mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                              
-    V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)      
-
-    A = np.dot( sExtxtm1, sp.linalg.inv(sExtxt1toNm1) )                                    
-    Atr = A.transpose()
-    sExtxtm1Atr = np.dot(sExtxtm1, Atr)
-    Q = 1/(Trial*(T-1)) * (  sExtxt2toN   
-                           - sExtxtm1Atr.transpose()
-                           - sExtxtm1Atr 
-                           + np.dot(np.dot(A, sExtxt1toNm1), Atr) ) 
-    
-       
-    C = (Trial*T) * np.dot(myExt, sp.linalg.inv(sExtxt1toN))
-
-    syExtCtr    = np.zeros([yDim, yDim])
-    CsExtxtCtr  = np.zeros([yDim, yDim])
-    for tr in range(Trial):
-        for i in range(0,len(obsTime)):
-            j   = obsPops[i]
-            idx = subpops[j]
-            if i == 0:
-                ts  = range(0, obsTime[i])
-            else:
-                ts  = range(obsTime[i-1],obsTime[i])
-            Cj  = C[np.ix_(idx,xRange)]
-            Ctr = Cj.transpose()                                                  
-
-            ix_idx = np.ix_(idx,idx)
-            CsExtxtCtr[ix_idx] += np.dot(np.dot(Cj, np.sum(Extxt[:,:,ts,tr], 2)), Ctr)
-            syExtCtr[ix_idx]   += np.dot(syExts[idx,:,i], Ctr)
-            
-    
-    R = (  syy
-         - (syExtCtr.transpose() + syExtCtr)
-         + CsExtxtCtr ) / Tij
-        
-    return [A,Q,mu0,V0,C,R,syy,Tij]        
