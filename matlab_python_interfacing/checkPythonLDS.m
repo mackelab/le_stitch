@@ -32,7 +32,7 @@ trueparams.model.Q  = Q;
 trueparams.model.x0 = mu0;
 trueparams.model.Q0 = V0;
 trueparams.model.C  = C;
-trueparams.model.d  = zeros(size(C,1),1); % raw LDS has no d
+trueparams.model.d  = d(:);
 trueparams.model.R  = R;
 trueparams.model.Pi = 1;
 trueparams.model.notes.useR = 1;
@@ -42,7 +42,7 @@ trueparams.model.notes.learnx0 = 1;
 trueparams.model.notes.learnQ0 = 1;
 trueparams.model.notes.learnA = 1;
 trueparams.model.notes.learnR = 1;
-trueparams.model.notes.diagR  = 0;
+trueparams.model.notes.diagR  = 1;
 trueparams.model.notes.useCMask= 0;
 trueparams.model.B = 0;
 trueparams.model.inferenceHandle =  @LDSInference;
@@ -66,8 +66,8 @@ pyparamsIn.model.Q = Q_0;
 pyparamsIn.model.x0 = mu0_0;
 pyparamsIn.model.Q0 = V0_0;
 pyparamsIn.model.C = C_0;
+pyparamsIn.model.d = d_0(:);
 pyparamsIn.model.R = R_0;
-pyparamsIn.model.d  = zeros(size(C,1),1); % raw LDS has no d
 pyparamsIn.model.Pi = 1;
 pyparamsIn.model.notes = trueparams.model.notes;
 pyparamsIn.model.B = 0;
@@ -82,8 +82,8 @@ pyparamsOut.model.Q = Q_1;
 pyparamsOut.model.x0 = mu0_1;
 pyparamsOut.model.Q0 = V0_1;
 pyparamsOut.model.C = C_1;
-pyparamsOut.model.R = R_1;
-pyparamsOut.model.d  = zeros(size(C,1),1); % raw LDS has no d
+pyparamsOut.model.R = diag(R_1);
+pyparamsOut.model.d  = d_1(:);
 pyparamsOut.model.Pi = 1;
 pyparamsOut.model.notes = trueparams.model.notes;
 pyparamsOut.model.B = 0;
@@ -442,7 +442,7 @@ text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_V0)])
 corr_V0 = corr(matparamsOut.model.Q0(:), pyparamsOut.model.Q0(:));
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_V0)])
 
-% checking C, R
+%% checking C, d, R
 %--------------------------------------------------------------------------
 figure('Units', 'normalized','Position', [0.3,0.3,0.6,0.5]);  
 clrs = copper(yDim);
@@ -451,23 +451,23 @@ m = min([min(pyparamsIn.model.C(:)), ...
          min(pyparamsOut.model.C(:))]);
 M = max([max(pyparamsIn.model.C(:)), ...
          max(matparamsOut.model.C(:)), ...
-         max(pyparamsOut.model.C(:))]);subplot(2,4,1)
-subplot(2,4,1)
+         max(pyparamsOut.model.C(:))]);
+subplot(3,4,1)
 imagesc(squeeze(pyparamsIn.model.C))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('C (initialization)')
-subplot(2,4,2)
+subplot(3,4,2)
 imagesc(squeeze(matparamsOut.model.C))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('C (Matlab)')
-subplot(2,4,3)
+subplot(3,4,3)
 imagesc(squeeze(pyparamsOut.model.C))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('C (python)')
-subplot(2,4,4)
+subplot(3,4,4)
 M = max([max(matparamsOut.model.C(:)), max(pyparamsOut.model.C(:))]);
 m = max([min(matparamsOut.model.C(:)), min(pyparamsOut.model.C(:))]);
 plot(-1000,-1000, '.', 'color', clrs(end,:), 'markerSize', 10)
@@ -489,23 +489,67 @@ text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_C)])
 corr_C = corr(matparamsOut.model.C(:), pyparamsOut.model.C(:));
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_C)])
 
+
+m = min([min(pyparamsIn.model.d(:)), ...
+         min(matparamsOut.model.d(:)), ...
+         min(pyparamsOut.model.d(:))]);
+M = max([max(pyparamsIn.model.d(:)), ...
+         max(matparamsOut.model.d(:)), ...
+         max(pyparamsOut.model.d(:))]);
+subplot(3,4,5)
+imagesc(squeeze(pyparamsIn.model.d))
+caxis([m,M])
+set(gca,'TickDir', 'out')
+title('d (initialization)')
+subplot(3,4,6)
+imagesc(squeeze(matparamsOut.model.d))
+caxis([m,M])
+set(gca,'TickDir', 'out')
+title('d (Matlab)')
+subplot(3,4,7)
+imagesc(squeeze(pyparamsOut.model.d))
+caxis([m,M])
+set(gca,'TickDir', 'out')
+title('d (python)')
+subplot(3,4,8)
+M = max([max(matparamsOut.model.d(:)), max(pyparamsOut.model.d(:))]);
+m = max([min(matparamsOut.model.d(:)), min(pyparamsOut.model.d(:))]);
+plot(-1000,-1000, '.', 'color', clrs(end,:), 'markerSize', 10)
+hold on
+plot(-1000,-1000, 'o', 'color', clrs(1,:))
+line([1.1*m,1.1*M], ...
+     [1.1*m,1.1*M],'color','c')
+axis(1.1*[m,M,m,M])
+plot(pyparamsOut.model.d(:), ...
+     matparamsOut.model.d(:), '.', 'color', clrs(end,:))
+set(gca,'TickDir', 'out')
+box off
+xlabel('python')
+ylabel('Matlab')
+legend('d_{ij}', 'location', 'NorthWest')
+legend boxoff
+MSE_d = mean( (matparamsOut.model.d(:) - pyparamsOut.model.d(:)).^2 );
+text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_d)])
+corr_d = corr(matparamsOut.model.d(:), pyparamsOut.model.d(:));
+text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_d)])
+
 m = min([min(pyparamsIn.model.R(:)), ...
          min(matparamsOut.model.R(:)), ...
          min(pyparamsOut.model.R(:))]);
 M = max([max(pyparamsIn.model.R(:)), ...
          max(matparamsOut.model.R(:)), ...
-         max(pyparamsOut.model.R(:))]);subplot(2,4,1)
-subplot(2,4,5)
+         max(pyparamsOut.model.R(:))]);     
+subplot(3,4,9)
 imagesc(squeeze(pyparamsIn.model.R))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('R (initialization)')
-subplot(2,4,6)
+subplot(3,4,10)
 imagesc(squeeze(matparamsOut.model.R))
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('R (Matlab)')
-subplot(2,4,7)
+subplot(3,4,11)
 if min(size(pyparamsOut.model.R))==1
     imagesc(diag(squeeze(pyparamsOut.model.R)))
 else   
@@ -514,7 +558,7 @@ end
 caxis([m,M])
 set(gca,'TickDir', 'out')
 title('R (python)')
-subplot(2,4,8)
+subplot(3,4,12)
 M = max([max(matparamsOut.model.R(:)), max(pyparamsOut.model.R(:))]);
 m = max([min(matparamsOut.model.R(:)), min(pyparamsOut.model.R(:))]);
 plot(-1000,-1000, '.', 'color', clrs(end,:), 'markerSize', 10)
@@ -553,3 +597,5 @@ end
 text(0.3*M, 0.5*m, ['MSE (eig): ', num2str(MSE_Reig)])
 text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_R)])
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_R)])
+
+

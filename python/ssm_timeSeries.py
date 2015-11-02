@@ -76,26 +76,28 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
             mu0  = np.zeros(xDim)
             V0   = np.identity(xDim)
             C = np.ones([yDim,xDim])
+            d = np.ones([yDim])
             R = np.identity(yDim)
         elif isinstance(pars, (list,np.ndarray)):
             if   isinstance(pars,np.ndarray): 
-                if np.size(pars)!=6:
+                if np.size(pars)!=7:
                     print('number of parameters handed over:')
                     print(np.size(pars))
-                    raise Exception(('LDS is defined by exactly 6 parameters: '
-                                     '{A,Q,mu0,V0,C,R}. Mismatch!'))            
+                    raise Exception(('LDS is defined by exactly 7 parameters: '
+                                     '{A,Q,mu0,V0,C,d,R}. Mismatch!'))            
             elif isinstance(pars,list):
-                if len(pars)!=6:
+                if len(pars)!=7:
                     print('number of parameters handed over:')
                     print(len(pars))
-                    raise Exception(('LDS is defined by exactly 6 parameters: '
-                                     '{A,Q,mu0,V0,C,R}. Mismatch!'))
+                    raise Exception(('LDS is defined by exactly 7 parameters: '
+                                     '{A,Q,mu0,V0,C,d,R}. Mismatch!'))
             A    = pars[0]
             Q    = pars[1]
             mu0  = pars[2]
             V0   = pars[3]
             C    = pars[4]
-            R    = pars[5]
+            d    = pars[5]
+            R    = pars[6]
         else:
             raise Exception(('argument pars has to be list or ndarray '
                              'containing the parameters defining an LDS. '
@@ -139,10 +141,95 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
         initDistrs[0][0] = ['Gaussian']  # initDistrs[dt][X] = list(...)
         initDistrs[0][1] = [  None    ]  # initDistrs[dt][Y] = list(...)
         
-        updateParsList = [A,Q,mu0,V0,C,R]
+        updateParsList = [A,Q,mu0,V0,C,d,R]
         
 
+    elif ssmType == 'iLDS':
+                       
+        if dims.size != 3:
+            print('dims:')
+            print(dims)
+            raise Exception(('input LDS has three groups of '
+                             'variables, X, Y and U, and '
+                             'dims hence needs to be of size three'))
+        [xDim,yDim,uDim] = checkInDims(dims)
+        
+        if pars is None:
+            A    = np.identity(xDim)    # x_t = Ax_t-1 + Bu_t 
+            B    = np.zeros([xDim,uDim])  
+            Q    = np.identity(xDim)
+            mu0  = np.zeros(xDim)       # x_1 ~ mu0 + N(0, V0)
+            V0   = np.identity(xDim)
+            C = np.ones( [yDim,xDim])   # y_t = Ey_t-1 + Cx_t + Du_t
+            d = np.zeros([yDim])
+            R = np.identity(yDim)
+        elif isinstance(pars, (list,np.ndarray)):
+            if   isinstance(pars,np.ndarray):
+                if np.size(pars)!=8:
+                    print('number of parameters handed over:')
+                    print(np.size(pars))
+                    raise Exception(('input LDS is defined by '
+                                     'exactly 8 parameters: '
+                                     '{A,B,Q,mu0,V0,C,d,R}. Mismatch!'))
+            elif isinstance(pars,list):
+                if len(pars)!=8:
+                    print('number of parameters handed over:')
+                    print(len(pars))
+                    raise Exception(('input LDS is defined by '
+                                     'exactly 8 parameters: '
+                                     '{A,B,Q,mu0,V0,C,d,R}. Mismatch!'))
+            A    = pars[0]
+            B    = pars[1]
+            Q    = pars[2]
+            mu0  = pars[3]
+            V0   = pars[4]
+            C    = pars[5]
+            d    = pars[6]
+            R    = pars[7]
+        else:
+            raise Exception(('argument pars has to be list or ndarray '
+                             'containing the parameters defining an input '
+                             'LDS. It is neither.'))
+                                   
+        xGr = np.zeros(xDim,dtype=int)
+        yGr = np.zeros(yDim,dtype=int)
+        uGr = np.zeros(uDim,dtype=int)
 
+        dts = toArray([-1,0])
+            
+        tmp = np.zeros([3,2], dtype=np.ndarray)         # dt = -1
+        tmp[0,0] =  np.ones( [1,1],dtype=bool) # X|X   read e.g.   | x1 | x2 
+        tmp[1,0] =  np.zeros([1,1],dtype=bool) # X|Y   X|Y as      |--------
+        tmp[2,0] =  np.zeros([1,1],dtype=bool) # X|U            y1 | o  |
+        tmp[0,1] =  np.zeros([1,1],dtype=bool) # Y|X            y2 |    | o
+        tmp[1,1] =  np.ones( [1,1],dtype=bool) # Y|Y
+        tmp[2,1] =  np.zeros([1,1],dtype=bool) # Y|U
+        deps.append( tmp )
+
+        tmp = np.zeros([3,2], dtype=np.ndarray)         # dt = 0
+        tmp[0,0] =  np.zeros([1,1],dtype=bool) # X|X
+        tmp[1,0] =  np.zeros([1,1],dtype=bool) # X|Y
+        tmp[2,0] =  np.ones( [1,1],dtype=bool) # X|U
+        tmp[0,1] =  np.ones( [1,1],dtype=bool) # Y|X 
+        tmp[1,1] =  np.zeros([1,1],dtype=bool) # Y|Y
+        tmp[2,1] =  np.ones( [1,1],dtype=bool) # Y|U
+        deps.append( tmp )
+        del tmp
+
+        linkFunctions[0] = ['linearTwoInputs']            # x = f(fa_x)                    
+        linkFunctions[1] = ['linearThreeInputs']          # y = f(fa_y)
+
+        noiseDistrs[0] = ['Gaussian']            # noise on x
+        noiseDistrs[1] = ['Gaussian']            # noise on y
+        
+        noiseIntActTypes[0] = [ '+' ] # noise is additive
+        noiseIntActTypes[1] = [ '+' ] # noise is additive
+        
+        initDistrs.append([[],[]]) # variable initializations for t = 1
+        initDistrs[0][0] = ['Gaussian']  # initDistrs[dt][X] = list(...)
+        initDistrs[0][1] = ['Gaussian']  # initDistrs[dt][Y] = list(...)
+        
+        updateParsList = [A,B,Q,mu0,V0,C,d,R]
         
     elif ssmType == 'inputARLDS':
                        
@@ -2057,69 +2144,84 @@ class timeSeriesModel:
             raise Exception(('error trying to fit model to data. Could not '
                              'find empirical data object!'))
             
+        if obsScheme is None:
+            obsScheme = data.giveObservationScheme()                
+        else:
+            data.setObservationScheme(        # do not directly set 
+                        experiment,           # data._obsScheme, but
+                        obsScheme['subpops'], # force individual
+                        obsScheme['obsTime'], # entries of obsScheme
+                        obsScheme['obsPops']  # through the method
+                                     )        # to check validity
+            
+        y = data.giveTracesY(experiment, trials, times)    
 
-        if cls._modelDescr == 'stateSpace_LDS':
+        if (cls._modelDescr == 'stateSpace_LDS' or
+            cls._modelDescr == 'stateSpace_iLDS'):
             
             ifRDiagonal = True  # default: assume diagonal observation noise
             
-            ifTraceParamHist = False # default: only return final parameters
-            
-            print('ifUseObsData')
-            print(ifUseObsData)
-            
-            if ifUseObsData:
-                if obsScheme is None:
-                    obsScheme = data.giveObservationScheme()                
-                else:
-                    data.setObservationScheme(        # do not directly set 
-                                experiment,           # data._obsScheme, but
-                                obsScheme['subpops'], # force individual
-                                obsScheme['obsTime'], # entries of obsScheme
-                                obsScheme['obsPops']  # through the method
-                                             )        # to check validity
-                
-                # check if observation scheme was already simulated
-                if data.giveTracesYobs(experiment, trials, times).size == 0:
-                    print(('yObs not initialized yet. Simulating observation '
-                           'scheme now. '))
-                    data.simulateObservationScheme(experiment, 
-                                                   obsScheme['subpops'],
-                                                   obsScheme['obsTime'],
-                                                   obsScheme['obsPops'],
-                                                   mask=0)                
-                
-                y = data.giveTracesYobs(experiment, trials, times) #
-            else:                                                  # get data
-                y = data.giveTracesY(experiment, trials, times)    # 
+            ifTraceParamHist = False # default: only return final parameters            
 
-            # u = data.giveTracesU(experiment, trials, times) not needed right now 
+            if cls._modelDescr == 'stateSpace_iLDS':
+                u = data.giveTracesU(experiment, trials, times)
+                if initPars is None:                # use current pars as init
+                    [A, B, Q, mu0, V0, C, d, R] = cls.givePars().copy()                 
+                elif isinstance(initPars, list) and len(initPars)==8: 
+                    [A, B, Q, mu0, V0, C, d, R] = initPars
+                elif isinstance(initPars, dict):
+                    [A, B, Q, mu0, V0, C, d, R] = cls.givePars().copy()
+                    if 'A' in initPars.keys():             
+                        A   = initPars['A']                
+                    if 'B' in initPars.keys():             
+                        B   = initPars['B']                
+                    if 'Q' in initPars.keys():             # use current ...
+                        Q   = initPars['Q']                # ... but overwrite
+                    if 'mu0' in initPars.keys():           # whatever is given
+                        mu0 = initPars['mu0']
+                    if 'V0' in initPars.keys():
+                        V0  = initPars['V0']
+                    if 'C' in initPars.keys():                    
+                        C = initPars['C']  
+                    if 'd' in initPars.keys():                    
+                        d = initPars['d']  
+                    if 'R' in initPars.keys():                    
+                        R = initPars['R']   
+                initPars = [A,B,Q,mu0,V0,C,d,R]                        
+
+            elif cls._modelDescr == 'stateSpace_LDS':
+                B = None
+                u = None
+                if initPars is None:                # use current pars as init
+                    [A, Q, mu0, V0, C, d, R] = cls.givePars().copy()                 
+                elif isinstance(initPars, list) and len(initPars)==7: 
+                    [A, Q, mu0, V0, C, d, R] = initPars
+                elif isinstance(initPars, dict):
+                    [A, Q, mu0, V0, C, d, R] = cls.givePars().copy()
+                    if 'A' in initPars.keys():             
+                        A   = initPars['A']                
+                    if 'Q' in initPars.keys():             # use current ...
+                        Q   = initPars['Q']                # ... but overwrite
+                    if 'mu0' in initPars.keys():           # whatever is given
+                        mu0 = initPars['mu0']
+                    if 'V0' in initPars.keys():
+                        V0  = initPars['V0']
+                    if 'C' in initPars.keys():                    
+                        C = initPars['C']  
+                    if 'd' in initPars.keys():                    
+                        d = initPars['d']  
+                    if 'R' in initPars.keys():                    
+                        R = initPars['R']   
+                initPars = [A,Q,mu0,V0,C,d,R]
                 
             timeScaleData = data.giveTimeScales()    
-                
-            if initPars is None:                # use current pars as init
-                [A, Q, mu0, V0, C, R] = cls.givePars().copy()                 
-            elif isinstance(initPars, list) and len(initPars)==6: 
-                [A, Q, mu0, V0, C, R] = initPars
-            elif isinstance(initPars, dict):
-                [A, Q, mu0, V0, C, R] = cls.givePars().copy()
-                if 'A' in initPars.keys():             
-                    A   = initPars['A']                
-                if 'Q' in initPars.keys():             # use current ...
-                    Q   = initPars['Q']                # ... but overwrite
-                if 'mu0' in initPars.keys():           # whatever is given
-                    mu0 = initPars['mu0']
-                if 'V0' in initPars.keys():
-                    V0  = initPars['V0']
-                if 'C' in initPars.keys():                    
-                    C = initPars['C']  
-                if 'R' in initPars.keys():                    
-                    R = initPars['R']   
-                                
+                                                
             xDim = cls._varDescr.giveVarDims('x')
-            [As, Qs, mu0s, V0s, Cs, Rs, LLs] = \
+            [As, Bs, Qs, mu0s, V0s, Cs, ds, Rs, LLs] = \
                                    ssm_fit._fitLDS(y, 
+                                                   u, 
                                                    obsScheme,
-                                                   [A, Q, mu0, V0, C, R], 
+                                                   initPars,
                                                    maxIter, 
                                                    epsilon, 
                                                    ifPlotProgress,
@@ -2130,11 +2232,21 @@ class timeSeriesModel:
             if ifRDiagonal:
                 Rs[-1] = np.diag(Rs[-1])
                 
-            [linkPars, noisePars, initPars] = \
-                timeSeriesModel.parsToUpdateParsList([As[-1],Qs[-1],
-                                                      mu0s[-1],V0s[-1],
-                                                      Cs[-1],Rs[-1]], 
-                                                      cls._modelDescr)
+            if cls._modelDescr == 'stateSpace_iLDS':                
+                [linkPars, noisePars, initPars] = \
+                  timeSeriesModel.parsToUpdateParsList([As[-1],Bs[-1],
+                                                        Qs[-1],
+                                                        mu0s[-1],V0s[-1],
+                                                        Cs[-1],ds[-1],
+                                                        Rs[-1]], 
+                                                        cls._modelDescr)
+            elif cls._modelDescr == 'stateSpace_LDS':            
+                [linkPars, noisePars, initPars] = \
+                  timeSeriesModel.parsToUpdateParsList([As[-1],Qs[-1],
+                                                        mu0s[-1],V0s[-1],
+                                                        Cs[-1],ds[-1],
+                                                        Rs[-1]], 
+                                                        cls._modelDescr)
             cls.updatePars(linkPars, noisePars, initPars)
 
             print('data log-likelihood for parameter initializations:')
@@ -2323,11 +2435,11 @@ class timeSeriesModel:
         initPars  = [[[],[]]] # outermost list for time steps dt !        
         
         if modelDescr == 'stateSpace_LDS':
-            if (isinstance(pars, list) and  len(pars) != 6):
+            if (isinstance(pars, list) and  len(pars) != 7):
                 print('len(pars):')
                 print(len(pars))
                 raise Exception(('for LDS, argument pars has to have '
-                                 'a length of exactly 6! It does not.'))
+                                 'a length of exactly 7! It does not.'))
                 
             elif isinstance(pars, list):                         
                 A   = pars[0]
@@ -2335,7 +2447,8 @@ class timeSeriesModel:
                 mu0 = pars[2]
                 V0  = pars[3]
                 C   = pars[4]
-                R   = pars[5]
+                d   = pars[5]
+                R   = pars[6]
                 # make sure the ordering of parameters follows a sorting
                 # by [dt,varGroup,varSubgroup], i.e. first have those 
                 # parameters for the smallest dt (dt=-1 before dt=0 etc.),  
@@ -2344,7 +2457,7 @@ class timeSeriesModel:
                 linkPars[0] = [ A ]       
                 linkPars[1] = [ C ]      
                 noisePars[0] = [ [None, Q] ]
-                noisePars[1] = [ [None, R] ]                 
+                noisePars[1] = [ [d, R] ]                 
                 initPars[0][0] = [ [mu0, V0] ]
                 initPars[0][1] = [   None    ]  
                 
@@ -2363,13 +2476,12 @@ class timeSeriesModel:
                     noisePars[0][0][1] = pars['Q']
                 if 'R' in pars.keys():
                     noisePars[1][0][1] = pars['R']
+                if 'd' in pars.keys():
+                    noisePars[1][0][0] = pars['d']
                 if 'mu0' in pars.keys():
                     initPars[0][0][0][0] = pars['mu0']
                 if 'V0' in pars.keys():
-                    initPars[0][0][0][1] = pars['V0']     
-                    
-                    
-                      
+                    initPars[0][0][0][1] = pars['V0']      
             
         elif modelDescr == 'stateSpace_inputARLDS':
             if isinstance(pars, list) and  len(pars) != 11:
@@ -2423,7 +2535,52 @@ class timeSeriesModel:
                 if 'nu0' in pars.keys():
                     initPars[0][1][0][0] = pars['nu0']
                 if 'W0' in pars.keys():
-                    initPars[0][1][0][1] = pars['W0']               
+                    initPars[0][1][0][1] = pars['W0']      
+
+        elif modelDescr == 'stateSpace_iLDS':
+            if isinstance(pars, list) and  len(pars) != 8:
+                print('len(pars):')
+                print(len(pars))
+                raise Exception(('for inputARLDS, argument pars has to '
+                                 'have length of exactly 8! It does not.'))
+            elif isinstance(pars, list):                                         
+                A    = pars[0]
+                B    = pars[1]
+                Q    = pars[2]
+                mu0  = pars[3]
+                V0   = pars[4]
+                C    = pars[5]
+                d    = pars[6]
+                R    = pars[7]
+                linkPars[0]= [  A,B  ] 
+                linkPars[1] = [ C ]      
+                noisePars[0] = [ [None, Q] ]
+                noisePars[1] = [ [d, R] ]         
+                initPars[0][0] = [ [mu0, V0] ] # initPars[dt][X] = list(...)
+            elif isinstance(pars, dict):         
+                linkPars[0]= [  None,None  ]     
+                linkPars[1]= [ None,None,None ]     
+                noisePars[0] = [ [None, None] ]
+                noisePars[1] = [ [None, None] ]         
+                initPars[0][0] = [ [None, None] ] 
+                initPars[0][1] = [ [None, None] ]   
+                if 'A' in pars.keys():
+                    linkPars[0][0] = pars['A']
+                if 'B' in pars.keys():
+                    linkPars[0][1] = pars['B']                            
+                if 'C' in pars.keys():
+                    linkPars[1][1] = pars['C']                             
+                if 'Q' in pars.keys():
+                    noisePars[0][0][1] = pars['Q']
+                if 'd' in pars.keys():
+                    noisePars[1][0][0] = pars['d']
+                if 'R' in pars.keys():
+                    noisePars[1][0][1] = pars['R']
+                if 'mu0' in pars.keys():
+                    initPars[0][0][0][0] = pars['mu0']
+                if 'V0' in pars.keys():
+                    initPars[0][0][0][1] = pars['V0']         
+
         else: 
             print('modelDescr:')
             print(modelDescr)
@@ -2460,9 +2617,10 @@ class timeSeriesModel:
             mu0 = initDists[0][0][0].givePars()[0].copy()
             V0  = initDists[0][0][0].givePars()[1].copy()
             C   = linkFuns[1][0].givePars()[0].copy()
+            d =   noiseDists[1][0].givePars()[0].copy()
             R =   noiseDists[1][0].givePars()[1].copy()
             
-            return [A,Q,mu0,V0,C,R]
+            return [A,Q,mu0,V0,C,d,R]
         
         else: 
             print('modelDescr:')
@@ -4319,7 +4477,14 @@ class noiseDistr:
                                  'cholesky decompostition of covariance.'))
             if 1 in idxParsIn and not 2 in idxParsIn: # when giving new Sigma, 
                                                       # but no new chol(Sigma)  
-                pars.append(np.linalg.cholesky(pars[1]))
+                try:
+                    pars.append(np.linalg.cholesky(pars[1]))
+                except:
+                    print('Sigma:')
+                    print(pars[1])
+                    raise Exception(('cholesky decomposition of covariance '
+                                     'matrix failed. Matrix is not a valid '
+                                     'covariance matrix!'))
                 idxParsIn.append(2)                                        
                 numParsIn += 1
                             
