@@ -202,7 +202,7 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
         tmp[1,0] =  np.zeros([1,1],dtype=bool) # X|Y   X|Y as      |--------
         tmp[2,0] =  np.zeros([1,1],dtype=bool) # X|U            y1 | o  |
         tmp[0,1] =  np.zeros([1,1],dtype=bool) # Y|X            y2 |    | o
-        tmp[1,1] =  np.ones( [1,1],dtype=bool) # Y|Y
+        tmp[1,1] =  np.zeros([1,1],dtype=bool) # Y|Y
         tmp[2,1] =  np.zeros([1,1],dtype=bool) # Y|U
         deps.append( tmp )
 
@@ -212,12 +212,12 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
         tmp[2,0] =  np.ones( [1,1],dtype=bool) # X|U
         tmp[0,1] =  np.ones( [1,1],dtype=bool) # Y|X 
         tmp[1,1] =  np.zeros([1,1],dtype=bool) # Y|Y
-        tmp[2,1] =  np.ones( [1,1],dtype=bool) # Y|U
+        tmp[2,1] =  np.zeros([1,1],dtype=bool) # Y|U
         deps.append( tmp )
         del tmp
 
         linkFunctions[0] = ['linearTwoInputs']            # x = f(fa_x)                    
-        linkFunctions[1] = ['linearThreeInputs']          # y = f(fa_y)
+        linkFunctions[1] = ['linear']                     # y = f(fa_y)
 
         noiseDistrs[0] = ['Gaussian']            # noise on x
         noiseDistrs[1] = ['Gaussian']            # noise on y
@@ -227,7 +227,7 @@ def setStateSpaceModel(ssmType, dims, pars=None, seq=None):
         
         initDistrs.append([[],[]]) # variable initializations for t = 1
         initDistrs[0][0] = ['Gaussian']  # initDistrs[dt][X] = list(...)
-        initDistrs[0][1] = ['Gaussian']  # initDistrs[dt][Y] = list(...)
+        initDistrs[0][1] = [ None ]  # initDistrs[dt][Y] = list(...)
         
         updateParsList = [A,B,Q,mu0,V0,C,d,R]
         
@@ -746,12 +746,14 @@ class timeSeriesObject:
         
     def addData(cls,
                 numTrials=np.array([1]),
-                Ts=np.array([42]),                 
+                Ts=np.array([42]),     
+                u=None,            
                 RNGseed=42,
                 timeScaleData=[None]):
-        """ .addData(numTrials,Ts,RNGseed,timeScaleData)
+        """ .addData(numTrials,Ts,u,RNGseed,timeScaleData)
         numTrials: ndarray of number of trials to add for new experiment(s)
         Ts:        ndarray of trial lengths for new experiment(s) 
+        u:         list of ndarrays of input variables u 
         RNGseed:   integer specifying desired random seed used for new data
         timeScaleData: dict defining time scales during experiment(s) 
         Adds data of one or several new experiments to the timeSeriesData
@@ -765,7 +767,7 @@ class timeSeriesObject:
         except:
             cls.resetData()
             
-        cls._data.addExperiment(numTrials,Ts,RNGseed,timeScaleData)
+        cls._data.addExperiment(numTrials,Ts,u,RNGseed,timeScaleData)
                     
     def giveModel(cls):
         """ OUT = .giveModel()
@@ -1063,12 +1065,14 @@ class timeSeriesData:
     def addExperiment(cls,
                       numTrials=np.array([1]),
                       Ts=np.array([42]), 
+                      u=None,
                       RNGseed=42,
                       timeScaleData=[None]):
-        """ .addExperiment(Ts,numTrials,RNGseed)
+        """ .addExperiment(numTrials,Ts,u,RNGseed,timeScaleData)
         timeSeriesObject: object that holds timeSeriesModel object
-        Ts:        numExperiments-by-1 ndarray of trial lengths
         numTrials: numExperiments-by-1 ndarray of numbers of trials
+        Ts:        numExperiments-by-1 ndarray of trial lengths
+        u:         list of ndarrays of input variables u
         RNGseed:   integer that gives a specific random seed
         timeScaleData: dict defining time scales during experiment(s) 
         Adds data of one or several new experiments to the timeSeriesData
@@ -1099,7 +1103,7 @@ class timeSeriesData:
                              'required, but apparently not yet initialized'))                         
                         
         np.random.seed(RNGseed)                            
-                            
+                        
         if isinstance(numTrials , numbers.Integral):  
             numTrials = np.array([numTrials],dtype=int)   
         if isinstance(numTrials, list ):           
@@ -1108,7 +1112,7 @@ class timeSeriesData:
             raise TypeError(('variable Trials may either be a an integer, '
                              ' a list or an ndarray'))                            
         numTrials.reshape([1,numTrials.size])
-                            
+
         if isinstance( Ts, numbers.Integral ):               
             Ts = Ts * np.ones(numTrials.shape, # make sure Ts is a vector
                               dtype=int)       # of dim. Trials.size-by-1 
@@ -1130,6 +1134,25 @@ class timeSeriesData:
         cls._numTrials = np.hstack([cls._numTrials.copy(), numTrials])
         cls._numExperiments = cls._numTrials.size         
         
+        if u is None:
+            u = []
+            for i in range(cls._numTrials.size):
+                u.append(None)
+        elif (isinstance(u, np.ndarray) and
+              np.all(u.shape==(varDescr.giveVarDims('u'),
+                               Ts[0],
+                               numTrials[0])
+                    ) 
+              ): 
+            u = [u]
+            for i in range(len(Ts)-1):
+                u.append(u[-1])
+
+        elif not (isinstance(u, list) and len(u)==cls._numTrials.size):
+            raise Exception(('input u has to be a list of length '
+                             'numExperiments or u = None'))
+
+
         # check time scale information (if given)  
         if (isinstance(timeScaleData, list) and len(timeScaleData)==1
             and  (isinstance(timeScaleData[0],dict) or 
@@ -1187,6 +1210,23 @@ class timeSeriesData:
                                        numTrials[t], Ts[t],   
                                        distrType ) 
                            ) 
+            if (isinstance(u[t],np.ndarray) and 
+                np.all(u[t].shape==(varDescr.giveVarDims('u'),
+                                    Ts[t],
+                                    numTrials[t])
+                       )
+                ):
+                cls._xyu[-1][range(cls._offsets[2],cls._offsets[3]),:,:] \
+                = u[t]
+            elif not u[t] is None:
+                print('Experiment:')
+                print(t)
+                if isinstance(u[t], np.ndarray):
+                    print('u[t].shape')
+                    print( u[t].shape)
+                print(('Warning: ignored input u for current experiment '
+                       'as it does not have the required dimensionality. '
+                       'It is advised to set "no inputs as u = None'))
             cls._yObs.append([]) # make space for observed version of Y
             cls._obsScheme.append([])        
             cls.setObservationScheme(len(cls._obsScheme)-1, # initialize
@@ -2501,7 +2541,7 @@ class timeSeriesModel:
                 R    = pars[8]
                 nu0  = pars[9]
                 W0   = pars[10]                        
-                linkPars[0]= [  A,B  ]
+                linkPars[0]= [  [A,B]  ]
                 linkPars[1]= [ E,C,D ]
                 noisePars[0] = [ [None, Q] ]
                 noisePars[1] = [ [None, R] ]         
@@ -2552,22 +2592,23 @@ class timeSeriesModel:
                 C    = pars[5]
                 d    = pars[6]
                 R    = pars[7]
-                linkPars[0]= [  A,B  ] 
+                linkPars[0]= [  [A,B]  ] 
                 linkPars[1] = [ C ]      
                 noisePars[0] = [ [None, Q] ]
-                noisePars[1] = [ [d, R] ]         
-                initPars[0][0] = [ [mu0, V0] ] # initPars[dt][X] = list(...)
+                noisePars[1] = [ [d, R] ]               
+                initPars[0][0] = [ [mu0, V0] ]
+                initPars[0][1] = [   None    ]  
             elif isinstance(pars, dict):         
-                linkPars[0]= [  None,None  ]     
+                linkPars[0]= [  [None,None]  ]     
                 linkPars[1]= [ None,None,None ]     
                 noisePars[0] = [ [None, None] ]
                 noisePars[1] = [ [None, None] ]         
                 initPars[0][0] = [ [None, None] ] 
                 initPars[0][1] = [ [None, None] ]   
                 if 'A' in pars.keys():
-                    linkPars[0][0] = pars['A']
+                    linkPars[0][0][0] = pars['A']
                 if 'B' in pars.keys():
-                    linkPars[0][1] = pars['B']                            
+                    linkPars[0][0][1] = pars['B']                            
                 if 'C' in pars.keys():
                     linkPars[1][1] = pars['C']                             
                 if 'Q' in pars.keys():
@@ -2621,6 +2662,21 @@ class timeSeriesModel:
             R =   noiseDists[1][0].givePars()[1].copy()
             
             return [A,Q,mu0,V0,C,d,R]
+        elif cls._modelDescr == 'stateSpace_iLDS':
+            linkFuns   = cls.giveFactorization().giveLinkFunctionList()
+            noiseDists = cls.giveFactorization().giveNoiseDistrList()
+            initDists  = cls.giveFactorization().giveInitialDistrList()
+            
+            A =   linkFuns[0][0].givePars()[0].copy()   
+            B =   linkFuns[0][0].givePars()[1].copy()     
+            Q =   noiseDists[0][0].givePars()[1].copy()
+            mu0 = initDists[0][0][0].givePars()[0].copy()
+            V0  = initDists[0][0][0].givePars()[1].copy()
+            C   = linkFuns[1][0].givePars()[0].copy()
+            d =   noiseDists[1][0].givePars()[0].copy()
+            R =   noiseDists[1][0].givePars()[1].copy()
+            
+            return [A,B,Q,mu0,V0,C,d,R]
         
         else: 
             print('modelDescr:')

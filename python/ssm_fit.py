@@ -138,7 +138,8 @@ def _fitLDS(y,
         Extxts  = [Extxt]
         Extxtm1s= [Extxtm1]
     
-    while LL_new - LL_old > epsilon and stepCount < maxIter:
+    #while LL_new - LL_old > epsilon and stepCount < maxIter:
+    while stepCount < maxIter:                                 # will need to change this back in the future!
 
         LL_old = LL_new
         
@@ -195,7 +196,14 @@ def _fitLDS(y,
 
         if ifPlotProgress:
             # dynamically plot log of log-likelihood difference
+            plt.subplot(1,2,1)
+            plt.plot(LLs)
+            plt.xlabel('#iter')
+            plt.ylabel('log-likelihood')
+            plt.subplot(1,2,2)
             plt.plot(dLL)
+            plt.xlabel('#iter')
+            plt.ylabel('LL_{new} - LL_{old}')
             display.display(plt.gcf())
             display.clear_output(wait=True)
 
@@ -209,7 +217,7 @@ def _fitLDS(y,
             #inp = input("Enter (y)es or (n)o: ")
             #if inp == "no" or inp.lower() == "n":
             #    return None # break EM loop because st. is wrong
-        dLL.append(np.log(LL_new - LL_old)/log10)
+        dLL.append(LL_new - LL_old)
             
     LLs = np.array(LLs)     
     
@@ -230,7 +238,7 @@ def _iLDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme,ifRDiagonal=True):
 
     """ 
     [mu,V,P,logc]   = _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme)    
-    [mu_h,V_h,J]    = _iKalmanSmoother(A,mu,V,P)
+    [mu_h,V_h,J]    = _iKalmanSmoother(A,B,mu,V,P,u)
     [Ext,Extxt,Extxtm1] = _KalmanParsToMoments(mu_h,V_h,J)
         
     LL = np.sum(logc,axis=0) # sum over times, get Trial-dim. vector
@@ -283,9 +291,11 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
     Atr = A.transpose()        
     Iq = np.identity(xDim)
     
-    y = y.copy() - d.reshape([yDim,1,1]) # potentially heavy burden on memory!
-    
+
     for tr in range(Trial):
+
+        Bu = np.dot(B, u[:,:,tr])
+
         # first time step: [mu0,V0] -> [mu1,V1]
         j   = obsPops[0]
         idx = subpops[j]
@@ -294,11 +304,12 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
         Cj   = C[np.ix_(idx,xRange)]                    # all these
         Rinv = 1/R[idx]                                 # operations    
         CtrRinv = Cj.transpose() * Rinv                 # are order
-        CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !            
+        CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !  
+        dj   = d[idx]          
         
         # pre-compute for this time step                                   
-        Cmu0 = np.dot(Cj,mu0)
-        yDiff  = y[idx,0,tr] - Cmu0                     # O(yDim)                                       
+        Cmu0B0 = np.dot(Cj,mu0 + B[:,0]) 
+        yDiff  = y[idx,0,tr] - dj - Cmu0B0              # O(yDim)                                       
         CtrRyDiff_Cmu0 = np.dot(CtrRinv, yDiff)         # O(yDim)
         P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
                 
@@ -335,13 +346,14 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
             Rinv = 1/R[idx]                                 # operations 
             CtrRinv = Cj.transpose() * Rinv                 # are order
             CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
+            dj   = d[idx]
                                                    
             while t < obsTime[i]: 
                                                    
                 # pre-compute for this time step                                   
-                Amu    = np.dot(A,mu[:,t-1,tr])
-                yDiff  = y[idx,t,tr] - np.dot(Cj,Amu)       # O(yDim)                                              
-                CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)     # O(yDim)
+                AmuBu  = np.dot(A,mu[:,t-1,tr] + Bu[:,t]) 
+                yDiff  = y[idx,t,tr] - dj - np.dot(Cj,AmuBu)  # O(yDim)                                              
+                CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)       # O(yDim)
                                                    
                 # compute Kalman gain components                                       
                 Pinv   = sp.linalg.inv(P[:,:,t-1,tr])       
@@ -351,7 +363,7 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
                 KC     = np.dot(PKsht, CtrRinvC)
 
                 # update posterior estimates
-                mu[ :,t,tr] = Amu + np.dot(PKsht,CtrRyDiff_CAmu)
+                mu[ :,t,tr] = AmuBu + np.dot(PKsht,CtrRyDiff_CAmu)
                 V[:,:,t,tr] = np.dot(Id - KC,P[:,:,t-1,tr])
                 P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
                                                    
@@ -376,8 +388,8 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _iKalmanSmoother(A, B, mu, V, P):        
-    """ OUT = _KalmanSmoother(A*,mu*,V*,P*)
+def _iKalmanSmoother(A, B, mu, V, P, u):        
+    """ OUT = _KalmanSmoother(A*,B*,mu*,V*,P*,u*)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
     """        
@@ -389,16 +401,18 @@ def _iKalmanSmoother(A, B, mu, V, P):
     J    = np.zeros([xDim,xDim,T,Trial])
     tr = 0
     Atr = A.transpose()
+
     for tr in range(Trial):
+        Bu = np.dot(B, u[:,:,tr])
         mu_h[ :,T-1,tr] = mu[ :,T-1,tr] # \beta(x_N) = 1, i.e. 
         V_h[:,:,T-1,tr] = V[:,:,T-1,tr] # \alpha(x_N) = \gamma(x_N)
         t = T-2
         while t >= 0:
-            Amu         = np.dot(A,mu[:,t,tr])             
+            AmuBu       = np.dot(A,mu[:,t,tr]) + Bu[:,t]            
             J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
                                  sp.linalg.inv(P[:,:,t,tr]))
             mu_h[ :,t,tr] = ( mu[:,t,tr] 
-                            + np.dot(J[:,:,t,tr],mu_h[:,t+1,tr] - Amu) )
+                            + np.dot(J[:,:,t,tr],mu_h[:,t+1,tr] - AmuBu) )
             V_h[:,:,t,tr] = (V[:,:,t,tr] 
                             + np.dot(np.dot(J[:,:,t,tr], 
                                             V_h[:,:,t+1,tr] - P[:,:,t,tr]),
@@ -409,7 +423,7 @@ def _iKalmanSmoother(A, B, mu, V, P):
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme, 
-                 my=None, myy=None, suu=None, suuinv=None, Ti=None):   
+                 sy=None, syy=None, suu=None, suuinv=None, Ti=None):   
     """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*,syy)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
@@ -425,6 +439,7 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     T     = Ext.shape[1]
     Trial = Ext.shape[2]    
     yDim  = y.shape[0]
+    uDim  = u.shape[0]
     
     xRange = range(xDim)
 
@@ -450,7 +465,9 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                 if i == 0:
                     Ti[idx] += obsTime[0] # - 0, for t = 0                                                
                 else:
-                    Ti[idx] += obsTime[i] - obsTime[i-1]            
+                    Ti[idx] += obsTime[i] - obsTime[i-1]
+        Ti[np.where(Ti==0)] = 1 
+
     # compute sum and (diagonal of) scatter matrix for observed states    
     if sy is None:
         sy    = np.zeros(yDim)
@@ -489,6 +506,7 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     
     # compute (diagonal of) scatter matrix accros observed and latent states
     # compute scatter matrices from posterior means for the latent states
+    sExts    = np.zeros([xDim, len(obsTime)])
     syExts   = np.zeros([yDim, xDim, len(obsTime)]) # outer product y_t x_t'
     sExtxts = np.zeros([xDim, xDim, len(obsTime)]) # outer product x_t x_t'
     for tr in range(Trial):              # collapse over trials ...
@@ -500,83 +518,109 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                 ts  = range(0, obsTime[i])                                            
             else:
                 ts  = range(obsTime[i-1],obsTime[i])                    
+            sExts[:,i]  += np.sum(Ext[:,ts,tr],1)
             syExts[idx,:,i] += np.einsum('in,jn->ij', 
                                          ytr[np.ix_(idx,ts)], 
                                          Ext[:,ts,tr])           
             sExtxts[:,:,i] += np.sum(Extxt[:,:,ts,tr], 2)
 
-    sExt     = np.sum(Ext[:,:,:], (1,2))         # sum over E[x_t]
+    sExt     = np.sum(sExts,1)                  # sum over E[x_t]
     sExtxt1toN   = np.sum(sExtxts, 2)                      # A,Q require 
     sExtxt2toN   = sExtxt1toN - np.sum(Extxt[:,:,0 , :],2) # sums over all
     sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2) # E[x_t x_t']         
     sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
 
     sysExt = np.outer(sy, sExt)                                          
-    syExt = np.sum(syExts,2)      # normalize sum_t( y_t * x_t')                              
+    syExt = np.sum(syExts,2)      # normalize sum_t( y_t * x_t')                             
                         
     # compute scatter matrix accros input and latent states
-    suExt = np.zeros([uDim, xDim]) # sum over outer product u_t x_t'
+    sExtu = np.zeros([xDim, uDim]) # sum over outer product u_t x_t'
     for tr in range(Trial):        # collapse over trials ...
-        suExt += np.einsum('in,jn->ij', 
-                            utr[:,range(1,T),tr], # omit the first
-                            Ext[:,range(1,T),tr]) # time step!                              
+        sExtu += np.einsum('in,jn->ij', 
+                            Ext[:,range(1,T),tr], # omit the first
+                            u[:,range(1,T),tr]) # time step!                              
     suExtm1 = np.zeros([uDim, xDim]) # sum over outer product u_t x_t-1'
     for tr in range(Trial):          # collapse over trials ...
         suExtm1 += np.einsum('in,jn->ij', 
-                              utr[:,range(1,T),tr], 
+                              u[:,range(1,T),tr], 
                               Ext[:,range(0,T-1),tr])                         
     
     # Start computing (closed-form) updated parameters
     
     # initial distribution parameters
-    mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                              
-    V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)      
+    mu0 = 1/Trial * np.sum( Ext[:,0,:], 1 )                                    # still blatantly
+    V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)            # wrong
 
     # latent dynamics paramters
     sExm1suusuExm1 = np.dot(suExtm1.transpose(), np.dot(suuinv, suExtm1))
-    sExsuuusuExm1  = np.dot(suExt.transpose(),   np.dot(suuinv, suExtm1))
+    sExsuuusuExm1  = np.dot(sExtu,               np.dot(suuinv, suExtm1))
                       
-    A = np.dot(sExtxtm1-sExm1suusuExm1, 
-               sp.linalg.inv(sExtxt1toNm1-sExsuuusuExm1))                                    
+    A = np.dot(sExtxtm1-sExsuuusuExm1, 
+               sp.linalg.inv(sExtxt1toNm1-sExm1suusuExm1))                                    
     Atr = A.transpose()
-    B = np.dot(suExt.transpose() - np.dot(A, suExtm1.transpose(), suuinv))
+    B = np.dot(sExtu - np.dot(A, suExtm1.transpose()), suuinv)
+    Btr = B.transpose()
     sExtxtm1Atr = np.dot(sExtxtm1, Atr)
-    BsuExt      = np.dot(B, suExt)
+    sExtuBtr   = np.dot(sExtu, Btr)
     BsuExtm1Atr = np.dot(B, np.dot(suExtm1, Atr))                
     Q = 1/(Trial*(T-1)) * (  sExtxt2toN   
                            - sExtxtm1Atr.transpose()
                            - sExtxtm1Atr 
                            + np.dot(np.dot(A, sExtxt1toNm1), Atr) 
-                           - BsuExt.tranpose()
-                           - BsuExt
+                           - sExtuBtr.transpose()
+                           - sExtuBtr
                            + BsuExtm1Atr.transpose()
                            + BsuExtm1Atr
-                           + np.dot(np.dot(B, suu), B.transpose())
+                           + np.dot(np.dot(B, suu), Btr)
                           )
 
        
-    # observed state parameters C, d
-    C = np.dot((Trial*T) * ((syExt - sysExt) / Ti.reshape()), 
-               np.linalg.inv(sExtxt1toN
-                             - np.outer(sExt,sExt)/(Trial*T))
-                           )     
-    d = (sy - np.dot(C, sExt) ) / Ti                                  
-
-    # now use C, d to compute terms of the residual noise
-    CsExtxtCtr  = np.zeros(yDim)
-    sdExt   = np.zeros([yDim, xDim])
+    # observed state parameters C, d    
+    # (some voodoo that has to be done for stitching (see notes somewhere else ...))
+    # We whish to solve C * sExtxtinv  - 1/Ti * C * (sExt*sExt') = rhs for C 
+    Ti1 = Ti.reshape(yDim,1)
+    Ti2 = Ti1 * Ti1
+    rhs = syExt/Ti1 - sysExt/Ti2
+    mExtxt1toN = sExtxt1toN / (T*Trial)
+    mExtxtinv = sp.linalg.inv(mExtxt1toN)
+    z   = np.dot(mExtxtinv, sExt)
+    zz  = np.outer(z, z)
+    wii = Ti2 - np.dot(sExt, z) # Ti + trace(sExt*sExt' * inv(sExtxt))
+    C = np.dot(rhs,mExtxtinv) + np.dot(rhs/wii, zz)
+    #print('lhs')
+    #print(np.dot(C,mExtxt1toN)-np.dot(C/Ti2,np.outer(sExt,sExt)))
+    #print('rhs')
+    #print(rhs)
+    #C = np.dot(((Trial*T) * syExt - sysExt) / Ti.reshape(yDim,1), 
+    #           np.linalg.inv(sExtxt1toN
+    #                         - np.outer(sExt,sExt)/(Trial*T))
+    #                       )     
+    CsExts = np.zeros([yDim, len(obsTime)])
     for tr in range(Trial):              # collapse over trials ...
         ytr = y[:,:,tr]
         for i in range(len(obsTime)):    # ... but keep subpopulations apart
             j   = obsPops[i]
             idx = subpops[j]         
-            if i == 0:
-                ts  = range(0, obsTime[i])                                            
-            else:
-                ts  = range(obsTime[i-1],obsTime[i])                    
-            sdExt[idx,:] += np.outer(d[idx].reshape(len(idx),1),np.sum(Ext[:,ts,tr],1))
+            Cj  = C[idx,:]
+            CsExts[idx,i] += np.dot(Cj, sExts[:,i])
+    d = (sy - np.sum(CsExts,1) ) / Ti  
+
+    # now use C, d to compute terms of the residual noise
+    CsExtxtCtr = np.zeros(yDim)
+    #CsExtdtr   = np.zeros(yDim)
+    #syExtCtr   = np.zeros(yDim)
+    sdExt      = np.zeros([yDim,xDim])
+    for tr in range(Trial):              # collapse over trials ...
+        ytr = y[:,:,tr]
+        for i in range(len(obsTime)):    # ... but keep subpopulations apart
+            j   = obsPops[i]
+            idx = subpops[j]                    
+            print(idx)
+            sdExt[idx,:] += np.outer(d[idx],sExts[:,i])
             Cj  = C[idx,:]
             CsExtxtCtr[idx] += np.einsum('ij,ik,jk->i', Cj, Cj,sExtxts[:,:,i])
+            #CsExtdtr[idx]   += CsExts[idx,i] * d[idx]
+            #syExtCtr[idx]   += np.sum(syExts[idx,:,i] * Cj, 1)
 
     # compute observation noise parameter R
     R = (( syy - 2 * sy * d
@@ -585,8 +629,40 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
          ) /Ti
          + d * d
         )
+    print('subpops')
+    print(subpops)
+    print('A')
+    print(A)
+    print('B')
+    print(B)
+    print('Q')
+    print(Q)
+    print('C')
+    print(C)  
+    print('d')
+    print(d)  
+    print('R')
+    print(R)
+    if not np.min(R) > 0:
+        print('CsExtxtCtr')
+        print(CsExtxtCtr)
+        print('- 2 * syExtCtr')
+        print(- 2 * syExtCtr)
+        print('+ 2 * CsExtdtr')
+        print(+ 2 * CsExtdtr)
+        print('syy')
+        print(syy)
+        print('- 2 * (sy * d)')
+        print(- 2 * (sy * d))
+        print('+ Ti * (d * d)')         
+        print(+ Ti * (d * d))      
+        print('Ti')
+        print(Ti)   
+        print('R')
+        print(R)        
+        raise Exception('stop, R is ill-behaved')
 
-    return [A,B,Q,mu0,V0,C,d,R,my,myy,suu,suuinv,Ti]        
+    return [A,B,Q,mu0,V0,C,d,R,sy,syy,suu,suuinv,Ti]        
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
@@ -656,8 +732,6 @@ def _KalmanFilter(A,Q,mu0,V0,C,d,R,y,obsScheme):
     Atr = A.transpose()        
     Iq = np.identity(xDim)
     
-    y = y.copy() - d.reshape([yDim,1,1]) # potentially heavy burden on memory!
-    
     for tr in range(Trial):
         # first time step: [mu0,V0] -> [mu1,V1]
         j   = obsPops[0]
@@ -667,11 +741,12 @@ def _KalmanFilter(A,Q,mu0,V0,C,d,R,y,obsScheme):
         Cj   = C[np.ix_(idx,xRange)]                    # all these
         Rinv = 1/R[idx]                                 # operations    
         CtrRinv = Cj.transpose() * Rinv                 # are order
-        CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !            
+        CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !   
+        dj   = d[idx]         
         
         # pre-compute for this time step                                   
         Cmu0 = np.dot(Cj,mu0)
-        yDiff  = y[idx,0,tr] - Cmu0                     # O(yDim)                                       
+        yDiff  = y[idx,0,tr] - dj - Cmu0                # O(yDim)                                       
         CtrRyDiff_Cmu0 = np.dot(CtrRinv, yDiff)         # O(yDim)
         P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
                 
@@ -708,12 +783,13 @@ def _KalmanFilter(A,Q,mu0,V0,C,d,R,y,obsScheme):
             Rinv = 1/R[idx]                                 # operations 
             CtrRinv = Cj.transpose() * Rinv                 # are order
             CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
+            dj   = d[idx]
                                                    
             while t < obsTime[i]: 
                                                    
                 # pre-compute for this time step                                   
                 Amu    = np.dot(A,mu[:,t-1,tr])
-                yDiff  = y[idx,t,tr] - np.dot(Cj,Amu)       # O(yDim)                                              
+                yDiff  = y[idx,t,tr] - dj - np.dot(Cj,Amu)  # O(yDim)                                              
                 CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)     # O(yDim)
                                                    
                 # compute Kalman gain components                                       
@@ -890,6 +966,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                 
     # compute (diagonal of) scatter matrix accros observed and latent states
     # compute scatter matrices from posterior means for the latent states
+    sExts    = np.zeros([xDim, len(obsTime)])
     syExts   = np.zeros([yDim, xDim, len(obsTime)]) # outer product y_t x_t'
     sExtxts = np.zeros([xDim, xDim, len(obsTime)]) # outer product x_t x_t'
     for tr in range(Trial):              # collapse over trials ...
@@ -901,12 +978,13 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                 ts  = range(0, obsTime[i])                                            
             else:
                 ts  = range(obsTime[i-1],obsTime[i])                    
+            sExts[:,i]  += np.sum(Ext[:,ts,tr],1)
             syExts[idx,:,i] += np.einsum('in,jn->ij', 
                                          ytr[np.ix_(idx,ts)], 
                                          Ext[:,ts,tr])           
             sExtxts[:,:,i] += np.sum(Extxt[:,:,ts,tr], 2)
 
-    sExt     = np.sum(Ext[:,:,:], (1,2))         # sum over E[x_t]
+    sExt     = np.sum(sExts,1)                  # sum over E[x_t]
     sExtxt1toN   = np.sum(sExtxts, 2)                      # A,Q require 
     sExtxt2toN   = sExtxt1toN - np.sum(Extxt[:,:,0 , :],2) # sums over all
     sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2) # E[x_t x_t']         
@@ -931,29 +1009,54 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                            - sExtxtm1Atr 
                            + np.dot(np.dot(A, sExtxt1toNm1), Atr) ) 
 
-       
-    # observed state parameters C, d
-    C = np.dot((Trial*T) * ((syExt - sysExt) / Ti.reshape()), 
-               np.linalg.inv(sExtxt1toN
-                             - np.outer(sExt,sExt)/(Trial*T))
-                           )     
-    d = (sy - np.dot(C, sExt) ) / Ti                                  
-
-    # now use C, d to compute terms of the residual noise
-    CsExtxtCtr  = np.zeros(yDim)
-    sdExt   = np.zeros([yDim, xDim])
+    # observed state parameters C, d    
+    # (some voodoo that has to be done for stitching (see notes somewhere else ...))
+    # We whish to solve C * sExtxtinv  - 1/Ti * C * (sExt*sExt') = rhs for C 
+    Ti1 = Ti.reshape(yDim,1)
+    Ti2 = Ti1 * Ti1
+    rhs = syExt/Ti1 - sysExt/Ti2
+    print(Ti1.shape)
+    print(Ti2.shape)
+    mExtxt1toN = sExtxt1toN / (T*Trial)
+    mExtxtinv = sp.linalg.inv(mExtxt1toN)
+    z   = np.dot(mExtxtinv, sExt)
+    zz  = np.outer(z, z)
+    wii = Ti2 - np.dot(sExt, z) # Ti + trace(sExt*sExt' * inv(sExtxt))
+    C = np.dot(rhs,mExtxtinv) + np.dot(rhs/wii, zz)
+    #print('lhs')
+    #print(np.dot(C,mExtxt1toN)-np.dot(C/Ti2,np.outer(sExt,sExt)))
+    #print('rhs')
+    #print(rhs)
+    #C = np.dot(((Trial*T) * syExt - sysExt) / Ti.reshape(yDim,1), 
+    #           np.linalg.inv(sExtxt1toN
+    #                         - np.outer(sExt,sExt)/(Trial*T))
+    #                       )     
+    CsExts = np.zeros([yDim, len(obsTime)])
     for tr in range(Trial):              # collapse over trials ...
         ytr = y[:,:,tr]
         for i in range(len(obsTime)):    # ... but keep subpopulations apart
             j   = obsPops[i]
             idx = subpops[j]         
-            if i == 0:
-                ts  = range(0, obsTime[i])                                            
-            else:
-                ts  = range(obsTime[i-1],obsTime[i])                    
-            sdExt[idx,:] += np.outer(d[idx].reshape(len(idx),1),np.sum(Ext[:,ts,tr],1))
+            Cj  = C[idx,:]
+            CsExts[idx,i] += np.dot(Cj, sExts[:,i])
+    d = (sy - np.sum(CsExts,1) ) / Ti  
+
+    # now use C, d to compute terms of the residual noise
+    CsExtxtCtr = np.zeros(yDim)
+    #CsExtdtr   = np.zeros(yDim)
+    #syExtCtr   = np.zeros(yDim)
+    sdExt      = np.zeros([yDim,xDim])
+    for tr in range(Trial):              # collapse over trials ...
+        ytr = y[:,:,tr]
+        for i in range(len(obsTime)):    # ... but keep subpopulations apart
+            j   = obsPops[i]
+            idx = subpops[j]                    
+            print(idx)
+            sdExt[idx,:] += np.outer(d[idx],sExts[:,i])
             Cj  = C[idx,:]
             CsExtxtCtr[idx] += np.einsum('ij,ik,jk->i', Cj, Cj,sExtxts[:,:,i])
+            #CsExtdtr[idx]   += CsExts[idx,i] * d[idx]
+            #syExtCtr[idx]   += np.sum(syExts[idx,:,i] * Cj, 1)
 
     # compute observation noise parameter R
     R = (( syy - 2 * sy * d
@@ -962,7 +1065,16 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
          ) /Ti
          + d * d
         )
-        
+    print('subpops')
+    print(subpops)
+    print('A')
+    print(A)
+    print('Q')
+    print(Q)
+    print('C')
+    print(C)  
+    print('d')
+    print(d)  
     print('R')
     print(R)
     if not np.min(R) > 0:
@@ -1305,6 +1417,8 @@ def _unpackInitPars(initPars, uDim, yDim=None, xDim=None, ifRDiagonal=True):
                 R = np.ones(yDim)
             elif np.all(initPars[7].shape==(yDim,)):
                 R = initPars[7].copy()
+            elif np.all(initPars[7].shape==(yDim,yDim)):
+                R = initPars[7].copy().diagonal()
             else:
                 print('yDim:')
                 print(yDim)
