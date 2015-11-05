@@ -101,8 +101,8 @@ def _fitLDS(y,
                                                 uDim,yDim,None,
                                                 ifRDiagonal)   
 
-    E_step = _iLDS_E_step 
-    M_step = _iLDS_M_step 
+    E_step = _LDS_E_step 
+    M_step = _LDS_M_step 
 
     # evaluate initial state       
     [Ext, Extxt, Extxtm1, LLtr] = E_step(A,B,Q,mu0,V0,C,d,R,y,u, 
@@ -114,6 +114,7 @@ def _fitLDS(y,
     LLs = [LL_new.copy()] # performance trace to be returned
     stepCount = 0        
     ifBreakLoop = False
+
     # start EM iterations, run until convergence 
     if ifTraceParamHist:
         As   = [A]
@@ -127,8 +128,7 @@ def _fitLDS(y,
         Extxts  = [Extxt]
         Extxtm1s= [Extxtm1]
     
-    #while LL_new - LL_old > epsilon and stepCount < maxIter:
-    while stepCount < maxIter:                                 # will need to change this back in the future!
+    while LL_new - LL_old > epsilon and stepCount < maxIter:
 
         LL_old = LL_new
         
@@ -182,20 +182,6 @@ def _fitLDS(y,
         LL_new = np.sum(LLtr) # discarding distinction between trials
         LLs.append(LL_new.copy())
 
-        dLL.append(LL_new - LL_old)
-        if ifPlotProgress:
-            # dynamically plot log of log-likelihood difference
-            plt.subplot(1,2,1)
-            plt.plot(LLs)
-            plt.xlabel('#iter')
-            plt.ylabel('log-likelihood')
-            plt.subplot(1,2,2)
-            plt.plot(dLL)
-            plt.xlabel('#iter')
-            plt.ylabel('LL_{new} - LL_{old}')
-            display.display(plt.gcf())
-            display.clear_output(wait=True)
-
         if LL_new < LL_old:
             print('LL_new - LL_old')
             print( LL_new - LL_old )
@@ -206,6 +192,25 @@ def _fitLDS(y,
             #inp = input("Enter (y)es or (n)o: ")
             #if inp == "no" or inp.lower() == "n":
             #    return None # break EM loop because st. is wrong
+
+        dLL.append(LL_new - LL_old)
+        if ifPlotProgress:
+            # dynamically plot log of log-likelihood difference
+            plt.figure(figsize=(15,15))
+            plt.subplot(2,2,1)
+            plt.plot(LLs)
+            plt.xlabel('#iter')
+            plt.ylabel('log-likelihood')
+            plt.subplot(2,2,2)
+            plt.plot(dLL)
+            plt.xlabel('#iter')
+            plt.ylabel('LL_{new} - LL_{old}')
+            plt.subplot(2,2,3)
+            plt.plot(Ext[0,range(200),0])
+            plt.xlabel('n')
+            plt.ylabel('first component of x_n')
+            display.display(plt.gcf())
+            display.clear_output(wait=True)
             
     LLs = np.array(LLs)     
     
@@ -216,7 +221,7 @@ def _fitLDS(y,
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _iLDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme): 
+def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme): 
     """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*,ifRDiagonal)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions
@@ -227,11 +232,11 @@ def _iLDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
     Bu = np.zeros([B.shape[0], y.shape[1], y.shape[2]])
     if (isinstance(u, np.ndarray) and u.size>0 
         and u.shape[1]==y.shape[1] and u.shape[2]==y.shape[2]):
-        for tr in range(y.shape[2]):
-            Bu[:,:,tr] = np.dot(B, u[:,:,tr])
+        for tr in range(y.shape[2]):           # i.e. if u is e.g. empty, we 
+            Bu[:,:,tr] = np.dot(B, u[:,:,tr])  # just leave B*u = 0!
 
-    [mu,V,P,logc]   = _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,Bu,obsScheme)    
-    [mu_h,V_h,J]    = _iKalmanSmoother(A,B,mu,V,P,Bu)
+    [mu,V,P,logc]   = _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme)    
+    [mu_h,V_h,J]    = _KalmanSmoother(A,Bu,mu,V,P)
     [Ext,Extxt,Extxtm1] = _KalmanParsToMoments(mu_h,V_h,J)
         
     LL = np.sum(logc,axis=0) # sum over times, get Trial-dim. vector
@@ -240,18 +245,19 @@ def _iLDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,Bu,obsScheme):        
-    """ OUT = _KalmanFilter(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*)
+def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):        
+    """ OUT = _KalmanFilter(A*,Bu*,Q*,mu0*,V0*,C*,d*,R*,y*,obsScheme*)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
     The variable obsScheme is a dictionary that contains information
     on observed subpopulations of y that are observed at each time point
+    This implementation assumes R to be diagonal!
     """
     xDim  = A.shape[0]
     yDim  = y.shape[0]
-    uDim  = B.shape[1]
     T     = y.shape[1]
     Trial = y.shape[2]
+
     mu    = np.zeros([xDim,     T,Trial])
     V     = np.zeros([xDim,xDim,T,Trial])
     P     = np.zeros([xDim,xDim,T,Trial])
@@ -283,7 +289,6 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,Bu,obsScheme):
     Atr = A.transpose()        
     Iq = np.identity(xDim)
     
-
     for tr in range(Trial):
 
         # first time step: [mu0,V0] -> [mu1,V1]
@@ -331,8 +336,8 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,Bu,obsScheme):
                                                    
             # pre-compute for this group of observed variables
             Cj   = C[np.ix_(idx,xRange)]                    # all these
-            Rinv = 1/R[idx]                                 # operations 
-            CtrRinv = Cj.transpose() * Rinv                 # are order
+            Rj   = R[idx]                                   # operations 
+            CtrRinv = Cj.transpose() / Rj                   # are order
             CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
                                                    
             while t < obsTime[i]: 
@@ -356,12 +361,12 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,Bu,obsScheme):
                                                    
                 # compute marginal probability y_t | y_0, ..., y_{t-1}
                 M    = sp.linalg.cholesky(P[:,:,t-1,tr])                                 
-                logdetCPCR = (  np.sum(np.log(R[idx]))                                  
+                logdetCPCR = (  np.sum(np.log(Rj))                                  
                                + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),
                                                          np.dot(CtrRinvC,M))))
                              )
 
-                logc[ t,tr] = (  np.sum(Rinv * yDiff * yDiff)   
+                logc[ t,tr] = (  np.sum((yDiff * yDiff) / Rj)   
                                - np.dot(CtrRyDiff_CAmu, np.dot(Kcore, 
                                         CtrRyDiff_CAmu))
                                + logdetCPCR
@@ -375,8 +380,8 @@ def _iKalmanFilter(A,B,Q,mu0,V0,C,d,R,y,Bu,obsScheme):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _iKalmanSmoother(A, B, mu, V, P, Bu):        
-    """ OUT = _KalmanSmoother(A*,B*,mu*,V*,P*,u*)
+def _KalmanSmoother(A, Bu, mu, V, P):        
+    """ OUT = _KalmanSmoother(A*,Bu*,mu*,V*,P*)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
     """        
@@ -402,7 +407,34 @@ def _iKalmanSmoother(A, B, mu, V, P, Bu):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme, 
+def _KalmanParsToMoments(mu_h, V_h, J):
+    """ OUT = _KalmanParsToMoments(mu)h*,V_h*,J*)
+    see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
+    for formulas and input/output naming conventions  
+    The variable obsScheme is a dictionary that contains information
+    on observed subpopulations of y that are observed at each time point 
+    """                
+    T    = mu_h.shape[1]
+    Trial= mu_h.shape[2]
+
+    Ext   = mu_h.copy()             # E[x_t]                        
+    Extxt = V_h.copy()              # E[x_t, x_t]
+    Extxtm1 = np.zeros(V_h.shape)   # E[x_t x_{t-1}'] 
+
+    for tr in range(Trial):
+        for t in range(T):
+            Extxt[:,:,t,tr] += np.outer(mu_h[:,t,tr], mu_h[:,t,tr]) 
+    for tr in range(Trial):
+        for t in range(1,T): # t=0 stays all zeros !
+            Extxtm1[:,:,t,tr] =  (np.dot(V_h[:,:, t, tr], 
+                                         J[:,:,t-1,tr].transpose()) 
+                                + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) ) 
+
+    return [Ext, Extxt, Extxtm1] 
+
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme, 
                  sy=None, syy=None, suu=None, suuinv=None, Ti=None):   
     """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*,syy)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
@@ -603,6 +635,7 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
         A = np.dot(sExtxtm1, 
                    sp.linalg.inv(sExtxt1toNm1))                                    
         Atr = A.transpose()
+        sExtxtm1Atr = np.dot(sExtxtm1, Atr)
         B = np.zeros([xDim,uDim])                
         Q = 1/(Trial*(T-1)) * (  sExtxt2toN   
                                - sExtxtm1Atr.transpose()
@@ -707,34 +740,7 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
         print(R)        
         raise Exception('stop, R is ill-behaved')
 
-    return [A,B,Q,mu0,V0,C,d,R,sy,syy,suu,suuinv,Ti]        
-
-#----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
-def _KalmanParsToMoments(mu_h, V_h, J):
-    """ OUT = _KalmanParsToMoments(mu)h*,V_h*,J*)
-    see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
-    for formulas and input/output naming conventions  
-    The variable obsScheme is a dictionary that contains information
-    on observed subpopulations of y that are observed at each time point 
-    """                
-    T    = mu_h.shape[1]
-    Trial= mu_h.shape[2]
-
-    Ext   = mu_h.copy()             # E[x_t]                        
-    Extxt = V_h.copy()              # E[x_t, x_t]
-    Extxtm1 = np.zeros(V_h.shape)   # E[x_t x_{t-1}'] 
-
-    for tr in range(Trial):
-        for t in range(T):
-            Extxt[:,:,t,tr] += np.outer(mu_h[:,t,tr], mu_h[:,t,tr]) 
-    for tr in range(Trial):
-        for t in range(1,T): # t=0 stays all zeros !
-            Extxtm1[:,:,t,tr] =  (np.dot(V_h[:,:, t, tr], 
-                                         J[:,:,t-1,tr].transpose()) 
-                                + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) ) 
-
-    return [Ext, Extxt, Extxtm1]    
+    return [A,B,Q,mu0,V0,C,d,R,sy,syy,suu,suuinv,Ti]           
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
@@ -1129,4 +1135,73 @@ def _computeObsIndexGroups(obsScheme,yDim):
 
     return [obsIdxG, idxgrps]
                       
-        
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _evaluateFit(A, B, Q, C, d, R, y, u, Ext, Extxt, Extxtm1, LLs):
+
+    T    = mu_h.shape[1]
+    Trial= mu_h.shape[2]
+    xDim = A.shape[0]
+    yDim = C.shape[0]
+
+    if isinstance(B, np.ndarray):
+        uDim = B.shape[0]
+    else:
+        uDim = 0
+
+    Pi_h    = np.array([sp.linalg.solve_discrete_lyapunov(A, Q)])[0,:,:]
+    Pi_t_h  = np.dot(A.transpose(), Pi_h)
+
+
+    dataCov  = np.cov(y[:,0:T-1,0], y[:,1:T,0])
+    covyy    = dataCov[np.ix_(np.arange(0, yDim), np.arange(0,     yDim))]
+    covyy_m1 = dataCov[np.ix_(np.arange(0, yDim), np.arange(yDim,2*yDim))]
+
+    plt.figure(1)
+    cmap = matplotlib.cm.get_cmap('brg')
+    clrs = [cmap(i) for i in np.linspace(0, 1, xDim)]
+    for i in range(xDim):
+        plt.subplot(xDim,1,i)
+        plt.plot(x[i,:,0], color=clrs[i])
+        plt.hold(True)
+        if np.mean( np.square(x[i,:,0] - Ext_h[i,:,0]) ) < np.mean( np.square(x[i,:,0] + Ext_h[i,:,0]) ):
+            plt.plot( Ext_h[i,:,0], color=clrs[i], ls=':')
+        else:
+            plt.plot(-Ext_h[i,:,0], color=clrs[i], ls=':')
+    m = np.min([Pi_h.min(), covyy.min()])
+    M = np.max([Pi_h.max(), covyy.max()])       
+
+    plt.figure(2)
+    plt.subplot(1,3,1)
+    plt.imshow(np.dot(np.dot(C_h, Pi_h), C_h.transpose()) + R_h, interpolation='none')
+    plt.title('cov_hat(y_t,y_t)')
+    plt.clim(m,M)
+    plt.subplot(1,3,2)
+    plt.imshow(covyy,    interpolation='none')
+    plt.title('cov_emp(y_t,y_t)')
+    plt.clim(m,M)
+    plt.subplot(1,3,3)
+    plt.imshow(np.dot(np.dot(C, Pi), C.transpose()) + R, interpolation='none')
+    plt.title('cov_true(y_t,y_t)')
+    plt.clim(m,M)
+    plt.figure(3)
+
+    m = covyy_m1.min()
+    M = covyy_m1.max()        
+    plt.subplot(1,3,1)
+    plt.imshow(np.dot(np.dot(C_h, Pi_t_h), C_h.transpose()), interpolation='none')
+    plt.title('cov_hat(y_t,y_{t-1})')
+    plt.clim(m,M)
+    plt.subplot(1,3,2)
+    plt.imshow(covyy_m1,    interpolation='none')
+    plt.title('cov(y_t,y_{t-1})')
+    plt.clim(m,M)
+    plt.subplot(1,3,3)
+    plt.imshow(np.dot(np.dot(C, Pi_t), C.transpose()), interpolation='none')
+    plt.title('cov_true(y_t,y_{t-1})')
+    plt.clim(m,M)
+    plt.figure(4)
+    plt.plot(np.sort(np.linalg.eig(A)[0]), 'r')
+    plt.hold(True)
+    plt.plot(np.sort(np.linalg.eig(A_h)[0]), 'b')
+    plt.legend(['true', 'est'])
