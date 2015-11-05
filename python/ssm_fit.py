@@ -182,6 +182,7 @@ def _fitLDS(y,
         LL_new = np.sum(LLtr) # discarding distinction between trials
         LLs.append(LL_new.copy())
 
+        dLL.append(LL_new - LL_old)
         if ifPlotProgress:
             # dynamically plot log of log-likelihood difference
             plt.subplot(1,2,1)
@@ -201,11 +202,10 @@ def _fitLDS(y,
             print(('WARNING! Lower bound decreased during EM '
                    'algorithm. This is impossible for an LDS. '
                    'Continue?'))
-            print('Press Y to continue or N to cancel')
+            #print('Press Y to continue or N to cancel')
             #inp = input("Enter (y)es or (n)o: ")
             #if inp == "no" or inp.lower() == "n":
             #    return None # break EM loop because st. is wrong
-        dLL.append(LL_new - LL_old)
             
     LLs = np.array(LLs)     
     
@@ -517,9 +517,7 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     # versions of sums exclusively over data points where individual index
     # groups are observed:
     sExts   = np.zeros([xDim, len(idxgrps)])       
-    sExtxts = np.zeros([xDim, xDim, len(idxgrps)]) 
-    syExts  = np.zeros([yDim, xDim]) # index groups have no overlap, can store
-                                     # results for y_t x_t' in a singe matrix!                
+    sExtxts = np.zeros([xDim, xDim, len(idxgrps)])            
 
     for tr in range(Trial):              # collapse over trials ...
         ytr = y[:,:,tr]
@@ -539,12 +537,13 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
             sExt         += tsExt
             sExtxt1toN   += tsExtxt
-            syExt[idx,:] += tsyExt
+            syExt[idx,:] += tsyExt # index groups are non-overlapping, i.e. we
+                                   # can store the outer products y(i)_t x_t'
+                                   # for all i in the same matrix. 
 
             for j in obsIdxG[i]: # for each currently observed index group:
                 sExts[:,j]      += tsExt
                 sExtxts[:,:,j]  += tsExtxt
-                syExts[idxgrps[j],:] += tsyExt  
     del ytr
 
     sysExt = np.outer(sy, sExt)                                                             
@@ -563,10 +562,6 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     # latent dynamics paramters
     if uDim > 0:
 
-        suuvinvsuExtm1 = np.dot(suuinv, suExtm1)
-        sExsuuusuExm1  = np.dot(sExtu,               suuvinvsuExtm1)
-        sExm1suusuExm1 = np.dot(suExtm1.transpose(), suuvinvsuExtm1)
-
         # compute scatter matrix accros input and latent states
         sExtu = np.zeros([xDim, uDim]) # sum over outer product u_t x_t'
         for tr in range(Trial):        # collapse over trials ...
@@ -578,6 +573,10 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
             suExtm1 += np.einsum('in,jn->ij', 
                                   u[:,range(1,T),tr], 
                                   Ext[:,range(0,T-1),tr])                         
+
+        suuvinvsuExtm1 = np.dot(suuinv, suExtm1)
+        sExsuuusuExm1  = np.dot(sExtu,               suuvinvsuExtm1)
+        sExm1suusuExm1 = np.dot(suExtm1.transpose(), suuvinvsuExtm1)
                       
         A = np.dot(sExtxtm1-sExsuuusuExm1, 
                    sp.linalg.inv(sExtxt1toNm1-sExm1suusuExm1))                                    
@@ -621,7 +620,7 @@ def _iLDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     C   = np.zeros([yDim,xDim])    
     for i in rangeidxgrps:
         ixg  = idxgrps[i]
-        C[ixg,:] = np.dot(syExts[ixg,:]
+        C[ixg,:] = np.dot(syExt[ixg,:]
                           - np.outer(sy[ixg],sExts[:,i])/Ti[i], 
                           sp.linalg.inv(
                                     sExtxts[:,:,i]
