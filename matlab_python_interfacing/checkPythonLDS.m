@@ -28,6 +28,7 @@ load(['/home/mackelab/Desktop/Projects/Stitching/code/le_stitch/python',...
 
 % squeezing parameters into Lars' formatting
 trueparams.model.A  = A;
+trueparams.model.B  = B;
 trueparams.model.Q  = Q;
 trueparams.model.x0 = mu0;
 trueparams.model.Q0 = V0;
@@ -37,14 +38,13 @@ trueparams.model.R  = R;
 trueparams.model.Pi = 1;
 trueparams.model.notes.useR = 1;
 trueparams.model.notes.useS = 0;
-trueparams.model.notes.useB = 0;
+trueparams.model.notes.useB = 0;   % this is important! Change if necessary
 trueparams.model.notes.learnx0 = 1;
 trueparams.model.notes.learnQ0 = 1;
 trueparams.model.notes.learnA = 1;
 trueparams.model.notes.learnR = 1;
 trueparams.model.notes.diagR  = 1;
 trueparams.model.notes.useCMask= 0;
-trueparams.model.B = 0;
 trueparams.model.inferenceHandle =  @LDSInference;
 trueparams.model.MStepHandle = @LDSMStep;
 trueparams.model.ParamPenalizerHandle = @LDSemptyParamPenalizerHandle;
@@ -62,6 +62,7 @@ seq.T = T;
 
 % what the python E-step got as parameter estimate initializations
 pyparamsIn.model.A = A_0;
+pyparamsIn.model.B = B_0;
 pyparamsIn.model.Q = Q_0;
 pyparamsIn.model.x0 = mu0_0;
 pyparamsIn.model.Q0 = V0_0;
@@ -70,7 +71,6 @@ pyparamsIn.model.d = d_0(:);
 pyparamsIn.model.R = R_0;
 pyparamsIn.model.Pi = 1;
 pyparamsIn.model.notes = trueparams.model.notes;
-pyparamsIn.model.B = 0;
 pyparamsIn.model.inferenceHandle =  @LDSInference;
 pyparamsIn.model.MStepHandle = @LDSMStep;
 pyparamsIn.model.ParamPenalizerHandle = @LDSemptyParamPenalizerHandle;
@@ -78,6 +78,7 @@ pyparamsIn.opts = trueparams.opts;
 
 % what the python M-step returned
 pyparamsOut.model.A = A_1;
+pyparamsOut.model.B = B_1;
 pyparamsOut.model.Q = Q_1;
 pyparamsOut.model.x0 = mu0_1;
 pyparamsOut.model.Q0 = V0_1;
@@ -86,7 +87,6 @@ pyparamsOut.model.R = diag(R_1);
 pyparamsOut.model.d  = d_1(:);
 pyparamsOut.model.Pi = 1;
 pyparamsOut.model.notes = trueparams.model.notes;
-pyparamsOut.model.B = 0;
 pyparamsOut.model.inferenceHandle =  @LDSInference;
 pyparamsOut.model.MStepHandle = @LDSMStep;
 pyparamsOut.model.ParamPenalizerHandle = @LDSemptyParamPenalizerHandle;
@@ -110,6 +110,7 @@ for i = 1:xDim
                squeeze(Extxtm1(i,j,2:end))'-(Ext(i,2:end).*Ext(j,1:end-1));        
     end
 end
+pySeq.u = u;
 
 clearvars -except xDim yDim trueparams pyparamsOut pyparamsIn seq pySeq Ext Extxt Extxtm1 T 
 
@@ -158,7 +159,7 @@ for i = 1:xDim
     plot(-1000, -1000, 'o', 'color', clrs(1,:)) % the legend right...    
     line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-    axis(1.1*[m,M,m,M])
+    axis(1.1*[m,M+0.001,m,M+0.001])
     plot(Ext(i,:), seq.posterior.xsm(i,:), '.', 'color', clrs(end,:))
     plot(squeeze(Extxt(i,i,:))'-Ext(i,:).^2, ...
          seq.posterior.Vsm((0:xDim:end-1)+i, i), ...
@@ -191,7 +192,7 @@ for i = 1:xDim
 end
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 Mm = zeros(xDim,xDim,T);
 Mp = zeros(xDim,xDim,T);
 for i = 1:xDim
@@ -225,7 +226,7 @@ for i = 1:xDim
 end
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 Mm = zeros(xDim,xDim,T-1);
 Mp = zeros(xDim,xDim,T-1);
 for i = 1:xDim
@@ -284,7 +285,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 plot(pyparamsOut.model.A(:), ...
      matparamsOut.model.A(:), '.', 'color', clrs(end,:))
 plot(eig(pyparamsOut.model.A), ...
@@ -331,7 +332,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 plot(pyparamsOut.model.Q(:), ...
      matparamsOut.model.Q(:), '.', 'color', clrs(end,:))
 plot(eig(pyparamsOut.model.Q), ...
@@ -381,7 +382,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 plot(pyparamsOut.model.x0(:), ...
      matparamsOut.model.x0(:), '.', 'color', clrs(end,:))
 set(gca,'TickDir', 'out')
@@ -424,7 +425,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 plot(pyparamsOut.model.Q0(:), ...
      matparamsOut.model.Q0(:), '.', 'color', clrs(end,:))
 plot(eig(pyparamsOut.model.Q0), ...
@@ -475,7 +476,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 plot(pyparamsOut.model.C(:), ...
      matparamsOut.model.C(:), '.', 'color', clrs(end,:))
 set(gca,'TickDir', 'out')
@@ -519,7 +520,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 plot(pyparamsOut.model.d(:), ...
      matparamsOut.model.d(:), '.', 'color', clrs(end,:))
 set(gca,'TickDir', 'out')
@@ -566,7 +567,7 @@ hold on
 plot(-1000,-1000, 'o', 'color', clrs(1,:))
 line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
-axis(1.1*[m,M,m,M])
+axis(1.1*[m,M+0.001,m,M+0.001])
 if min(size(pyparamsOut.model.R))==1
   plot(pyparamsOut.model.R(:), ...
        diag(matparamsOut.model.R), '.', 'color', clrs(end,:))    
