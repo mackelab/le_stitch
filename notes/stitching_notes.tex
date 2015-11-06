@@ -70,6 +70,38 @@
 
 \title{le bla}
 \maketitle
+
+\section{Formulating stitching}
+
+We can formulate the stitching problem as a time-inhomogeneous problem with time-dependent parameters 
+\begin{align}
+C_n &= \mathbb{I}_n C \\
+d_n &= \mathbb{I}_n d \\
+R^{-1}_n &= \mathbb{I}_n  R^{-1} \mathbb{I}_n 
+\end{align}
+for diagonal observation matrices $\mathbb{I}_n$, where $\mathbb{I}_{(nii)} = 1$ if variable  $y_i$ is observed at time $n$, $\mathbb{I}_{(nii)} = 0$, else. Note how applying the observation filters $\mathbb{I}_n$ essentially just sets entries of $C x_n +d$ corresponding to non-observed $y_{(ni)}$ to zero. The changes to $R$ correspond to setting the variance in these components to infinity. \\
+During the E-step, we simply keep selecting the current $C_n$, $d_n$ and $R_n$ variables for each time point $n$, as the Kalman filter equations hold also for time-changing parameters by default. In practice, we can sub-index the variable arrays within our implementation instead of explicitly setting components to zero, which makes obsolete any convention on representing non-observed data entries (we do not read them out ever), and also automatically takes care of 'computing' with the infinite variance on non-observed variable entries. \\
+For parameter estimates, we seek maximum likelihood solutions of parameters 
+$\theta = \{A, B, Q, C, d, R$\}. \\
+In ML, the dynamics parameters $A$, $B$ and $Q$ do not notice the changes that the stitching context introduced over emission parameters $C,d,R$ and remain the same (we should however think about whether additional constraints on the input $u_n$ have to hold, such that it is zero mean over the duration of each observed subpopulation individually instead of just over the entire trace). \\
+Solving the equations nets for each row of $C$ that 
+\begin{align}
+C_{(i,:)} = \left( \sum_{\{n \in \eta_i \}} y_{ni} \mbox{E}[x_n^T] - \frac{1}{|\eta_i|} \left(\sum_{\{n \in \eta_i \}} y_{ni}\right) \left(\sum_{\{n \in \eta_i \}} \mbox{E}[x_n^T]\right) \right) \\
+\label{eq:ML_stitching_C}
+\times \left( \sum_{\{n \in \eta_i \}} \mbox{E}[x_n x_n]^T  - \frac{1}{|\eta_i|} \left( \sum_{\{n \in \eta_i \}} \mbox{E}[x_n] \right) \left( \sum_{\{n \in \eta_i \}} \mbox{E}[x_n^T] \right) \right)^{-1} \nonumber
+\end{align}
+where $\eta_i = \{n| y_{ni} \mbox{ observed}\}= \{n| \mathbb{I}_{(nii)} = 1\}$ indexes the number of time points where $y_i$ was observed. Note that the matrix giving the second term has to be computed and inverted individually for different rows of $C$. In the context of stitching (where there is structure in the $\mathbb{I}_n$ over time given by the corehent subpopulations), we can cast the observed variables $y_i$, $i = 1, \ldots, p$ into groups of common co-occurance patterns, and reuse the matrix inverse for all members of such a group. E.g. in a two-subpopulation scenario, there are three such index groups: The neurons occuring only in the first subpopulation, the neurons only in the second subpopulation, and the neurons in the overlap. For all members of each of these three groups indexes $i$, $\eta_i$ is identical. If we assume all variables $y_i$ to occur in at least one subpopulation, that in general gives us $\min\{2^m - 1, p\}$ many index groups for $m$ subpopulations over $p$ many components of $y$. Allowing missing data entries on top of the unobserved subopopulations (e.g. unstructured random missing data) hence becomes computationally expensive very quickly. Having only very few additionally missing data points can still be handled somewhat efficiently with the Sherman–Morrison formula for inverting sums of matrices, as an individual missing data point corresponds to subtracting ($|\eta_i|$-scaled) rank-one matrices from the matrices in eq. \ref{eq:ML_stitching_C}.
+
+\begin{align}
+d = \left(\sum_n \mathbb{I}_n \right)^{-1} \left( \sum_n \mathbb{I}_n \left( y_n - C\mbox{E}[x_n] \right) \right) 
+\end{align}
+When assuming $R$ to be diagonal, the diagonal entries are given by
+\begin{align}
+R_{ii} = \frac{1}{|\eta_i|} \sum_{\{n \in \eta_i\}} \left( y_{(ni)}- C_{(i,:)} \mbox{E}[x_n] - d_i \right)^2 
+\end{align}
+
+\noindent{}The data moments of $y_{(ni)}$, $y_{(ni)}^2$, $y_{(ni)} \mbox{E}[x_n^T]$, $\mbox{E}[x_n]$ and $\mbox{E}[x_n x_n^T]$ can all be assembled as efficiently as in the non-stitching case, simply by parsing through all time points and (selectively) adding up the values coming from the data and the previous E-step. 
+
 \section{Mutli-timescale stitching}
 
 \noindent{}We want to allow having different time discretisation step lengths $\Delta{}t_k$ over different intervals of the time series $\yb_n$, $n = 0, \ldots, N$. 
