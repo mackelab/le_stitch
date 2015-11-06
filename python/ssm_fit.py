@@ -18,6 +18,7 @@ def _fitLDS(y,
             ifPlotProgress=False, 
             ifTraceParamHist=False,
             ifRDiagonal=True,
+            ifUseB=True,
             xDim=None):
     """ OUT = _fitLDS(y*,obsScheme*,initPars, maxIter, epsilon, 
                     ifPlotProgress,xDim)
@@ -42,21 +43,6 @@ def _fitLDS(y,
     T     = y.shape[1] # yDim is dimensionality of observed data, T is trial
     Trial = y.shape[2] # length (in bins), Trial is number of trials (with
                        # idential trial length, observation structure etc.)
-
-    if u is None or u == []:
-        uDim = 0
-    elif isinstance(u, np.ndarray) and len(u.shape)==3:
-        uDim = u.shape[0]
-    else:
-        if isinstance(u, np.ndarray):
-            print('u.shape')
-            print( u.shape )
-        else:
-            print('u')
-            print( u )
-        raise Exception(('If provided, input data u has to be an array with '
-                         'three dimensions, (uDim,T,Trial). To not include '
-                         'any input data, set u = None or u = [].'))
 
     if obsScheme is None:
         subpops = [list(range(yDim))]
@@ -97,9 +83,31 @@ def _fitLDS(y,
         print(ifRDiagonal)
         raise Exception('argument ifRDiagonal has to be a boolean')   
 
+    if not ifUseB:
+        u = None
+        uDim = 0
+    elif (u is None or u == []):
+        print('u')
+        print(u)
+        raise Exception('ifUseB = True, but u is not initialised.')
+    elif isinstance(u, np.ndarray) and len(u.shape)==3:
+        uDim = u.shape[0]    
+    else:
+        if isinstance(u, np.ndarray):
+            print('u.shape')
+            print( u.shape )
+        else:
+            print('u')
+            print( u )
+        raise Exception(('If provided, input data u has to be an array with '
+                         'three dimensions, (uDim,T,Trial). To not include '
+                         'any input data, set u = None or u = [].'))
     [A,B,Q,mu0,V0,C,d,R,xDim] = _unpackInitPars(initPars,
                                                 uDim,yDim,None,
-                                                ifRDiagonal)   
+                                                ifRDiagonal)  
+
+
+
 
     E_step = _LDS_E_step 
     M_step = _LDS_M_step 
@@ -196,7 +204,7 @@ def _fitLDS(y,
         dLL.append(LL_new - LL_old)
         if ifPlotProgress:
             # dynamically plot log of log-likelihood difference
-            plt.figure(figsize=(15,15))
+            plt.figure(1,figsize=(15,15))
             plt.subplot(2,2,1)
             plt.plot(LLs)
             plt.xlabel('#iter')
@@ -229,7 +237,7 @@ def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
     on observed subpopulations of y that are observed at each time point
 
     """ 
-    Bu = np.zeros([B.shape[0], y.shape[1], y.shape[2]])
+    Bu = np.zeros([A.shape[0], y.shape[1], y.shape[2]])
     if (isinstance(u, np.ndarray) and u.size>0 
         and u.shape[1]==y.shape[1] and u.shape[2]==y.shape[2]):
         for tr in range(y.shape[2]):           # i.e. if u is e.g. empty, we 
@@ -529,16 +537,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                     ts  = range(obsTime[i-1],obsTime[i])                 
                 ytmp = ytr[np.ix_(idx,ts)]
                 syy[idx] += np.sum(ytmp*ytmp,1) 
-        del ytmp
-
-    # compute scatter matrix for input states
-    if suu is None:
-        suu   = np.zeros([uDim,uDim]) # sum over outer product u_t u_t'
-        for tr in range(Trial):
-            utr = u[:,range(1,T),tr]            
-            suu += np.dot(utr, utr.transpose())        
-    if suuinv is None:
-        suuinv = sp.linalg.inv(suu)   # also need matrix inverse        
+        del ytmp      
     
     # compute (diagonal of) scatter matrix accros observed and latent states
     # compute scatter matrices from posterior means for the latent states
@@ -593,6 +592,15 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
     # latent dynamics paramters
     if uDim > 0:
+
+        # compute scatter matrix for input states
+        if suu is None:
+            suu   = np.zeros([uDim,uDim]) # sum over outer product u_t u_t'
+            for tr in range(Trial):
+                utr = u[:,range(1,T),tr]            
+                suu += np.dot(utr, utr.transpose())        
+        if suuinv is None:
+            suuinv = sp.linalg.inv(suu)   # also need matrix inverse  
 
         # compute scatter matrix accros input and latent states
         sExtu = np.zeros([xDim, uDim]) # sum over outer product u_t x_t'
@@ -744,7 +752,8 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _unpackInitPars(initPars, uDim, yDim=None, xDim=None, ifRDiagonal=True):   
+def _unpackInitPars(initPars, uDim, yDim=None, xDim=None, 
+                    ifRDiagonal=True):   
     """ OUT = _unpackInitPars(initPars*,uDim,yDim,xDim,ifRDiagonal)
         initPars:    list of parameter arrays. Set None to get default setting 
         uDim:        dimensionality of input variables u
@@ -754,236 +763,77 @@ def _unpackInitPars(initPars, uDim, yDim=None, xDim=None, ifRDiagonal=True):
     Extracts and formats state-space model parameter for the EM algorithm.
 
     """
-    if not isinstance(yDim, numbers.Integral) and uDim >= 0:
+    if not isinstance(uDim, numbers.Integral) or uDim < 0:
         print('uDim:')
         print(uDim)
         raise Exception('argument uDim has to be a non-negative integer')    
 
-    if uDim == 0:
-    # classic LDS (no inputs, no constant offsets, zero noise means):
-        if initPars is None:
-            initPars = [None,None,None,None,None,None,None]
-        elif (not ((isinstance(initPars, list)       and len(initPars)==7) or
-                   (isinstance(initPars, np.ndarray) and initPars.size==7))):
-            if isinstance(initPars, list):
-                print('len(initPars)')
-                print(len(initPars))
-            elif isinstance(initPars, np.ndarray):
-                print('initPars.size')
-                print(initPars.size)
-            else:
-                print(initPars)
-            raise Exception(('argument initPars for fitting a LDS to data has '
-                             'to be a list or an ndarray with exactly 7 '
-                             'elements: {A,Q,mu0,V0,C,d,R}. Alternatively, it '
-                             'is possible to hand over initPars = None to '
-                             'get a default LDS EM-algorithm initialization.'))            
-
-        # if not provided, figure out latent dimensionality from parameters
-        if xDim is None:
-            if not initPars[0] is None and isinstance(initPars[0], np.ndarray):
-                xDim = initPars[0].shape[0] # we can get xDim from A
-            elif  not initPars[1] is None and isinstance(initPars[1],np.ndarray):
-                xDim = initPars[1].shape[0] # ... or from Q
-            elif  not initPars[2] is None and isinstance(initPars[2],np.ndarray):
-                xDim = initPars[2].size     # ... or from mu0
-            elif  not initPars[3] is None and isinstance(initPars[3],np.ndarray):
-                xDim = initPars[3].shape[0] # ... or from V0
-            elif  not initPars[4] is None and isinstance(initPars[4],np.ndarray):
-                xDim = initPars[4].shape[1] # ... or from C
-            else: 
-                raise Exception(('could not obtain xDim. Need to provide '
-                                 'either xDim, or initializations for at '
-                                 'least one of the following: '
-                                 'A, Q, mu0, V0 or C. None was provided.'))
-        elif not (isinstance(xDim, numbers.Integral) and xDim > 0):
-            print('xDim:')
-            print(xDim)
-            raise Exception('argument xDim has to be a positive integer')
-        if yDim is None:
-            if  not initPars[4] is None and isinstance(initPars[4],np.ndarray):
-                yDim = initPars[4].shape[0] # ... or from C
-            elif  not initPars[5] is None and isinstance(initPars[5],np.ndarray):
-                yDim = initPars[5].shape[0] # ... or from C
-            elif  not initPars[6] is None and isinstance(initPars[6],np.ndarray):
-                yDim = initPars[6].shape[0] # ... or from C
-            else: 
-                raise Exception(('could not obtain yDim. Need to provide '
-                                 'either yDim, or initializations for at '
-                                 'least one of the following: '
-                                 'C, d, R. None was provided.'))
-        elif not (isinstance(yDim, numbers.Integral) and yDim > 0):
-            print('yDim:')
-            print(yDim)
-            raise Exception('argument yDim has to be a positive integer')            
-        # else: we're fine
-
-        if initPars[0] is None:
-            A   = 0.9 * np.identity(xDim)            
-        elif np.all(initPars[0].shape==(xDim,xDim)): 
-            A   = initPars[0].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('A.shape:')
-            print(initPars[0].shape)
-            raise Exception(('Bad initialization for LDS parameter A.'
-                             'Shape not matching dimensionality of x'))            
-        if initPars[1] is None:
-            Q   =       np.identity(xDim)            
-        elif np.all(initPars[1].shape==(xDim,xDim)): 
-            Q   = initPars[1].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('Q.shape:')
-            print(initPars[1].shape)
-            raise Exception(('Bad initialization for LDS parameter Q.'
-                             'Shape not matching dimensionality of x'))
-        if initPars[2] is None:
-            mu0 =       np.zeros(xDim)            
-        elif initPars[2].size==xDim: 
-            mu0 = initPars[2].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('mu0.shape:')
-            print(initPars[2].shape)
-            raise Exception(('Bad initialization for LDS parameter mu0.'
-                             'Shape not matching dimensionality of x'))
-        if initPars[3] is None:
-            V0  =       np.identity(xDim)            
-        elif np.all(initPars[3].shape==(xDim,xDim)): 
-            V0  = initPars[3].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('V0.shape:')
-            print(initPars[3].shape)
-            raise Exception(('Bad initialization for LDS parameter V0.'
-                             'Shape not matching dimensionality of x'))
-        if initPars[4] is None:
-            C = np.random.normal(size=[yDim, xDim]) 
-        elif np.all(initPars[4].shape==(yDim,xDim)):
-            C = initPars[4].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('yDim:')
-            print(yDim)
-            print('C.shape:')
-            print(initPars[4].shape)    
-            raise Exception(('Bad initialization for LDS parameter C.'
-                             'Shape not matching dimensionality of y, x'))  
-        if initPars[5] is None:
-            d = np.random.normal(size=[yDim]) 
-        elif np.all(initPars[5].shape==(yDim,)):
-            d = initPars[5].copy()
-        else:
-            print('yDim:')
-            print(yDim)
-            print('d.shape:')
-            print(initPars[5].shape)    
-            raise Exception(('Bad initialization for LDS parameter d.'
-                             'Shape not matching dimensionality of y'))  
-
-        if ifRDiagonal:
-            if initPars[6] is None:
-                R = np.ones(yDim)
-            elif np.all(initPars[6].shape==(yDim,)):
-                R = initPars[6].copy()
-            elif np.all(initPars[6].shape==(yDim,yDim)):
-                R = initPars[6].copy().diagonal()
-            else:
-                print('yDim:')
-                print(yDim)
-                print('R.shape:')
-                print(initPars[6].shape) 
-                raise Exception(('Bad initialization for LDS '
-                                 'parameter C. Shape not matching '
-                                 'dimensionality of y'))        
-                
-        else:
-            if initPars[6] is None:
-                R = np.identity(yDim)                
-            elif np.all(initPars[6].shape==(yDim,yDim)):
-                R = initPars[6].diagonal().copy()
-            else:
-                print('yDim:')
-                print(yDim)
-                print('R.shape:')
-                print(initPars[6].shape) 
-                raise Exception(('Bad initialization for LDS '
-                                 'parameter C. Shape not matching '
-                                 'dimensionality of y'))       
-                
-        return [A,None,Q,mu0,V0,C,d,R,xDim]                      
     
-    elif uDim > 0:
     # extended LDS, with input matrix B and constant observation offset d
-        if initPars is None:
-            initPars = [None,None,None,None,None,None,None,None]
-        elif (not ((isinstance(initPars, list)       and len(initPars)==8) or
-                   (isinstance(initPars, np.ndarray) and initPars.size==8))):
-            print(initPars)
-            raise Exception(('argument initPars for fitting a LDS with input '
-                             'to data has to be a list or an ndarray with '
-                             ' exactly 8 elemnts: {A,BQ,mu0,V0,C,dR}. '
-                             'Alternatively, it is possible to hand over '
-                             'initPars = None to obtain a default input-LDS '
-                             'EM-algorithm initialization.'))            
-        
-        # if not provided, figure out latent dimensionality from parameters
-        if xDim is None:
-            if not initPars[0] is None and isinstance(initPars[0], np.ndarray):
-                xDim = initPars[0].shape[0] # we can get xDim from A
-            if not initPars[1] is None and isinstance(initPars[1], np.ndarray):
-                xDim = initPars[1].shape[0] # we can get xDim from B
-            elif  not initPars[2] is None and isinstance(initPars[2],np.ndarray):
-                xDim = initPars[2].shape[0] # ... or from Q
-            elif  not initPars[3] is None and isinstance(initPars[3],np.ndarray):
-                xDim = initPars[3].size     # ... or from mu0
-            elif  not initPars[4] is None and isinstance(initPars[4],np.ndarray):
-                xDim = initPars[4].shape[0] # ... or from V0
-            elif  not initPars[5] is None and isinstance(initPars[5],np.ndarray):
-                xDim = initPars[5].shape[1] # ... or from C
-            else: 
-                raise Exception(('could not obtain xDim. Need to provide '
-                                 'either xDim, or initializations for at '
-                                 'least one of the following: '
-                                 'A, B, Q, mu0, V0 or C. None was provided.'))
-        elif not (isinstance(xDim, numbers.Integral) and xDim > 0):
-            print('xDim:')
-            print(xDim)
-            raise Exception('argument xDim has to be a positive integer')
-        if yDim is None:
-            if  not initPars[5] is None and isinstance(initPars[5],np.ndarray):
-                yDim = initPars[5].shape[0] # ... or from C
-            elif  not initPars[6] is None and isinstance(initPars[6],np.ndarray):
-                yDim = initPars[6].shape[0] # ... or from d
-            elif  not initPars[7] is None and isinstance(initPars[7],np.ndarray):
-                yDim = initPars[7].shape[0] # ... or from R
-            else: 
-                raise Exception(('could not obtain yDim. Need to provide '
-                                 'either yDim, or initializations for at '
-                                 'least one of the following: '
-                                 'C, d, R. None was provided.'))
-        elif not (isinstance(yDim, numbers.Integral) and yDim > 0):
-            print('yDim:')
-            print(yDim)
-            raise Exception('argument yDim has to be a positive integer')            
+    if initPars is None:
+        initPars = [None,None,None,None,None,None,None,None]
+    elif (not ((isinstance(initPars, list)       and len(initPars)==8) or
+               (isinstance(initPars, np.ndarray) and initPars.size==8))):
+        print(initPars)
+        raise Exception(('argument initPars for fitting a LDS with input '
+                         'to data has to be a list or an ndarray with '
+                         ' exactly 8 elemnts: {A,BQ,mu0,V0,C,dR}. '
+                         'Alternatively, it is possible to hand over '
+                         'initPars = None to obtain a default input-LDS '
+                         'EM-algorithm initialization.'))            
+    
+    # if not provided, figure out latent dimensionality from parameters
+    if xDim is None:
+        if not initPars[0] is None and isinstance(initPars[0], np.ndarray):
+            xDim = initPars[0].shape[0] # we can get xDim from A
+        if not initPars[1] is None and isinstance(initPars[1], np.ndarray):
+            xDim = initPars[1].shape[0] # we can get xDim from B
+        elif  not initPars[2] is None and isinstance(initPars[2],np.ndarray):
+            xDim = initPars[2].shape[0] # ... or from Q
+        elif  not initPars[3] is None and isinstance(initPars[3],np.ndarray):
+            xDim = initPars[3].size     # ... or from mu0
+        elif  not initPars[4] is None and isinstance(initPars[4],np.ndarray):
+            xDim = initPars[4].shape[0] # ... or from V0
+        elif  not initPars[5] is None and isinstance(initPars[5],np.ndarray):
+            xDim = initPars[5].shape[1] # ... or from C
+        else: 
+            raise Exception(('could not obtain xDim. Need to provide '
+                             'either xDim, or initializations for at '
+                             'least one of the following: '
+                             'A, B, Q, mu0, V0 or C. None was provided.'))
+    elif not (isinstance(xDim, numbers.Integral) and xDim > 0):
+        print('xDim:')
+        print(xDim)
+        raise Exception('argument xDim has to be a positive integer')
+    if yDim is None:
+        if  not initPars[5] is None and isinstance(initPars[5],np.ndarray):
+            yDim = initPars[5].shape[0] # ... or from C
+        elif  not initPars[6] is None and isinstance(initPars[6],np.ndarray):
+            yDim = initPars[6].shape[0] # ... or from d
+        elif  not initPars[7] is None and isinstance(initPars[7],np.ndarray):
+            yDim = initPars[7].shape[0] # ... or from R
+        else: 
+            raise Exception(('could not obtain yDim. Need to provide '
+                             'either yDim, or initializations for at '
+                             'least one of the following: '
+                             'C, d, R. None was provided.'))
+    elif not (isinstance(yDim, numbers.Integral) and yDim > 0):
+        print('yDim:')
+        print(yDim)
+        raise Exception('argument yDim has to be a positive integer')            
 
-        if initPars[0] is None:
-            A   = 0.9 * np.identity(xDim)            
-        elif np.all(initPars[0].shape==(xDim,xDim)): 
-            A   = initPars[0].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('A.shape:')
-            print(initPars[0].shape)
-            raise Exception(('Bad initialization for LDS parameter A.'
-                             'Shape not matching dimensionality of x'))            
+    if initPars[0] is None:
+        A   = 0.9 * np.identity(xDim)            
+    elif np.all(initPars[0].shape==(xDim,xDim)): 
+        A   = initPars[0].copy()
+    else:
+        print('xDim:')
+        print(xDim)
+        print('A.shape:')
+        print(initPars[0].shape)
+        raise Exception(('Bad initialization for LDS parameter A.'
+                         'Shape not matching dimensionality of x'))    
+    if uDim > 0:        
         if initPars[1] is None:
             B   =       np.identity(xDim)            
         elif np.all(initPars[1].shape==(xDim,uDim)): 
@@ -997,97 +847,96 @@ def _unpackInitPars(initPars, uDim, yDim=None, xDim=None, ifRDiagonal=True):
             print(initPars[1].shape)
             raise Exception(('Bad initialization for LDS parameter B.'
                              'Shape not matching dimensionality of x,u'))
-            
-        if initPars[2] is None:
-            Q   =       np.identity(xDim)            
-        elif np.all(initPars[2].shape==(xDim,xDim)): 
-            Q   = initPars[2].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('Q.shape:')
-            print(initPars[2].shape)
-            raise Exception(('Bad initialization for LDS parameter Q.'
-                             'Shape not matching dimensionality of x'))
-        if initPars[3] is None:
-            mu0 =       np.zeros(xDim)            
-        elif initPars[3].size==xDim: 
-            mu0 = initPars[3].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('mu0.shape:')
-            print(initPars[3].shape)
-            raise Exception(('Bad initialization for LDS parameter mu0.'
-                             'Shape not matching dimensionality of x'))
-        if initPars[4] is None:
-            V0  =       np.identity(xDim)            
-        elif np.all(initPars[4].shape==(xDim,xDim)): 
-            V0  = initPars[4].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('V0.shape:')
-            print(initPars[3].shape)
-            raise Exception(('Bad initialization for LDS parameter V0.'
-                             'Shape not matching dimensionality of x'))
-        if initPars[5] is None:
-            C = np.random.normal(size=[yDim, xDim]) 
-        elif np.all(initPars[5].shape==(yDim,xDim)):
-            C = initPars[5].copy()
-        else:
-            print('xDim:')
-            print(xDim)
-            print('yDim:')
-            print(yDim)
-            print('C.shape:')
-            print(initPars[5].shape)     
-            raise Exception(('Bad initialization for LDS parameter C.'
-                             'Shape not matching dimensionality of y, x'))  
-        if initPars[6] is None:
-            d = np.random.normal(size=[yDim]) 
-        elif np.all(initPars[6].shape==(yDim,)):
-            d = initPars[6].copy()
-        else:
-            print('yDim:')
-            print(yDim)
-            print('d.shape:')
-            print(initPars[6].shape)  
-            raise Exception(('Bad initialization for LDS parameter C.'
-                             'Shape not matching dimensionality of y, x'))              
-        if ifRDiagonal:
-            if initPars[7] is None:
-                R = np.ones(yDim)
-            elif np.all(initPars[7].shape==(yDim,)):
-                R = initPars[7].copy()
-            elif np.all(initPars[7].shape==(yDim,yDim)):
-                R = initPars[7].copy().diagonal()
-            else:
-                print('yDim:')
-                print(yDim)
-                print('R.shape:')
-                print(initPars[7].shape) 
-                raise Exception(('Bad initialization for LDS '
-                                 'parameter C. Shape not matching '
-                                 'dimensionality of y'))        
-                
-        else:
-            if initPars[7] is None:
-                R = np.identity(yDim)                
-            elif np.all(initPars[7].shape==(yDim,yDim)):
-                R = initPars[7].diagonal().copy()
-            else:
-                print('yDim:')
-                print(yDim)
-                print('R.shape:')
-                print(initPars[7].shape) 
-                raise Exception(('Bad initialization for LDS '
-                                 'parameter C. Shape not matching '
-                                 'dimensionality of y'))             
-        return [A,B,Q,mu0,V0,C,d,R,xDim]
+    else: # if we're not going to use B anyway, ...
+        B = np.array([0]) 
 
-    else: 
-        raise Exception('Variable uDim has to be larger or equal to zero')
+    if initPars[2] is None:
+        Q   =       np.identity(xDim)            
+    elif np.all(initPars[2].shape==(xDim,xDim)): 
+        Q   = initPars[2].copy()
+    else:
+        print('xDim:')
+        print(xDim)
+        print('Q.shape:')
+        print(initPars[2].shape)
+        raise Exception(('Bad initialization for LDS parameter Q.'
+                         'Shape not matching dimensionality of x'))
+    if initPars[3] is None:
+        mu0 =       np.zeros(xDim)            
+    elif initPars[3].size==xDim: 
+        mu0 = initPars[3].copy()
+    else:
+        print('xDim:')
+        print(xDim)
+        print('mu0.shape:')
+        print(initPars[3].shape)
+        raise Exception(('Bad initialization for LDS parameter mu0.'
+                         'Shape not matching dimensionality of x'))
+    if initPars[4] is None:
+        V0  =       np.identity(xDim)            
+    elif np.all(initPars[4].shape==(xDim,xDim)): 
+        V0  = initPars[4].copy()
+    else:
+        print('xDim:')
+        print(xDim)
+        print('V0.shape:')
+        print(initPars[3].shape)
+        raise Exception(('Bad initialization for LDS parameter V0.'
+                         'Shape not matching dimensionality of x'))
+    if initPars[5] is None:
+        C = np.random.normal(size=[yDim, xDim]) 
+    elif np.all(initPars[5].shape==(yDim,xDim)):
+        C = initPars[5].copy()
+    else:
+        print('xDim:')
+        print(xDim)
+        print('yDim:')
+        print(yDim)
+        print('C.shape:')
+        print(initPars[5].shape)     
+        raise Exception(('Bad initialization for LDS parameter C.'
+                         'Shape not matching dimensionality of y, x'))  
+    if initPars[6] is None:
+        d = np.random.normal(size=[yDim]) 
+    elif np.all(initPars[6].shape==(yDim,)):
+        d = initPars[6].copy()
+    else:
+        print('yDim:')
+        print(yDim)
+        print('d.shape:')
+        print(initPars[6].shape)  
+        raise Exception(('Bad initialization for LDS parameter C.'
+                         'Shape not matching dimensionality of y, x'))              
+    if ifRDiagonal:
+        if initPars[7] is None:
+            R = np.ones(yDim)
+        elif np.all(initPars[7].shape==(yDim,)):
+            R = initPars[7].copy()
+        elif np.all(initPars[7].shape==(yDim,yDim)):
+            R = initPars[7].copy().diagonal()
+        else:
+            print('yDim:')
+            print(yDim)
+            print('R.shape:')
+            print(initPars[7].shape) 
+            raise Exception(('Bad initialization for LDS '
+                             'parameter C. Shape not matching '
+                             'dimensionality of y'))        
+            
+    else:
+        if initPars[7] is None:
+            R = np.identity(yDim)                
+        elif np.all(initPars[7].shape==(yDim,yDim)):
+            R = initPars[7].diagonal().copy()
+        else:
+            print('yDim:')
+            print(yDim)
+            print('R.shape:')
+            print(initPars[7].shape) 
+            raise Exception(('Bad initialization for LDS '
+                             'parameter C. Shape not matching '
+                             'dimensionality of y'))             
+    return [A,B,Q,mu0,V0,C,d,R,xDim]
         
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
@@ -1138,16 +987,13 @@ def _computeObsIndexGroups(obsScheme,yDim):
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _evaluateFit(A, B, Q, C, d, R, y, u, Ext, Extxt, Extxtm1, LLs):
+    """ TO BE EXTENDED """
 
-    T    = mu_h.shape[1]
-    Trial= mu_h.shape[2]
+    T    = y.shape[1]
+    Trial= y.shape[2]
     xDim = A.shape[0]
     yDim = C.shape[0]
-
-    if isinstance(B, np.ndarray):
-        uDim = B.shape[0]
-    else:
-        uDim = 0
+    uDim = u.shape[0]
 
     Pi_h    = np.array([sp.linalg.solve_discrete_lyapunov(A, Q)])[0,:,:]
     Pi_t_h  = np.dot(A.transpose(), Pi_h)
@@ -1168,10 +1014,10 @@ def _evaluateFit(A, B, Q, C, d, R, y, u, Ext, Extxt, Extxtm1, LLs):
             plt.plot( Ext_h[i,:,0], color=clrs[i], ls=':')
         else:
             plt.plot(-Ext_h[i,:,0], color=clrs[i], ls=':')
+
     m = np.min([Pi_h.min(), covyy.min()])
     M = np.max([Pi_h.max(), covyy.max()])       
-
-    plt.figure(2)
+    plt.figure(1)
     plt.subplot(1,3,1)
     plt.imshow(np.dot(np.dot(C_h, Pi_h), C_h.transpose()) + R_h, interpolation='none')
     plt.title('cov_hat(y_t,y_t)')
@@ -1186,8 +1032,8 @@ def _evaluateFit(A, B, Q, C, d, R, y, u, Ext, Extxt, Extxtm1, LLs):
     plt.clim(m,M)
     plt.figure(3)
 
-    m = covyy_m1.min()
-    M = covyy_m1.max()        
+    m = np.min([covyy_m1.min(), Pi_t_h.min()])
+    M = np.max([covyy_m1.max(), Pi_t_h.max()])
     plt.subplot(1,3,1)
     plt.imshow(np.dot(np.dot(C_h, Pi_t_h), C_h.transpose()), interpolation='none')
     plt.title('cov_hat(y_t,y_{t-1})')
