@@ -404,8 +404,6 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
                     P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
                     Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])
                     # compute normaliser for marginal probabilties of y_t
-                    print(t)
-
                     M      = sp.linalg.cholesky(P[:,:,t-1,tr])                                                     
                     logdetCPCR = (  np.sum(np.log(Rj))                                  
                                + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),
@@ -480,7 +478,6 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
                 mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
 
                 if not ifCovConv:
-                    print(t)                    
                     V_h[:,:,t,tr] += np.dot(np.dot(Jconv, 
                                                    V_h[:,:,t+1,tr] - Pconv),
                                                    Jconvtr) 
@@ -512,7 +509,6 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
             mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
 
             if not ifCovConv:
-                print(t)                
                 V_h[:,:,t,tr] += np.dot(np.dot(Jconv, 
                                                V_h[:,:,t+1,tr] - Pconv),
                                                Jconvtr) 
