@@ -10,15 +10,10 @@ from IPython import display  # for live plotting in jupyter
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _fitLDS(y, 
-            u = None,
-            obsScheme = None,
-            initPars=None, 
-            maxIter=1000, 
-            epsilon=np.log(1.05), # stop if likelihood change < 5%
-            ifPlotProgress=False, 
-            ifTraceParamHist=False,
-            ifRDiagonal=True,
-            ifUseB=True,
+            u,
+            obsScheme,
+            initPars,
+            fitoptions,
             xDim=None):
     """ OUT = _fitLDS(y*,obsScheme*,initPars, maxIter, epsilon, 
                     ifPlotProgress,xDim)
@@ -29,13 +24,14 @@ def _fitLDS(y,
         initPars:  set of parameters to start fitting. If == None, the 
                    parameters currently stored in the model will be used,
                    otherwise needs initPars = [A,Q,mu0,V0,C,R]
-        maxIter:   maximum allowed iterations for iterative fitting (e.g. EM)
-        epsilon:  convergence criterion, e.g. difference of log-likelihoods
-        ifPlotProgress: boolean, specifying if fitting progress is visualized
-        ifTraceParamHist: boolean, specifying if entire parameter updates 
-                          history or only the current state is kept track of 
+        fitoptions: dictionary containing fitting options
+        -maxIter:   maximum allowed iterations for iterative fitting (e.g. EM)
+        -epsilon:   convergence criterion, e.g. difference of log-likelihoods
+        -ifPlotProgress: boolean, specifying if fitting progress is visualized
+        -ifTraceParamHist: boolean, specifying if entire parameter updates 
+                           history or only the current state is kept track of 
+        -ifRDiagonal: boolean, specifying diagonality of observation noise
         xDim:      dimensionality of (sole subgroup of) latent state X
-        ifRDiagonal: boolean, specifying diagonality of observation noise
         Fits an LDS model to data.
 
     """
@@ -44,19 +40,41 @@ def _fitLDS(y,
     Trial = y.shape[2] # length (in bins), Trial is number of trials (with
                        # idential trial length, observation structure etc.)
 
+    # check observation scheme
+    # The observation scheme is crucial to both the sitching context and to
+    # any missing data in y! One should always check if the provided 
+    # observation scheme is the intended one.
     if obsScheme is None:
-        subpops = [list(range(yDim))]
-        obsTime = [T]
-        obsPops = [0]
-
-        obsScheme = {'subpops': subpops,
-                     'obsTime': obsTime,
-                     'obsPops': obsPops}     
-
+        obsScheme = {'subpops': [list(range(yDim))], # creates default case
+                     'obsTime': [T],                 # of fully observed
+                     'obsPops': [0]}                 # population
+    else: 
+        try:
+            obsScheme['subpops'] # check for the 
+            obsScheme['obsTime'] # fundamental
+            obsScheme['obsPops'] # information
+        except:                   # have to give hard error here !
+            print('obsScheme')
+            print(obsScheme)
+            raise Exception(('provided observation scheme is insufficient. '
+                             'It requires the fields subpops, obsTime and '
+                             'obsPops. Not all those fields were given.'))
+    try:
+        obsScheme['obsIdxG']     # check for addivional  
+        obsScheme['idxgrps']     # (derivable) information
+    except:                       # can fill in if missing !
         [obsIdxG, idxgrps] = _computeObsIndexGroups(obsScheme,yDim)
         obsScheme['obsIdxG'] = obsIdxG # add index groups and 
         obsScheme['idxgrps'] = idxgrps # their occurences                                
-                        
+    
+    # unpack some of the fitting options to keep code uncluttered
+    maxIter           = fitoptions['maxIter']
+    epsilon           = fitoptions['epsilon']
+    ifPlotProgress    = fitoptions['ifPlotProgress']
+    ifTraceParamHist  = fitoptions['ifTraceParamHist']
+    ifRDiagonal       = fitoptions['ifRDiagonal']     
+    covConvEps        = fitoptions['covConvEps']
+
     if not (isinstance(maxIter, numbers.Integral) and maxIter > 0):
         print('maxIter:')
         print(maxIter)
@@ -83,16 +101,13 @@ def _fitLDS(y,
         print(ifRDiagonal)
         raise Exception('argument ifRDiagonal has to be a boolean')   
 
-    if not ifUseB:
+    if not fitoptions['ifUseB']:
         u = None
         uDim = 0
-    elif (u is None or u == []):
-        print('u')
-        print(u)
-        raise Exception('ifUseB = True, but u is not initialised.')
-    elif isinstance(u, np.ndarray) and len(u.shape)==3:
-        uDim = u.shape[0]    
-    else:
+    elif (isinstance(u, np.ndarray) and len(u.shape)==3
+          and u.shape[1]==y.shape[1] and u.shape[2]==y.shape[2]):
+        uDim = u.shape[0]        # i.e. ifUseB = True, and u is good
+    else:                        # i.e. ifUseB = True, but u is bad
         if isinstance(u, np.ndarray):
             print('u.shape')
             print( u.shape )
@@ -101,20 +116,18 @@ def _fitLDS(y,
             print( u )
         raise Exception(('If provided, input data u has to be an array with '
                          'three dimensions, (uDim,T,Trial). To not include '
-                         'any input data, set u = None or u = [].'))
+                         'any input data, set ifUseB = False.'))
+
     [A,B,Q,mu0,V0,C,d,R,xDim] = _unpackInitPars(initPars,
                                                 uDim,yDim,None,
                                                 ifRDiagonal)  
-
-
-
 
     E_step = _LDS_E_step 
     M_step = _LDS_M_step 
 
     # evaluate initial state       
     [Ext, Extxt, Extxtm1, LLtr] = E_step(A,B,Q,mu0,V0,C,d,R,y,u, 
-                                         obsScheme)
+                                         obsScheme,covConvEps)
     LL_new = np.sum(LLtr)
     LL_old = -float('Inf')
     dLL = []              # performance trace for status plotting
@@ -185,7 +198,8 @@ def _fitLDS(y,
                                              R,
                                              y,
                                              u,
-                                             obsScheme)
+                                             obsScheme,
+                                             covConvEps)
 
         LL_new = np.sum(LLtr) # discarding distinction between trials
         LLs.append(LL_new.copy())
@@ -229,7 +243,7 @@ def _fitLDS(y,
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme): 
+def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme,eps=0): 
     """ OUT = _LDS_E_step(A*,Q*,mu0*,V0*,C*,R*,y*,obsScheme*,ifRDiagonal)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions
@@ -237,15 +251,27 @@ def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
     on observed subpopulations of y that are observed at each time point
 
     """ 
+    try:
+        obsTime = obsScheme['obsTime'];
+    except:
+        print('obsScheme:')
+        print(obsScheme)
+        raise Exception(('provided obsScheme dictionary does not have '
+                         'the required field obsTime'))
+
     Bu = np.zeros([A.shape[0], y.shape[1], y.shape[2]])
     if (isinstance(u, np.ndarray) and u.size>0 
         and u.shape[1]==y.shape[1] and u.shape[2]==y.shape[2]):
         for tr in range(y.shape[2]):           # i.e. if u is e.g. empty, we 
             Bu[:,:,tr] = np.dot(B, u[:,:,tr])  # just leave B*u = 0!
 
-    [mu,V,P,logc]   = _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme)    
-    [mu_h,V_h,J]    = _KalmanSmoother(A,Bu,mu,V,P)
-    [Ext,Extxt,Extxtm1] = _KalmanParsToMoments(mu_h,V_h,J)
+    [mu,V,P,Pinv,logc,tCovConvFt] = _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,
+                                                  y,obsScheme,eps)    
+    [mu_h,V_h,J,tCovConvSm]           = _KalmanSmoother(A,Bu,mu,V,P,Pinv,
+                                                        obsTime,tCovConvFt,
+                                                        eps)
+    [Ext,Extxt,Extxtm1] = _KalmanParsToMoments(mu_h,V_h,J,
+                                               obsTime,tCovConvFt,tCovConvSm)
         
     LL = np.sum(logc,axis=0) # sum over times, get Trial-dim. vector
     
@@ -253,8 +279,8 @@ def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme):
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):        
-    """ OUT = _KalmanFilter(A*,Bu*,Q*,mu0*,V0*,C*,d*,R*,y*,obsScheme*)
+def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
+    """ OUT = _KalmanFilter(A*,Bu*,Q*,mu0*,V0*,C*,d*,R*,y*,obsScheme*,eps)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
     The variable obsScheme is a dictionary that contains information
@@ -269,6 +295,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):
     mu    = np.zeros([xDim,     T,Trial])
     V     = np.zeros([xDim,xDim,T,Trial])
     P     = np.zeros([xDim,xDim,T,Trial])
+    Pinv  = np.zeros([xDim,xDim,T,Trial]) # also needed for Kalman smoothing!
     logc  = np.zeros([          T,Trial])
 
     try:
@@ -292,10 +319,15 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):
         raise Exception(('Variable R is assumed to be diagonal. '
                          'Please provide the diagonal entries as'
                          ' (yDim,)-array')) 
-            
+
     xRange = range(xDim)
     Atr = A.transpose()        
     Iq = np.identity(xDim)
+
+    # estimates of posterior covariances converge fast, so we want to check for
+    # this and stop computing them after a while
+    tCovConvFt = np.array(obsTime)-1 # initialise with latest possible time
+    ifCovConv  = False
     
     for tr in range(Trial):
 
@@ -316,8 +348,8 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):
         P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
                 
         # compute Kalman gain components
-        Pinv   = sp.linalg.inv(P0)                
-        Kcore  = sp.linalg.inv(CtrRinvC+Pinv)                                                      
+        P0inv   = sp.linalg.inv(P0)                
+        Kcore  = sp.linalg.inv(CtrRinvC+P0inv)                                                      
         Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
         PKsht  = np.dot(P0,    Kshrt) 
         KC     = np.dot(PKsht, CtrRinvC)        
@@ -326,6 +358,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):
         mu[ :,0,tr] = mu0 + np.dot(PKsht,CtrRyDiff_Cmu0)
         V[:,:,0,tr] = np.dot(Iq - KC, P0)
         P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
+        Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])
 
         # compute marginal probability y_0
         M    = sp.linalg.cholesky(P0)
@@ -347,7 +380,12 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):
             Rj   = R[idx]                                   # operations 
             CtrRinv = Cj.transpose() / Rj                   # are order
             CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
-                                                   
+
+            if ifCovConv: # if we stopped tracking those due to convergence
+                P[:,:,t-1,tr]    =    P[:,:,tCovConvFt[i-1],tr] # need to drag
+                Pinv[:,:,t-1,tr] = Pinv[:,:,tCovConvFt[i-1],tr] # these forward
+                ifCovConv = False # reset convergence flag
+
             while t < obsTime[i]: 
                                                    
                 # pre-compute for this time step                                   
@@ -355,40 +393,56 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme):
                 yDiff  = y[idx,t,tr] - d[idx] - np.dot(Cj,AmuBu) # O(yDim)                                              
                 CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)          # O(yDim)
                                                    
-                # compute Kalman gain components                                       
-                Pinv   = sp.linalg.inv(P[:,:,t-1,tr])       
-                Kcore  = sp.linalg.inv(CtrRinvC+Pinv)                                        
-                Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
-                PKsht  = np.dot(P[:,:,t-1,tr],  Kshrt) 
-                KC     = np.dot(PKsht, CtrRinvC)
+                if not ifCovConv:                                       
+                    # compute Kalman gain components
+                    Kcore  = sp.linalg.inv(CtrRinvC+Pinv[:,:,t-1,tr])                                        
+                    Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
+                    PKsht  = np.dot(P[:,:,t-1,tr],  Kshrt) 
+                    KC     = np.dot(PKsht, CtrRinvC)
+                    # update posterior covariances
+                    V[:,:,t,tr] = np.dot(Iq - KC,P[:,:,t-1,tr])
+                    P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
+                    Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])
+                    # compute normaliser for marginal probabilties of y_t
+                    print(t)
 
-                # update posterior estimates
-                mu[ :,t,tr] = AmuBu + np.dot(PKsht,CtrRyDiff_CAmu)
-                V[:,:,t,tr] = np.dot(Iq - KC,P[:,:,t-1,tr])
-                P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
-                                                   
-                # compute marginal probability y_t | y_0, ..., y_{t-1}
-                M    = sp.linalg.cholesky(P[:,:,t-1,tr])                                 
-                logdetCPCR = (  np.sum(np.log(Rj))                                  
+                    M      = sp.linalg.cholesky(P[:,:,t-1,tr])                                                     
+                    logdetCPCR = (  np.sum(np.log(Rj))                                  
                                + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),
                                                          np.dot(CtrRinvC,M))))
-                             )
+                                 )
+                    if np.mean(np.power(P[:,:,t,tr]-P[:,:,t-1,tr],2)) < eps:
+                        tCovConvFt[i] = int(t)
+                        ifCovConv   = True
 
+                # update posterior mean
+                mu[ :,t,tr] = AmuBu + np.dot(PKsht,CtrRyDiff_CAmu)
+
+                # compute marginal probability y_t | y_0, ..., y_{t-1}
                 logc[ t,tr] = (  np.sum((yDiff * yDiff) / Rj)   
                                - np.dot(CtrRyDiff_CAmu, np.dot(Kcore, 
                                         CtrRyDiff_CAmu))
                                + logdetCPCR
-                              )
-                                                   
+                              )                             
+
                 t += 1
+
+            # copy posterior covariances from the time we stopped updating
+            #if tCovConvFt[i]<obsTime[i]:
+            #    V[:,:,range(tCovConvFt[i],obsTime[i]),tr] = \
+            #        V[:,:,tCovConvFt[i],tr].reshape(xDim,xDim,1)
+            #    P[:,:,range(tCovConvFt[i],obsTime[i]),tr] = \
+            #        P[:,:,tCovConvFt[i],tr].reshape(xDim,xDim,1)
+            #    Pinv[:,:,range(tCovConvFt[i],obsTime[i]),tr] = \
+            #        Pinv[:,:,tCovConvFt[i],tr].reshape(xDim,xDim,1)
                                      
     logc = -1/2 * (logc + yDim * np.log(2*np.pi))
     
-    return [mu,V,P,logc]
+    return [mu,V,P,Pinv,logc,tCovConvFt]
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _KalmanSmoother(A, Bu, mu, V, P):        
+def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):        
     """ OUT = _KalmanSmoother(A*,Bu*,mu*,V*,P*)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
@@ -400,28 +454,101 @@ def _KalmanSmoother(A, Bu, mu, V, P):
     J    = np.zeros([mu.shape[0],mu.shape[0],T,Trial])
     Atr = A.transpose()
 
+    # the smoother runs backwards in time and can converge after several time 
+    # steps of running, i.e. some steps before the end of the time series 
+    # segment. The very first few steps before the Kalman filter has converged, 
+    # however, the smoother also cannot converge, as it depends on the filter 
+    # outputs. The time of convergence for the smoother for each subpopulation
+    # is in between tCovConvFt[i] and obsTime[i]. 
+    tCovConvSm = tCovConvFt.copy() # initialise with the earliest possible time
+    print(tCovConvSm)
     for tr in range(Trial):
         AmuBu = np.dot(A, mu[:,:,tr]) + Bu[:,:,tr]
         t = T-2 # T-1 already correct by initialisation of mu_h, V_h
+
+        for i in range(1,len(obsTime))[::-1]:
+            # J,P depend only on filter output and hence converge along with it
+            Jconv = np.dot(np.dot(V[:,:,tCovConvFt[i],tr], Atr),
+                                        Pinv[:,:,tCovConvFt[i],tr])
+            Jconvtr = Jconv.transpose()
+            Pconv = P[:,:,tCovConvFt[i],tr]
+
+            ifCovConv = False
+            while t >= tCovConvFt[i]: 
+                # in this interval, P and V have converged, hence we can 
+                # expect V_h to converge early on, as well
+                mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
+
+                if not ifCovConv:
+                    print(t)                    
+                    V_h[:,:,t,tr] += np.dot(np.dot(Jconv, 
+                                                   V_h[:,:,t+1,tr] - Pconv),
+                                                   Jconvtr) 
+                    if np.mean(np.power(V_h[:,:,t,tr]-V_h[:,:,t+1,tr],2))<eps:
+                        tCovConvSm[i] = int(t)
+                        ifCovConv     = True                    
+
+                t -= 1
+            J[:,:,tCovConvFt[i],tr] = Jconv # store J for all later time points 
+            while t >= obsTime[i-1]:
+                # in this interval, P and V still constantly change, so
+                # we compute J for each time point invidivually
+                J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
+                                            Pinv[:,:,t,tr])
+                mu_h[ :,t,tr] += np.dot(J[:,:,t,tr], mu_h[:,t+1,tr] - AmuBu[:,t]) 
+                V_h[:,:,t,tr] += np.dot(np.dot(J[:,:,t,tr], 
+                                               V_h[:,:,t+1,tr] - P[:,:,t,tr]),
+                                               J[:,:,t,tr].transpose()) 
+                t -= 1
+
+        # case for first subpopulation
+        ifCovConv = False
+        tCovConvSm[0] = tCovConvFt[0]
+        Jconv = np.dot(np.dot(V[:,:,tCovConvFt[0],tr], Atr),
+                                    Pinv[:,:,tCovConvFt[0],tr])
+        Jconvtr = Jconv.transpose()
+        Pconv   = P[:,:,tCovConvFt[0],tr] 
+        while t >= tCovConvFt[0]: # no need for new J, as all was converged
+            mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
+
+            if not ifCovConv:
+                print(t)                
+                V_h[:,:,t,tr] += np.dot(np.dot(Jconv, 
+                                               V_h[:,:,t+1,tr] - Pconv),
+                                               Jconvtr) 
+                if np.mean(np.power(V_h[:,:,t,tr]-V_h[:,:,t+1,tr],2))<eps:
+                    tCovConvSm[0] = int(t)
+                    ifCovConv     = True                    
+
+            t -= 1
         while t >= 0:
             J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
-                                 sp.linalg.inv(P[:,:,t,tr]))
+                                        Pinv[:,:,t,tr])
             mu_h[ :,t,tr] += np.dot(J[:,:,t,tr], mu_h[:,t+1,tr] - AmuBu[:,t]) 
             V_h[:,:,t,tr] += np.dot(np.dot(J[:,:,t,tr], 
                                             V_h[:,:,t+1,tr] - P[:,:,t,tr]),
                                     J[:,:,t,tr].transpose()) 
-            t -= 1
-    return [mu_h,V_h,J]
+
+            t -= 1     
+
+    return [mu_h,V_h,J,tCovConvSm]
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _KalmanParsToMoments(mu_h, V_h, J):
+def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
     """ OUT = _KalmanParsToMoments(mu)h*,V_h*,J*)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions  
     The variable obsScheme is a dictionary that contains information
     on observed subpopulations of y that are observed at each time point 
     """                
+
+    # introduced some heavy indexing to reflect changes to Kalman filter and
+    # smoother code that no longer compute poster covariances for every time
+    # step invidivually, but check for convergence. Times of convergence are
+    # given by tCovConvFt for the (forward) Kalman filter, and tCovConvSm for
+    # the (backward) Kalman smoother.  
+
     T    = mu_h.shape[1]
     Trial= mu_h.shape[2]
 
@@ -432,11 +559,33 @@ def _KalmanParsToMoments(mu_h, V_h, J):
     for tr in range(Trial):
         for t in range(T):
             Extxt[:,:,t,tr] += np.outer(mu_h[:,t,tr], mu_h[:,t,tr]) 
+
     for tr in range(Trial):
-        for t in range(1,T): # t=0 stays all zeros !
-            Extxtm1[:,:,t,tr] =  (np.dot(V_h[:,:, t, tr], 
-                                         J[:,:,t-1,tr].transpose()) 
-                                + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) ) 
+        t = 1
+        for i in range(len(obsTime)):            
+            while t <= tCovConvFt[i]: # before the filter covariances converged
+                # in this interval, the filtered covariances kept changing, and
+                # thus so did the smoothed covariances. We have to look up all.                
+                Extxtm1[:,:,t,tr] =  (np.dot(V_h[:,:, t, tr], 
+                                             J[:,:,t-1,tr].transpose()) 
+                                    + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) )
+                t += 1 
+
+            Jconv   = J[:,:,tCovConvFt[i],tr] # J depends only on filter output 
+            Jconvtr = Jconv.transpose()    # and hence converges along with it
+            VhJconv = np.dot(V_h[:,:, tCovConvSm[i], tr], Jconvtr)
+            while t <= tCovConvSm[i]: # after filter and smoother converged
+                # a little confusing, the smoother runs backwards in time and
+                # in this middle section hence has already converged. We can
+                # precompute V_h * J as they are both constant here.                
+                Extxtm1[:,:,t,tr] =  (VhJconv 
+                                    + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) )
+                t += 1 
+            while t < obsTime[i]:    # after filter, before smoother converged                
+                Extxtm1[:,:,t,tr] =  (np.dot(V_h[:,:, t, tr], 
+                                             Jconvtr) 
+                                    + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) )
+                t += 1 
 
     return [Ext, Extxt, Extxtm1] 
 
@@ -669,29 +818,6 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                                         )
                           )        
 
-
-    # In an approximation to the ML solution for C, which is tempting if there
-    # are many subpopulations (or if there is additional missing data without
-    # much structure in what is missing), we may want to take the inverse of
-    # the sum over all x_t x_' instead of just those outer products of latent
-    # states that occured while we observed a given observed variable y(i)_t.
-    # That leaves us with only one matrix inversion instead of up to yDim many
-    # In terms of equations, for this approximation we assume 
-    # C = (Tau^-1 sum_t I_t (y_t-d) x_t')  (1/T sum_t x_t x_'t)^-1
-    # for diagonal observation index matrices I_t and Tau = sum_t I_t being
-    # the new normaliser matrix. 
-    # and whish to solve C * sExtxtinv  - 1/Ti * C * (sExt*sExt') = rhs for C 
-    # The following may be outdated in terms of variable conventions!
-    # Ti1 = Ti.reshape(yDim,1)
-    # Ti2 = Ti1 * Ti1
-    # rhs = syExt/Ti1 - sysExt/Ti2
-    # mExtxt1toN = sExtxt1toN / (T*Trial)
-    # mExtxtinv = sp.linalg.inv(mExtxt1toN)
-    # z   = np.dot(mExtxtinv, sExt)
-    # zz  = np.outer(z, z)
-    # wii = Ti2 - np.dot(sExt, z) # Ti + trace(sExt*sExt' * inv(sExtxt))
-    # C = np.dot(rhs,mExtxtinv) + np.dot(rhs/wii, zz)
-
     d = np.zeros(yDim)
     for i in rangeidxgrps:    
         ixg  = idxgrps[i]
@@ -714,39 +840,6 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     for i in rangeidxgrps:
         R[idxgrps[i]] /= Ti[i]   # normalise sums by actual number of data
     R += d*d  # normalisation of dd' cancels out with summation, so do neither 
-
-    print('subpops')
-    print(subpops)
-    print('A')
-    print(A)
-    print('B')
-    print(B)
-    print('Q')
-    print(Q)
-    print('C')
-    print(C)  
-    print('d')
-    print(d)  
-    print('R')
-    print(R)
-    if not np.min(R) > 0:
-        print('CsExtxtCtr')
-        print(CsExtxtCtr)
-        print('- 2 * syExtCtr')
-        print(- 2 * syExtCtr)
-        print('+ 2 * CsExtdtr')
-        print(+ 2 * CsExtdtr)
-        print('syy')
-        print(syy)
-        print('- 2 * (sy * d)')
-        print(- 2 * (sy * d))
-        print('+ Ti * (d * d)')         
-        print(+ Ti * (d * d))      
-        print('Ti')
-        print(Ti)   
-        print('R')
-        print(R)        
-        raise Exception('stop, R is ill-behaved')
 
     return [A,B,Q,mu0,V0,C,d,R,sy,syy,suu,suuinv,Ti]           
 
