@@ -9,6 +9,182 @@ from IPython import display  # for live plotting in jupyter
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
+def _getInitPars(y, u, xDim, obsScheme, ifUseB,
+                 initA   ='random',
+                 initB   ='random',
+                 initQ   ='unity',
+                 initmu0 ='zero',
+                 initV0  ='unity',
+                 initC   ='random',
+                 initd   ='mean',
+                 initR   ='fraction',
+                 ifVisualiseInitPars = True,
+                 ):
+    """ OUT = _getInitPars(y*,u*,xDim*,obsScheme*,ifUseB*,
+                           initA,initB,initQ,initmu0,initV0,initC,initd,initR,
+                           ifVisualiseInitPars)
+        y:         data array of observed variables
+        u:         data array of input variables
+        xDim:      dimensionality of (sole subgroup of) latent state X
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        initA   : string specifying methods of parameter initialisation
+        initB   :  ""
+        initQ   :  ""
+        initmu0 :  "" 
+        initV0  :  ""
+        initC   :  "" 
+        initd   :  ""
+        initR   : (see below for details)
+        ifVisualiseInitPars : boolean, specifying whether to plot the outputs
+                              of this function for inspection
+        Initialises parameters of an LDS, potentially by looking at the data.
+
+    """
+    yDim  = y.shape[0]
+    T     = y.shape[1]
+    Trial = y.shape[2]
+    if isinstance(u,np.ndarray) and u.shape[1]==T and u.shape[2]==Trial:
+        uDim = u.shape[0]
+    else:
+        uDim = 0        
+
+    covy = np.cov(y[:,:,0]-np.mean(y, (1,2)).reshape(yDim,1)) 
+    # Depending on the observation scheme, not all entries of the data 
+    # covariance are also interpretable, and the entries of covy for pairs of 
+    # variables (y_i,y_j) that were not observed together may indeed contain
+    # NaN's depending on the choice of representation of missing data entries.
+    # Keep this in mind when selecting parameter initialisation methods such
+    # as options['initC']=='PCA', which will work with the full matrix covy.
+    # Note that the diagonal of covy should also be safe to use. 
+
+    # Latent dynamics matrix A
+    if initA == 'random':
+        A_0   = np.diag(np.random.uniform(size=[xDim]))
+    # There is inherent degeneracy in any LDS regarding the basis in the latent
+    # space. Any rotation of A can be corrected for by rightmultiplying C with
+    # the inverse rotation matrix. We do not wish to limit A to any certain
+    # basis in latent space, but in a first approach may still initialise A as
+    # diagonal matrix .     
+
+    # Input matrix B for input to latent dynamics
+    if uDim > 0 and ifUseB and initB == 'random':
+        B_0   = np.random.normal(size=[xDim, uDim])   
+    elif not ifUseB:
+        B_0   = 0
+    elif uDim == 0:
+        B_0 = np.zeros([xDim, uDim])
+        print(('Warning: Latent input parameter B was innitialised with '
+               'shape (xDim,0), and is flagged to be used (ifUseB = True).'))
+    # Parameter B is never touched within the code unless ifUseB == True,
+    # hence we don't need to ensure its correct dimensionality if ifUseB==False
+
+    # Innovation noise matrix Q
+    if initQ == 'unity':
+        Q_0   = np.identity(xDim)              
+    # There is inherent degeneracy in any LDS regarding the basis in the latent
+    # space. One way to counter this is to set the latent covariance to unity.
+    # We do not do this, as it prevents careful study of when stitching can
+    # really work. Nevertheless, we can still initialise parameters Q as 
+    # unity matrices without commiting to any assumed structure in the  final
+    # innovation noise estimate. 
+    # Note that the initialisation choice for Q should be in agreement with the
+    # initialisation of C! For instance when setting Q to the identity and 
+    # when getting C from PCA, one should also normalise the rows of C with
+    # the sqrt of the variances of y_i, i.e. really whiten the assumed 
+    # latent covariances instead of only diagonalising them.
+
+    # Mean mu0 and covariance V0 of latent Markov chain initial element x_0
+    if initmu0 == 'zero':
+        mu0_0 = np.zeros(xDim)   
+    elif initmu0 == 'random':
+        mu0_0 = np.random.normal(size=[xDim])   
+
+    if initV0 == 'unity':
+        V0_0  = np.identity(xDim)               
+    # Assuming long time series lengths, parameters for the very first time
+    # step are usually of minor importance for the overall fitting result
+    # unless they are overly restrictive. We by default initialise V0 
+    # non-commitingly to the identity matrix (same as Q) and mu0 either
+    # to all zero or with a slight random perturbation on that.   
+
+    # Emission mixture matrix C and (privat) emission noise variances R
+    if initR == 'fraction':
+        R_0   = 0.1 * covy.diagonal()
+    if initC == 'PCA':
+        w, v = np.linalg.eig(covy-np.diag(R_0))                           
+        w = np.sort(w)[::-1] # eigenvalues not always sorted according to numpy                                              
+        C_0 = np.dot(v[:, range(xDim)], np.diag(np.sqrt(w[range(xDim)])))  
+    elif initC == 'random':
+        C_0 = np.random.normal(size=[yDim,xDim])
+    # C and R should not be initialised independently!
+    # C in many cases is the single-most important parameter to properly 
+    # initialise. If the data is fully observed, a basic and powerful solution
+    # is to use PCA on the full data covariance (after attributing a certain 
+    # fraction of variance to R). In stitching contexts, this however is not
+    # possible. Finding a good initialisation in the context of incomplete data
+    # observation is not trivial. 
+
+    # Emission offset d
+    if initd == 'mean':
+        d_0    = np.mean(y,(1,2)) 
+    if initd == 'zero':            # can lead to really bad results (see below)
+        d_0    = np.zeros(yDim) 
+    # A bad initialisation for d can spell doom for the entire EM algorithm,
+    # as this may offset the estimates of E[x_t] far away from zero mean in
+    # the first E-step, so as to capture the true offset present in data y. 
+    # This in turn ruins estimates of the linear dynamics: all the eigenvalues
+    # of A suddenly have to be close to 1 to explain the constant non-decaying
+    # offset of the estimates E[x_t]. Hence the ensuing M-step will generate
+    # a parameter solution that is immensely far away from optimal parameters,
+    # and the algorithm most likely gets stuck in a local optimum long before
+    # it found its way to any useful parameter settings (in fact, C and d of
+    # the first M-step will adjust to the offset in the latent states and 
+    # hence contribute to the EM algorithm sticking to latent offset and bad A)
+
+    # wrap up initialisation parameters for documentation
+    initOptions = {
+                 'initA'   : initA,
+                 'initB'   : initB,
+                 'initQ'   : initQ,
+                 'initmu0' : initmu0,
+                 'initV0'  : initV0,
+                 'initC'   : initC,
+                 'initd'   : initd,
+                 'initR'   : initR,
+                 'ifVisualiseInitPars' : ifVisualiseInitPars,
+                    }
+
+    if ifVisualiseInitPars:
+        plt.figure(1)
+        if initC == 'PCA':
+            plt.subplot(1,2,1)
+            plt.plot(w)
+            plt.title('spectrum of data covariance matrix (R_0 removed)')         
+            plt.subplot(1,2,2)
+            plt.imshow(C_0, interpolation='none')
+            plt.title('C_0 : initialisation for C')
+            plt.ylabel('y_i')
+            plt.xlabel('x_j')
+        else:   
+            plt.imshow(C_0.transpose(), interpolation='none')
+            plt.title('C_0 : initialisation for C (transposed!)')
+            plt.xlabel('y_i')
+            plt.ylabel('x_j')
+        plt.figure(2)
+        plt.subplot(1,2,1)
+        plt.imshow(covy, interpolation='none')
+        plt.title('true covariance matrix')
+        plt.subplot(1,2,2)
+        plt.imshow(np.dot(C_0, C_0.transpose()), interpolation='none')
+        plt.title('C_0 * C_0^T')
+
+    initPars = [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] 
+
+    return [initPars, initOptions]
+
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
 def _fitLDS(y, 
             u,
             obsScheme,
@@ -252,12 +428,15 @@ def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme,eps=0):
 
     """ 
     try:
+        subpops = obsScheme['subpops'];
         obsTime = obsScheme['obsTime'];
+        obsPops = obsScheme['obsPops'];
     except:
         print('obsScheme:')
         print(obsScheme)
         raise Exception(('provided obsScheme dictionary does not have '
-                         'the required field obsTime'))
+                         'the required fields: subpops, obsTimes, '
+                         'and obsPops.'))
 
     Bu = np.zeros([A.shape[0], y.shape[1], y.shape[2]])
     if (isinstance(u, np.ndarray) and u.size>0 
@@ -459,7 +638,6 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
     # outputs. The time of convergence for the smoother for each subpopulation
     # is in between tCovConvFt[i] and obsTime[i]. 
     tCovConvSm = tCovConvFt.copy() # initialise with the earliest possible time
-    print(tCovConvSm)
     for tr in range(Trial):
         AmuBu = np.dot(A, mu[:,:,tr]) + Bu[:,:,tr]
         t = T-2 # T-1 already correct by initialisation of mu_h, V_h
@@ -1027,6 +1205,36 @@ def _unpackInitPars(initPars, uDim, yDim=None, xDim=None,
                              'dimensionality of y'))             
     return [A,B,Q,mu0,V0,C,d,R,xDim]
         
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30):
+    """ OUT = _getNumericsFirstEMCycle(initPars*,obsScheme*,y*,u*,eps)
+        initPars: collection of initial parameters for LDS
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        y:         data array of observed variables
+        u:         data array of input variables
+        eps:       precision (stopping criterion) for deciding on convergence
+                   of latent covariance estimates durgin the E-step                   
+        This function serves to quickly get the results of one EM-cycle. It is
+        mostly intended to generate results that can quickly be compared against
+        other EM implementations or different parameter initialisation methods. 
+    """
+    [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] = initPars
+    # do one E-step
+    [Ext_0, Extxt_0, Extxtm1_0,LL_0]    = \
+      _LDS_E_step(A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0,y,u,obsScheme,eps)
+    # do one M-step      
+    [A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti] = \
+      _LDS_M_step(Ext_0,Extxt_0,Extxtm1_0,y,u,obsScheme) 
+    # do another E-step
+    [Ext_1, Extxt1_1, Extxtm1_1,LL_1] = \
+      _LDS_E_step(A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,y,u,obsScheme, eps)
+
+    return [Ext_0, Extxt_0, Extxtm1_0,LL_0, 
+            A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti,
+            Ext_1, Extxt1_1, Extxtm1_1,LL_1]
+
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _computeObsIndexGroups(obsScheme,yDim):
