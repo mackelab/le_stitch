@@ -34,7 +34,11 @@ trueparams.model.x0 = mu0;
 trueparams.model.Q0 = V0;
 trueparams.model.C  = C;
 trueparams.model.d  = d(:);
-trueparams.model.R  = R;
+if min(size(R)) == 1
+ trueparams.model.R  = diag(R);    
+else
+ trueparams.model.R  = R;
+end
 trueparams.model.Pi = 1;
 trueparams.model.notes.useR = 1;
 trueparams.model.notes.useS = 0;
@@ -68,7 +72,11 @@ pyparamsIn.model.x0 = mu0_0;
 pyparamsIn.model.Q0 = V0_0;
 pyparamsIn.model.C = C_0;
 pyparamsIn.model.d = d_0(:);
-pyparamsIn.model.R = R_0;
+if min(size(R_0)) == 1
+ pyparamsIn.model.R  = diag(R_0);    
+else
+ pyparamsIn.model.R  = R_0;
+end
 pyparamsIn.model.Pi = 1;
 pyparamsIn.model.notes = trueparams.model.notes;
 pyparamsIn.model.inferenceHandle =  @LDSInference;
@@ -83,7 +91,11 @@ pyparamsOut.model.Q = Q_1;
 pyparamsOut.model.x0 = mu0_1;
 pyparamsOut.model.Q0 = V0_1;
 pyparamsOut.model.C = C_1;
-pyparamsOut.model.R = diag(R_1);
+if min(size(R_1)) == 1
+ pyparamsOut.model.R  = diag(R_1);    
+else
+ pyparamsOut.model.R  = R_1;
+end
 pyparamsOut.model.d  = d_1(:);
 pyparamsOut.model.Pi = 1;
 pyparamsOut.model.notes = trueparams.model.notes;
