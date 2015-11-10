@@ -435,7 +435,11 @@ def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme,eps=0):
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions
     The variable obsScheme is a dictionary that contains information
-    on observed subpopulations of y that are observed at each time point
+    on observed subpopulations of y that are observed at each time point.
+    Be careful when inspecting the intermediate variables such as mu, or V in
+    isolation. The functions are written to work fast, so to save on some 
+    copying of variables from one array to another, arrays maybe reused under
+    a different name. It is e.g. (mu is mu_h)==True
 
     """ 
     try:
@@ -578,14 +582,14 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
             if len(idx) > 0:                                       
                 # pre-compute for this group of observed variables
                 Cj   = C[np.ix_(idx,xRange)]                    # all these
-                Rj   = R[idx]                                   # operations 
+                Rj   = R[idx]                                   # operations                        PRECOMPUTE AND TABULARIZE THESE
                 CtrRinv = Cj.transpose() / Rj                   # are order
                 CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
 
                 if ifCovConv: # if we stopped tracking those due to convergence
                     P[:,:,t-1,tr]    =    P[:,:,tCovConvFt[i-1],tr] # need to drag
                     Pinv[:,:,t-1,tr] = Pinv[:,:,tCovConvFt[i-1],tr] # these forward
-                    ifCovConv = False # reset convergence flag
+                    ifCovConv = False # reset convergence flag                                      GIVE CONVERGENCE TO THE OTHER CODE, AS WELL
 
                 while t < obsTime[i]: 
                                                        
@@ -623,17 +627,22 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
                                             CtrRyDiff_CAmu))
                                    + logdetCPCR
                                   )            
+                    t += 1
 
             else:  # no input at all, needs to be rewritten (would also be much faster)
-                AmuBu  = np.dot(A,mu[:,t-1,tr]) + Bu[:,t, tr] 
-                mu[ :,0,tr] = AmuBu # no input, just adding zero-mean innovation noise
-                V[:,:,0,tr] = P[:,:,t-1,tr]  # Kalman gain is zero
-                P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q  
-                Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])          
-                log[ 0, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
 
+                while t < obsTime[i]: 
 
-                t += 1
+                    print('t:' + str(t) +', subpop #' + str(obsPops[i]))
+                    print('obsTime[i]:' + str(obsTime[i]))
+                    AmuBu  = np.dot(A,mu[:,t-1,tr]) + Bu[:,t, tr] 
+                    mu[ :,t,tr] = AmuBu # no input, just adding zero-mean innovation noise
+                    V[:,:,t,tr] = P[:,:,t-1,tr]  # Kalman gain is zero
+                    P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q  
+                    Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])          
+                    log[ t, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
+
+                    t += 1
 
             # copy posterior covariances from the time we stopped updating
             #if tCovConvFt[i]<obsTime[i]:
@@ -678,9 +687,15 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
 
         V_h[:,:,T-1,tr] = V[:,:,tCovConvFt[-1],tr].copy()
         # if V did not converge, tCovConvFt[-1]=T, and this copies itself!
+        # mu_h[:,:,T-1,tr] = mu[:,:,T-1,tr] is already corrct
 
         t = T-2 # T-1 already correct by initialisation of mu_h, V_h
-        for i in range(1,len(obsTime))[::-1]:
+        if obsTime[-1]-obsTime[-2] == 1: # we already processed a whole subpop
+            rangeobstime = range(1,len(obsTime)-1)[::-1] # and need to skip it
+        else:     # i.e. obsTime[-1]-obsTime[-2] > 1:
+            rangeobstime = range(1,len(obsTime))[::-1]
+
+        for i in rangeobstime:
             # J,P depend only on filter output and hence converge along with it
 
             Vconv = V[:,:,tCovConvFt[i],tr].copy()
@@ -705,7 +720,7 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
                         ifCovConv     = True                                            
 
                 t -= 1
-            # at t = tCovConv[i], we update V_h to ensure we get the transition
+            # at t = tCovConvFt[i], we update V_h to ensure we get the transition
             mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
             # now V_h[:,:,t,tr] = Vconv, and if ifCoConv==False, it is still 
             # tCovConvSm[i] = tCovConvFt[i]+1 = t+1. Otherwise we the covariance
@@ -819,8 +834,12 @@ def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
                 t += 1 
 
     for tr in range(Trial):
-        t = 1
-        for i in range(len(obsTime)):            
+        t = 1        
+        if obsTime[0] == 1:               # we already processed a whole subpop
+            rangeobstime = range(1,len(obsTime)) # and need to skip it
+        else:     # i.e. obsTime[-1]-obsTime[-2] > 1:
+            rangeobstime = range(0,len(obsTime))
+        for i in rangeobstime:            
             while t <= tCovConvFt[i]: # before the filter covariances converged
                 # in this interval, the filtered covariances kept changing, and
                 # thus so did the smoothed covariances. We have to look up all.                
@@ -832,7 +851,7 @@ def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
             Jconv   = J[:,:,tCovConvFt[i],tr] # J depends only on filter output 
             Jconvtr = Jconv.transpose()    # and hence converges along with it
             VhJconv = np.dot(V_h[:,:, tCovConvSm[i], tr], Jconvtr)
-            while t <= tCovConvSm[i]: # after filter and smoother converged
+            while t < tCovConvSm[i]: # after filter and smoother converged
                 # a little confusing, the smoother runs backwards in time and
                 # in this middle section hence has already converged. We can
                 # precompute V_h * J as they are both constant here.                
@@ -928,26 +947,26 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
         for tr in range(Trial):
             ytr = y[:,:,tr]            
             for i in rangeobstime:
-                j   = obsPops[i]
-                idx = subpops[j]
+                idx = subpops[obsPops[i]]
                 if i == 0:
                     ts  = range(0, obsTime[i])                                            
                 else:
-                    ts  = range(obsTime[i-1],obsTime[i])                 
-                sy[idx] += np.sum(ytr[np.ix_(idx,ts)],1)          
+                    ts  = range(obsTime[i-1],obsTime[i])   
+                if len(idx)>0:
+                    sy[idx] += np.sum(ytr[np.ix_(idx,ts)],1)          
     if syy is None:
         syy   = np.zeros(yDim) # sum over outer product y_t y_t'
         for tr in range(Trial):
             ytr = y[:,:,tr]            
             for i in rangeobstime:
-                j   = obsPops[i]
-                idx = subpops[j]
+                idx = subpops[obsPops[i]]
                 if i == 0:
                     ts  = range(0, obsTime[i])                                            
                 else:
                     ts  = range(obsTime[i-1],obsTime[i])                 
-                ytmp = ytr[np.ix_(idx,ts)]
-                syy[idx] += np.sum(ytmp*ytmp,1) 
+                if len(idx)>0:
+                    ytmp = ytr[np.ix_(idx,ts)]
+                    syy[idx] += np.sum(ytmp*ytmp,1) 
         del ytmp      
     
     # compute (diagonal of) scatter matrix accros observed and latent states
@@ -973,19 +992,20 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
             tsExt   = np.sum(Ext[:,ts,tr],1)
             tsExtxt = np.sum(Extxt[:,:,ts,tr], 2)
-            tsyExt  = np.einsum('in,jn->ij', 
-                                ytr[np.ix_(idx,ts)], 
-                                Ext[:,ts,tr])     
+            sExt         += tsExt           # these sum over 
+            sExtxt1toN   += tsExtxt         # all times 
+            for j in obsIdxG[i]: 
+                sExts[:,j]      += tsExt    # these only sum entries 
+                sExtxts[:,:,j]  += tsExtxt  # seen by their index group
 
-            sExt         += tsExt
-            sExtxt1toN   += tsExtxt
-            syExt[idx,:] += tsyExt # index groups are non-overlapping, i.e. we
-                                   # can store the outer products y(i)_t x_t'
-                                   # for all i in the same matrix. 
+            if len(idx)>0:
+                tsyExt  = np.einsum('in,jn->ij', 
+                                    ytr[np.ix_(idx,ts)], 
+                                    Ext[:,ts,tr])     
+                syExt[idx,:] += tsyExt # index groups are non-overlapping, i.e.
+                                       # can store outer products y(i)_t x_t'
+                                       # for all i in the same matrix. 
 
-            for j in obsIdxG[i]: # for each currently observed index group:
-                sExts[:,j]      += tsExt
-                sExtxts[:,:,j]  += tsExtxt
     del ytr
 
     sysExt = np.outer(sy, sExt)                                                             
