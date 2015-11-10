@@ -294,7 +294,7 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
                       'Ext':Ext_0, 'Extxt':Extxt_0, 'Extxtm1':Extxtm1_0,
                       'Ext1':Ext_1, 'Extxt1':Extxt_1, 'Extxtm11':Extxtm1_1,
                       'Ext_h':Ext_h, 'Extxt_h':Extxt_h, 'Extxtm1_h':Extxtm1_h,
-                      'Ext_true':Ext_true, 'Extxt_true':Extxt_true, 'Extxtm1':Extxtm1_true,
+                      'Ext_true':Ext_true, 'Extxt_true':Extxt_true, 'Extxtm1_true':Extxtm1_true,
                       'Pi' : Pi, 'Pi_h' : Pi_h, 'Pi_t' : Pi_t, 'Pi_t_h': Pi_t_h,
                       'obsScheme' : obsScheme}
 
