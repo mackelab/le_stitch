@@ -524,94 +524,114 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
         # first time step: [mu0,V0] -> [mu1,V1]
         idx = subpops[obsPops[0]]
 
-        # pre-compute for this group of observed variables
-        Cj   = C[np.ix_(idx,xRange)]                    # all these
-        Rinv = 1/R[idx]                                 # operations    
-        CtrRinv = Cj.transpose() * Rinv                 # are order
-        CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !  
+        if len(idx) > 0:
+            # pre-compute for this group of observed variables
+            Cj   = C[np.ix_(idx,xRange)]                    # all these
+            Rinv = 1/R[idx]                                 # operations    
+            CtrRinv = Cj.transpose() * Rinv                 # are order
+            CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !  
 
-        # pre-compute for this time step                                           
-        Cmu0B0 = np.dot(Cj,mu0+Bu[:,0,tr]) # O(yDim)
-        yDiff  = y[idx,0,tr] - d[idx] - Cmu0B0          # O(yDim)   
+            # pre-compute for this time step   
+            mu0B0  = mu0+Bu[:,0,tr]                                        
+            Cmu0B0 = np.dot(Cj,mu0B0) # O(yDim)
+            yDiff  = y[idx,0,tr] - d[idx] - Cmu0B0          # O(yDim)   
 
-        CtrRyDiff_Cmu0 = np.dot(CtrRinv, yDiff)         # O(yDim)
-        P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
-                
-        # compute Kalman gain components
-        P0inv   = sp.linalg.inv(P0)                
-        Kcore  = sp.linalg.inv(CtrRinvC+P0inv)                                                      
-        Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
-        PKsht  = np.dot(P0,    Kshrt) 
-        KC     = np.dot(PKsht, CtrRinvC)        
-        
-        # update posterior estimates
-        mu[ :,0,tr] = mu0 + np.dot(PKsht,CtrRyDiff_Cmu0)
-        V[:,:,0,tr] = np.dot(Iq - KC, P0)
-        P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
-        Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])
+            CtrRyDiff_Cmu0 = np.dot(CtrRinv, yDiff)         # O(yDim)
+            P0   = V0 # = np.dot(np.dot(A, V0), Atr) + Q
+                    
+            # compute Kalman gain components
+            P0inv   = sp.linalg.inv(P0)                
+            Kcore  = sp.linalg.inv(CtrRinvC+P0inv)                                                      
+            Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
+            PKsht  = np.dot(P0,    Kshrt) 
+            KC     = np.dot(PKsht, CtrRinvC)        
+            
+            # update posterior estimates
+            mu[ :,0,tr] = mu0B0 + np.dot(PKsht,CtrRyDiff_Cmu0)
+            V[:,:,0,tr] = np.dot(Iq - KC, P0)
+            P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
+            Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])
 
-        # compute marginal probability y_0
-        M    = sp.linalg.cholesky(P0)
-        logdetCPCR    = (  np.sum(np.log(R[idx])) 
-                         + np.log(sp.linalg.det(
-                               Iq + np.dot(M.transpose(),np.dot(CtrRinvC,M))))
-                        )
-        logc[ 0,tr] = (  np.sum(Rinv * yDiff * yDiff)       
-                       - np.dot(CtrRyDiff_Cmu0, np.dot(Kcore, CtrRyDiff_Cmu0)) 
-                       + logdetCPCR
-                      )
+            # compute marginal probability y_0
+            M    = sp.linalg.cholesky(P0)
+            logdetCPCR    = (  np.sum(np.log(R[idx])) 
+                             + np.log(sp.linalg.det(
+                                   Iq + np.dot(M.transpose(),np.dot(CtrRinvC,M))))
+                            )
+            logc[ 0,tr] = (  np.sum(Rinv * yDiff * yDiff)       
+                           - np.dot(CtrRyDiff_Cmu0, np.dot(Kcore, CtrRyDiff_Cmu0)) 
+                           + logdetCPCR
+                          )
+        else:  # no input at all, needs to be rewritten (would also be much faster)
+            mu0B0  = mu0+Bu[:,0,tr]                                                
+            mu[ :,0,tr] = mu0B0 # no input, just adding zero-mean innovation noise
+            V[:,:,0,tr] = P0  # Kalman gain is zero
+            P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q  
+            Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])          
+            log[ 0, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
+
                 
         t = 1 # now start with second time step ...
         for i in range(len(obsTime)):
             idx = subpops[obsPops[i]]
-                                                   
-            # pre-compute for this group of observed variables
-            Cj   = C[np.ix_(idx,xRange)]                    # all these
-            Rj   = R[idx]                                   # operations 
-            CtrRinv = Cj.transpose() / Rj                   # are order
-            CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
 
-            if ifCovConv: # if we stopped tracking those due to convergence
-                P[:,:,t-1,tr]    =    P[:,:,tCovConvFt[i-1],tr] # need to drag
-                Pinv[:,:,t-1,tr] = Pinv[:,:,tCovConvFt[i-1],tr] # these forward
-                ifCovConv = False # reset convergence flag
+            if len(idx) > 0:                                       
+                # pre-compute for this group of observed variables
+                Cj   = C[np.ix_(idx,xRange)]                    # all these
+                Rj   = R[idx]                                   # operations 
+                CtrRinv = Cj.transpose() / Rj                   # are order
+                CtrRinvC = np.dot(CtrRinv, Cj)                  # O(yDim) !
 
-            while t < obsTime[i]: 
-                                                   
-                # pre-compute for this time step                                   
+                if ifCovConv: # if we stopped tracking those due to convergence
+                    P[:,:,t-1,tr]    =    P[:,:,tCovConvFt[i-1],tr] # need to drag
+                    Pinv[:,:,t-1,tr] = Pinv[:,:,tCovConvFt[i-1],tr] # these forward
+                    ifCovConv = False # reset convergence flag
+
+                while t < obsTime[i]: 
+                                                       
+                    # pre-compute for this time step                                   
+                    AmuBu  = np.dot(A,mu[:,t-1,tr]) + Bu[:,t, tr] 
+                    yDiff  = y[idx,t,tr] - d[idx] - np.dot(Cj,AmuBu) # O(yDim)                                              
+                    CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)          # O(yDim)
+                                                       
+                    if not ifCovConv:                                       
+                        # compute Kalman gain components
+                        Kcore  = sp.linalg.inv(CtrRinvC+Pinv[:,:,t-1,tr])                                        
+                        Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
+                        PKsht  = np.dot(P[:,:,t-1,tr],  Kshrt) 
+                        KC     = np.dot(PKsht, CtrRinvC)
+                        # update posterior covariances
+                        V[:,:,t,tr] = np.dot(Iq - KC,P[:,:,t-1,tr])
+                        P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
+                        Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])
+                        # compute normaliser for marginal probabilties of y_t
+                        M      = sp.linalg.cholesky(P[:,:,t-1,tr])                                                     
+                        logdetCPCR = (  np.sum(np.log(Rj))                                  
+                                   + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),
+                                                             np.dot(CtrRinvC,M))))
+                                     )
+                        if np.mean(np.power(P[:,:,t,tr]-P[:,:,t-1,tr],2)) < eps:
+                            tCovConvFt[i] = t
+                            ifCovConv   = True
+
+                    # update posterior mean
+                    mu[ :,t,tr] = AmuBu + np.dot(PKsht,CtrRyDiff_CAmu)
+
+                    # compute marginal probability y_t | y_0, ..., y_{t-1}
+                    logc[ t,tr] = (  np.sum((yDiff * yDiff) / Rj)   
+                                   - np.dot(CtrRyDiff_CAmu, np.dot(Kcore, 
+                                            CtrRyDiff_CAmu))
+                                   + logdetCPCR
+                                  )            
+
+            else:  # no input at all, needs to be rewritten (would also be much faster)
                 AmuBu  = np.dot(A,mu[:,t-1,tr]) + Bu[:,t, tr] 
-                yDiff  = y[idx,t,tr] - d[idx] - np.dot(Cj,AmuBu) # O(yDim)                                              
-                CtrRyDiff_CAmu = np.dot(CtrRinv, yDiff)          # O(yDim)
-                                                   
-                if not ifCovConv:                                       
-                    # compute Kalman gain components
-                    Kcore  = sp.linalg.inv(CtrRinvC+Pinv[:,:,t-1,tr])                                        
-                    Kshrt  = Iq  - np.dot(CtrRinvC, Kcore)
-                    PKsht  = np.dot(P[:,:,t-1,tr],  Kshrt) 
-                    KC     = np.dot(PKsht, CtrRinvC)
-                    # update posterior covariances
-                    V[:,:,t,tr] = np.dot(Iq - KC,P[:,:,t-1,tr])
-                    P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q
-                    Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])
-                    # compute normaliser for marginal probabilties of y_t
-                    M      = sp.linalg.cholesky(P[:,:,t-1,tr])                                                     
-                    logdetCPCR = (  np.sum(np.log(Rj))                                  
-                               + np.log(sp.linalg.det(Iq+np.dot(M.transpose(),
-                                                         np.dot(CtrRinvC,M))))
-                                 )
-                    if np.mean(np.power(P[:,:,t,tr]-P[:,:,t-1,tr],2)) < eps:
-                        tCovConvFt[i] = t
-                        ifCovConv   = True
+                mu[ :,0,tr] = AmuBu # no input, just adding zero-mean innovation noise
+                V[:,:,0,tr] = P[:,:,t-1,tr]  # Kalman gain is zero
+                P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q  
+                Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])          
+                log[ 0, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
 
-                # update posterior mean
-                mu[ :,t,tr] = AmuBu + np.dot(PKsht,CtrRyDiff_CAmu)
-
-                # compute marginal probability y_t | y_0, ..., y_{t-1}
-                logc[ t,tr] = (  np.sum((yDiff * yDiff) / Rj)   
-                               - np.dot(CtrRyDiff_CAmu, np.dot(Kcore, 
-                                        CtrRyDiff_CAmu))
-                               + logdetCPCR
-                              )                             
 
                 t += 1
 
@@ -714,18 +734,6 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
 
         Vconv =  V[:,:,tCovConvFt[0],tr].copy()
         Jconv = np.dot(np.dot(Vconv, Atr), Pinv[:,:,tCovConvFt[0],tr])
-        print('Vconv')
-        print(Vconv)
-        print('Jconv')
-        print(Jconv)
-        print('mu_h[:,t+1,tr]')
-        print(mu_h[:,t+1,tr])
-        print('tCovConvFt')
-        print(tCovConvFt)
-        print('t')
-        print(t) 
-        print('obsTime[0]')       
-        print(obsTime[0])       
         Jconvtr = Jconv.transpose()
         Pconv   = P[:,:,tCovConvFt[0],tr] 
 
