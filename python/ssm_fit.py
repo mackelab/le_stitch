@@ -566,13 +566,14 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
                            - np.dot(CtrRyDiff_Cmu0, np.dot(Kcore, CtrRyDiff_Cmu0)) 
                            + logdetCPCR
                           )
-        else:  # no input at all, needs to be rewritten (would also be much faster)
-            mu0B0  = mu0+Bu[:,0,tr]                                                
+        else:  # no input at all, needs to be rewritten (would also be much faster)                                                
+            mu0B0  = mu0+Bu[:,0,tr]
+            P0 = V0
             mu[ :,0,tr] = mu0B0 # no input, just adding zero-mean innovation noise
             V[:,:,0,tr] = P0  # Kalman gain is zero
             P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q  
             Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])          
-            log[ 0, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
+            logc[ 0, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
 
                 
         t = 1 # now start with second time step ...
@@ -633,14 +634,12 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
 
                 while t < obsTime[i]: 
 
-                    print('t:' + str(t) +', subpop #' + str(obsPops[i]))
-                    print('obsTime[i]:' + str(obsTime[i]))
                     AmuBu  = np.dot(A,mu[:,t-1,tr]) + Bu[:,t, tr] 
                     mu[ :,t,tr] = AmuBu # no input, just adding zero-mean innovation noise
                     V[:,:,t,tr] = P[:,:,t-1,tr]  # Kalman gain is zero
                     P[:,:,t,tr] = np.dot(np.dot(A,V[:,:,t,tr]), Atr) + Q  
                     Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])          
-                    log[ t, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
+                    logc[ t, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
 
                     t += 1
 
