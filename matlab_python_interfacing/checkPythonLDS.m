@@ -16,8 +16,7 @@ clc
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
 
-load(['/home/mackelab/Desktop/Projects/Stitching/code/le_stitch/python',...
-      '/LDS_data.mat'])
+load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_check_E.mat'])
 % gives data traces x, y, data length T
 % also gives true parameters {A,Q,mu0,V0,C,R} used to generate the data
 % also gives E-step results (E[xt], E[x_t x_t'], E[x_t x_{t-1}']) as
@@ -131,7 +130,7 @@ clearvars -except xDim yDim trueparams pyparamsOut pyparamsIn seq pySeq Ext Extx
 seq = LDSInference(pyparamsIn,seq); % adds seq.posterior, otherwise returns
                                     % the exact same seq
 
-
+%%
 % M-step 
 matparamsOut = LDSMStepLDS(pyparamsIn,pySeq);  
 matparamsOut = LDSMStepObservation(matparamsOut,pySeq);
@@ -247,7 +246,7 @@ for i = 1:xDim
         Mp(i,j,:) = squeeze(Extxtm1(i,j,2:end))' - ...
                                        (Ext(i,2:end).*Ext(j,1:end-1));
         plot(squeeze(Mp(i,j,:)), ...
-             squeeze(Mp(i,j,:)), 'o', 'color', clrs(end-(abs(i-j)),:))
+             squeeze(Mm(i,j,:)), 'o', 'color', clrs(end-(abs(i-j)),:))
         hold on
     end
 end

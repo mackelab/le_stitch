@@ -156,7 +156,7 @@ def _getInitPars(y, u, xDim, obsScheme, ifUseB,
                     }
 
     if ifVisualiseInitPars:
-        plt.figure(1)
+        plt.figure(1, figsize=(15,10))
         if initC == 'PCA':
             plt.subplot(1,2,1)
             plt.plot(w)
@@ -171,7 +171,7 @@ def _getInitPars(y, u, xDim, obsScheme, ifUseB,
             plt.title('C_0 : initialisation for C (transposed!)')
             plt.xlabel('y_i')
             plt.ylabel('x_j')
-        plt.figure(2)
+        plt.figure(2, figsize=(15,10))
         plt.subplot(1,2,1)
         plt.imshow(covy, interpolation='none')
         plt.title('true covariance matrix')
@@ -277,6 +277,12 @@ def _fitLDS(y,
         print(ifRDiagonal)
         raise Exception('argument ifRDiagonal has to be a boolean')   
 
+    if (not isinstance(covConvEps,(float,numbers.Integral))
+        or not covConvEps >= 0):
+        print('covConvEps:')
+        print(epsilon)
+        raise Exception(('covConvEps has to be a non-negative number'))
+
     if not fitoptions['ifUseB']:
         u = None
         uDim = 0
@@ -302,7 +308,10 @@ def _fitLDS(y,
     M_step = _LDS_M_step 
 
     # evaluate initial state       
-    [Ext, Extxt, Extxtm1, LLtr] = E_step(A,B,Q,mu0,V0,C,d,R,y,u, 
+    print('convergence criterion for E-step (tolerance on matrix changes):')
+    print(covConvEps)
+    [Ext, Extxt, Extxtm1, LLtr, tCovConvFt, tCovConvSm] = E_step(
+                                         A,B,Q,mu0,V0,C,d,R,y,u, 
                                          obsScheme,covConvEps)
     LL_new = np.sum(LLtr)
     LL_old = -float('Inf')
@@ -364,7 +373,8 @@ def _fitLDS(y,
         
         stepCount += 1            
         
-        [Ext, Extxt, Extxtm1, LLtr] = E_step(A, 
+        [Ext, Extxt, Extxtm1, LLtr, tCovConvFt, tCovConvSm] = E_step(
+                                             A, 
                                              B,
                                              Q, 
                                              mu0, 
@@ -394,19 +404,20 @@ def _fitLDS(y,
         dLL.append(LL_new - LL_old)
         if ifPlotProgress:
             # dynamically plot log of log-likelihood difference
+            plt.clf()
             plt.figure(1,figsize=(15,15))
-            plt.subplot(2,2,1)
+            plt.subplot(1,2,1)
             plt.plot(LLs)
             plt.xlabel('#iter')
             plt.ylabel('log-likelihood')
-            plt.subplot(2,2,2)
+            plt.subplot(1,2,2)
             plt.plot(dLL)
             plt.xlabel('#iter')
             plt.ylabel('LL_{new} - LL_{old}')
-            plt.subplot(2,2,3)
-            plt.plot(Ext[0,range(200),0])
-            plt.xlabel('n')
-            plt.ylabel('first component of x_n')
+            #plt.subplot(2,2,3)
+            #plt.plot(Ext[0,range(200),0])
+            #plt.xlabel('n')
+            #plt.ylabel('first component of x_n')
             display.display(plt.gcf())
             display.clear_output(wait=True)
             
@@ -454,7 +465,7 @@ def _LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme,eps=0):
         
     LL = np.sum(logc,axis=0) # sum over times, get Trial-dim. vector
     
-    return [Ext, Extxt, Extxtm1, LL]
+    return [Ext, Extxt, Extxtm1, LL, tCovConvFt, tCovConvSm]
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
@@ -589,7 +600,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
                                                          np.dot(CtrRinvC,M))))
                                  )
                     if np.mean(np.power(P[:,:,t,tr]-P[:,:,t-1,tr],2)) < eps:
-                        tCovConvFt[i] = int(t)
+                        tCovConvFt[i] = t
                         ifCovConv   = True
 
                 # update posterior mean
@@ -637,40 +648,62 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
     # however, the smoother also cannot converge, as it depends on the filter 
     # outputs. The time of convergence for the smoother for each subpopulation
     # is in between tCovConvFt[i] and obsTime[i]. 
-    tCovConvSm = tCovConvFt.copy() # initialise with the earliest possible time
+
+    tCovConvSm = tCovConvFt.copy()+1 # initialise with earliest possible time
+    if tCovConvFt[-1]==T-1:  # if V,P did not converge for the last subpop
+        tCovConvSm[-1] = T-1 # this would now be T, which is index out of bound 
+
     for tr in range(Trial):
         AmuBu = np.dot(A, mu[:,:,tr]) + Bu[:,:,tr]
-        t = T-2 # T-1 already correct by initialisation of mu_h, V_h
 
+        V_h[:,:,T-1,tr] = V[:,:,tCovConvFt[-1],tr].copy()
+        # if V did not converge, tCovConvFt[-1]=T, and this copies itself!
+
+        t = T-2 # T-1 already correct by initialisation of mu_h, V_h
         for i in range(1,len(obsTime))[::-1]:
             # J,P depend only on filter output and hence converge along with it
-            Jconv = np.dot(np.dot(V[:,:,tCovConvFt[i],tr], Atr),
-                                        Pinv[:,:,tCovConvFt[i],tr])
+
+            Vconv = V[:,:,tCovConvFt[i],tr].copy()
+            Jconv = np.dot(np.dot(Vconv, Atr),Pinv[:,:,tCovConvFt[i],tr])
             Jconvtr = Jconv.transpose()
             Pconv = P[:,:,tCovConvFt[i],tr]
 
-            ifCovConv = False
-            while t >= tCovConvFt[i]: 
+            ifCovConv = False # reset convergence flag
+            while t > tCovConvFt[i]: 
                 # in this interval, P and V have converged, hence we can 
                 # expect V_h to converge early on, as well
                 mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
 
                 if not ifCovConv:
-                    V_h[:,:,t,tr] += np.dot(np.dot(Jconv, 
+                    V_h[:,:,t,tr] =  (Vconv 
+                                      + np.dot(np.dot(Jconv, 
                                                    V_h[:,:,t+1,tr] - Pconv),
-                                                   Jconvtr) 
+                                                   Jconvtr)
+                                      ) 
                     if np.mean(np.power(V_h[:,:,t,tr]-V_h[:,:,t+1,tr],2))<eps:
-                        tCovConvSm[i] = int(t)
-                        ifCovConv     = True                    
+                        tCovConvSm[i] = t     # overwriting tCovConvFt[i] + 1
+                        ifCovConv     = True                                            
 
                 t -= 1
-            J[:,:,tCovConvFt[i],tr] = Jconv # store J for all later time points 
+            # at t = tCovConv[i], we update V_h to ensure we get the transition
+            mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
+            # now V_h[:,:,t,tr] = Vconv, and if ifCoConv==False, it is still 
+            # tCovConvSm[i] = tCovConvFt[i]+1 = t+1. Otherwise we the covariance
+            # did converge and we also should look at tCovConvSm[i] now.
+            V_h[:,:,t,tr] =  (Vconv        
+                              + np.dot(np.dot(Jconv, 
+                                       V_h[:,:,tCovConvSm[i],tr] - Pconv),
+                                       Jconvtr)
+                                      ) 
+            J[:,:,t,tr] = Jconv # here, store J for all later time points 
+            t -= 1
+            # now t < tCovConv[i], i.e. we have all J,V,P again. 
             while t >= obsTime[i-1]:
                 # in this interval, P and V still constantly change, so
                 # we compute J for each time point invidivually
                 J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
                                             Pinv[:,:,t,tr])
-                mu_h[ :,t,tr] += np.dot(J[:,:,t,tr], mu_h[:,t+1,tr] - AmuBu[:,t]) 
+                mu_h[ :,t,tr] += np.dot(J[:,:,t,tr], mu_h[:,t+1,tr]-AmuBu[:,t]) 
                 V_h[:,:,t,tr] += np.dot(np.dot(J[:,:,t,tr], 
                                                V_h[:,:,t+1,tr] - P[:,:,t,tr]),
                                                J[:,:,t,tr].transpose()) 
@@ -678,30 +711,57 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
 
         # case for first subpopulation
         ifCovConv = False
-        tCovConvSm[0] = tCovConvFt[0]
-        Jconv = np.dot(np.dot(V[:,:,tCovConvFt[0],tr], Atr),
-                                    Pinv[:,:,tCovConvFt[0],tr])
+
+        Vconv =  V[:,:,tCovConvFt[0],tr].copy()
+        Jconv = np.dot(np.dot(Vconv, Atr), Pinv[:,:,tCovConvFt[0],tr])
+        print('Vconv')
+        print(Vconv)
+        print('Jconv')
+        print(Jconv)
+        print('mu_h[:,t+1,tr]')
+        print(mu_h[:,t+1,tr])
+        print('tCovConvFt')
+        print(tCovConvFt)
+        print('t')
+        print(t) 
+        print('obsTime[0]')       
+        print(obsTime[0])       
         Jconvtr = Jconv.transpose()
         Pconv   = P[:,:,tCovConvFt[0],tr] 
-        while t >= tCovConvFt[0]: # no need for new J, as all was converged
+
+        while t > tCovConvFt[0]: # no need for new J, as all was converged
             mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
 
             if not ifCovConv:
-                V_h[:,:,t,tr] += np.dot(np.dot(Jconv, 
-                                               V_h[:,:,t+1,tr] - Pconv),
-                                               Jconvtr) 
+                V_h[:,:,t,tr] = (Vconv 
+                                 + np.dot(np.dot(Jconv, 
+                                                 V_h[:,:,t+1,tr] - Pconv),
+                                                 Jconvtr) 
+                                 )
                 if np.mean(np.power(V_h[:,:,t,tr]-V_h[:,:,t+1,tr],2))<eps:
                     tCovConvSm[0] = int(t)
                     ifCovConv     = True                    
 
             t -= 1
+        # now V_h[:,:,t,tr] = Vconv, and if ifCoConv==False, it is still 
+        # tCovConvSm[i] = tCovConvFt[i]+1 = t+1. Otherwise we the covariance
+        # did converge and we also should look at tCovConvSm[i] now.
+        mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
+        V_h[:,:,t,tr] =  (Vconv        
+                          + np.dot(np.dot(Jconv, 
+                                   V_h[:,:,tCovConvSm[0],tr] - Pconv),
+                                   Jconvtr)
+                                  ) 
+        J[:,:,t,tr] = Jconv # here, store J for all later time points 
+        t -= 1
+        # now t < tCovConv[i], i.e. we have all J,V,P again. 
         while t >= 0:
             J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
                                         Pinv[:,:,t,tr])
             mu_h[ :,t,tr] += np.dot(J[:,:,t,tr], mu_h[:,t+1,tr] - AmuBu[:,t]) 
             V_h[:,:,t,tr] += np.dot(np.dot(J[:,:,t,tr], 
-                                            V_h[:,:,t+1,tr] - P[:,:,t,tr]),
-                                    J[:,:,t,tr].transpose()) 
+                                           V_h[:,:,t+1,tr] - P[:,:,t,tr]),
+                                           J[:,:,t,tr].transpose()) 
 
             t -= 1     
 
@@ -731,8 +791,24 @@ def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
     Extxtm1 = np.zeros(V_h.shape)   # E[x_t x_{t-1}'] 
 
     for tr in range(Trial):
-        for t in range(T):
-            Extxt[:,:,t,tr] += np.outer(mu_h[:,t,tr], mu_h[:,t,tr]) 
+        t = 0
+        for i in range(len(obsTime)):            
+            while t <= tCovConvFt[i]: # before the filter covariances converged
+                # in this interval, the filtered covariances kept changing, and
+                # thus so did the smoothed covariances. We have to look up all.                
+                Extxt[:,:,t,tr] += np.outer(mu_h[:,t,tr], mu_h[:,t,tr])
+                t += 1 
+            V_hconv = V_h[:,:, tCovConvSm[i], tr]
+            while t <= tCovConvSm[i]: # after filter and smoother converged
+                # a little confusing, the smoother runs backwards in time and
+                # in this middle section hence has already converged. We can
+                # precompute V_h * J as they are both constant here.                
+                Extxt[:,:,t,tr] =  (V_hconv 
+                                    + np.outer(mu_h[:,t,tr], mu_h[:,t,tr]))
+                t += 1 
+            while t < obsTime[i]:    # after filter, before smoother converged                
+                Extxt[:,:,t,tr] += np.outer(mu_h[:,t,tr], mu_h[:,t,tr])
+                t += 1 
 
     for tr in range(Trial):
         t = 1
@@ -755,11 +831,15 @@ def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
                 Extxtm1[:,:,t,tr] =  (VhJconv 
                                     + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) )
                 t += 1 
-            while t < obsTime[i]:    # after filter, before smoother converged                
+            while t < obsTime[i]:    # after filter, before smoother converged     
                 Extxtm1[:,:,t,tr] =  (np.dot(V_h[:,:, t, tr], 
                                              Jconvtr) 
                                     + np.outer(mu_h[:,t,tr], mu_h[:,t-1,tr]) )
                 t += 1 
+            # t == obsTime[i] now
+            J[:,:,t-1,tr] = Jconv.copy() # does nothing if not converged, otherwise 
+                                         # gives starting info for next subpopulation
+
 
     return [Ext, Extxt, Extxtm1] 
 
@@ -1222,13 +1302,13 @@ def _getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30):
     """
     [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] = initPars
     # do one E-step
-    [Ext_0, Extxt_0, Extxtm1_0,LL_0]    = \
+    [Ext_0, Extxt_0, Extxtm1_0,LL_0, tCovConvFt, tCovConvSm]    = \
       _LDS_E_step(A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0,y,u,obsScheme,eps)
     # do one M-step      
     [A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti] = \
       _LDS_M_step(Ext_0,Extxt_0,Extxtm1_0,y,u,obsScheme) 
     # do another E-step
-    [Ext_1, Extxt1_1, Extxtm1_1,LL_1] = \
+    [Ext_1, Extxt1_1, Extxtm1_1,LL_1, tCovConvFt, tCovConvSm] = \
       _LDS_E_step(A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,y,u,obsScheme, eps)
 
     return [Ext_0, Extxt_0, Extxtm1_0,LL_0, 

@@ -16,7 +16,7 @@ clc
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
 
-datasets = {'LDS_data_to_visualise', ...
+datasets = {'LDS_save', ...
             'LDS_data_to_visualise_good_1d_no_input', ...
             'LDS_data_to_visualise_good_5d_no_input', ...
             'LDS_data_to_visualise_bad_5d_no_input', ...            
@@ -24,8 +24,14 @@ datasets = {'LDS_data_to_visualise', ...
             };
 dataSet  = datasets{1}; % the first one is the most recent one not yet given a name
 
-load(['/home/mackelab/Desktop/Projects/Stitching/code/le_stitch/python',...
+dataSet  = 'LDS_save_rerun_small_run0';
+load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/',...
       '/', dataSet, '.mat'])
+baseSet  = 'LDS_save_rerun_small_run0';
+load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/',...
+      '/', baseSet, '.mat'], 'A', 'B', 'Q', 'mu0', 'V0', 'C', 'd', 'R', 'Pi', 'Pi_t')  
+  
+  
 % gives the following variables:
 % observed data traces              y
 % input data traces                 u
@@ -50,6 +56,7 @@ else
     C  = double(C);
     R  = double(R);
     Pi = double(Pi);    
+    R  = double(d);
 end
 
   T    = size(y,2); % simulation length
@@ -84,16 +91,16 @@ subplot(2,3,1)
 imagesc(A_h)
 box off
 title('$\hat{A}$', 'interpreter', 'latex')
-set(gca, 'XTick', [1, xDim])
-set(gca, 'YTick', [1, xDim])
+set(gca, 'XTick', unique([1, xDim]))
+set(gca, 'YTick', unique([1, xDim]))
 set(gca, 'TickDir', 'out')
 
 subplot(2,3,2)
 if ifUseB
     imagesc(B_h)
     title('$\hat{B}$', 'interpreter', 'latex')
-    set(gca, 'XTick', [1, uDim])
-    set(gca, 'YTick', [1, xDim])
+    set(gca, 'XTick', unique([1, uDim]))
+    set(gca, 'YTick', unique([1, xDim]))
     set(gca, 'TickDir', 'out')
     box off    
 else
@@ -107,23 +114,23 @@ end
 subplot(2,3,3)
 imagesc(Q_h)
 title('$\hat{Q}$', 'interpreter', 'latex')
-set(gca, 'XTick', [1, xDim])
-set(gca, 'YTick', [1, xDim])
+set(gca, 'XTick', unique([1, xDim]))
+set(gca, 'YTick', unique([1, xDim]))
 set(gca, 'TickDir', 'out')
 box off
 
 subplot(2,3,4)
 imagesc(C_h)
 title('$\hat{C}$', 'interpreter', 'latex')
-set(gca, 'XTick', [1, xDim])
-set(gca, 'YTick', [1, yDim])
+set(gca, 'XTick', unique([1, xDim]))
+set(gca, 'YTick', unique([1, yDim]))
 set(gca, 'TickDir', 'out')
 box off
 
 subplot(2,3,5)
 bar(d_h)
 title('$\hat{d}$', 'interpreter', 'latex')
-set(gca, 'XTick', [1, yDim])
+set(gca, 'XTick', unique([1, yDim]))
 set(gca, 'TickDir', 'out')
 axis([0, yDim+1, 0, 1])
 axis autoy
@@ -132,8 +139,8 @@ box off
 subplot(2,3,6)
 imagesc(diag(R_h))
 title('$\hat{R}$', 'interpreter', 'latex')
-set(gca, 'XTick', [1, yDim])
-set(gca, 'YTick', [1, yDim])
+set(gca, 'XTick', unique([1, yDim]))
+set(gca, 'YTick', unique([1, yDim]))
 set(gca, 'TickDir', 'out')
 box off
 
@@ -211,7 +218,7 @@ if groundTruthKnown
 end
 %% Compare instantaneous covariances of model with truth
 figure('Units', 'normalized','Position', [0.5,0.0,0.4,0.5]);
-if ifDataGeneratedWithInput && ifInputPiecewiseConstant
+if numel(u)>1 && stcmp(inputType,'pwdconst')
     numPieces = double(floor(T/constantInputLength));
     m = min(u(:));
     M = max(u(:));
@@ -398,7 +405,7 @@ end
 
 %% Compare time-lag covariances of model with truth
 figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
-if ifDataGeneratedWithInput && ifInputPiecewiseConstant
+if numel(u)>1 && stcmp(inputType,'pwdconst')
     numPieces = double(floor(T/constantInputLength));
     m = min(u(:));
     M = max(u(:));
@@ -586,58 +593,59 @@ else
     box off    
 end
 
-%% Check for twists in latent space
-figure;
-subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
-subplot(2,3,2), 
-plot(squeeze(Extxt_true(1,1,:))' - squeeze(Ext_true(1,:).*Ext_true(1,:)))
-title('cov(x_1,x_1) over time')
-subplot(2,3,3), 
-if xDim > 1
-    plot(squeeze(Extxt_true(xDim-1,xDim,:))' - squeeze(Ext_true(xDim-1,:).*Ext_true(xDim,:)))
-end
-title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
-subplot(2,3,4), 
-t = 0.9 * obsScheme.obsTime(1);
-imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-if length(obsScheme.obsTime)>1
-    subplot(2,3,5), 
-    t = 0.9 * obsScheme.obsTime(2);
-    imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
-    title(['cov(x) at t = ', num2str(t)])
-end
-if length(obsScheme.obsTime)>2
-    subplot(2,3,6), 
-    t = 0.9 * obsScheme.obsTime(3);
-    imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
-    title(['cov(x) at t = ', num2str(t)])
-end
+% %% Check for twists in latent space
+% figure;
+% subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
+% subplot(2,3,2), 
+% plot(squeeze(Extxt_true(1,1,:))' - squeeze(Ext_true(1,:).*Ext_true(1,:)))
+% title('cov(x_1,x_1) over time')
+% subplot(2,3,3), 
+% if xDim > 1
+%     plot(squeeze(Extxt_true(xDim-1,xDim,:))' - squeeze(Ext_true(xDim-1,:).*Ext_true(xDim,:)))
+% end
+% title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
+% subplot(2,3,4), 
+% t = 0.9 * obsScheme.obsTime(1);
+% imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% if length(obsScheme.obsTime)>1
+%     subplot(2,3,5), 
+%     t = 0.9 * obsScheme.obsTime(2);
+%     imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
+%     title(['cov(x) at t = ', num2str(t)])
+% end
+% if length(obsScheme.obsTime)>2
+%     subplot(2,3,6), 
+%     t = 0.9 * obsScheme.obsTime(3);
+%     imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
+%     title(['cov(x) at t = ', num2str(t)])
+% end
+% 
+% %% Check for twists in latent space
+% figure;
+% subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
+% subplot(2,3,2), 
+% plot(squeeze(Extxt_h(1,1,:))' - squeeze(Ext_h(1,:).*Ext_h(1,:)))
+% title('cov(x_1,x_1) over time')
+% subplot(2,3,3), 
+% if xDim > 1
+%     plot(squeeze(Extxt_h(xDim-1,xDim,:))' - squeeze(Ext_h(xDim-1,:).*Ext_h(xDim,:)))
+% end
+% title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
+% subplot(2,3,4), 
+% t = 0.9 * obsScheme.obsTime(1);
+% imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% if length(obsScheme.obsTime)>1
+%     subplot(2,3,5), 
+%     t = 0.9 * obsScheme.obsTime(2);
+%     imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
+%     title(['cov(x) at t = ', num2str(t)])
+% end
+% if length(obsScheme.obsTime)>2
+%     subplot(2,3,6), 
+%     t = 0.9 * obsScheme.obsTime(3);
+%     imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
+%     title(['cov(x) at t = ', num2str(t)])
+% end
 
-%% Check for twists in latent space
-figure;
-subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
-subplot(2,3,2), 
-plot(squeeze(Extxt_h(1,1,:))' - squeeze(Ext_h(1,:).*Ext_h(1,:)))
-title('cov(x_1,x_1) over time')
-subplot(2,3,3), 
-if xDim > 1
-    plot(squeeze(Extxt_h(xDim-1,xDim,:))' - squeeze(Ext_h(xDim-1,:).*Ext_h(xDim,:)))
-end
-title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
-subplot(2,3,4), 
-t = 0.9 * obsScheme.obsTime(1);
-imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-if length(obsScheme.obsTime)>1
-    subplot(2,3,5), 
-    t = 0.9 * obsScheme.obsTime(2);
-    imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
-    title(['cov(x) at t = ', num2str(t)])
-end
-if length(obsScheme.obsTime)>2
-    subplot(2,3,6), 
-    t = 0.9 * obsScheme.obsTime(3);
-    imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
-    title(['cov(x) at t = ', num2str(t)])
-end
