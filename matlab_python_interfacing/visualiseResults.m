@@ -1,11 +1,5 @@
-%% Introduction
-% Following code serves to compare the LDS core functionalities as 
-% implemented by Lars Buesing and Jakob Macke in pop_spike_dyn, with
-% the results of a python implementation by Marcel Nonnenmacher.
-% It works by running the python code (not seen here) and exporting the
-% setup and results into a .mat file, from which the Matlab code runs
-% the exact same steps (see below). Then we compare.
-
+%% Visualises results of the EM stitching implementation
+% Stitching in space and time.
 
 clear all
 close all
@@ -16,21 +10,13 @@ clc
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
 
-datasets = {'LDS_save', ...
-            'LDS_data_to_visualise_good_1d_no_input', ...
-            'LDS_data_to_visualise_good_5d_no_input', ...
-            'LDS_data_to_visualise_bad_5d_no_input', ...            
-            'LDS_data_to_visualise_mediocre_5d_input'
-            };
-dataSet  = datasets{1}; % the first one is the most recent one not yet given a name
 
-dataSet  = 'LDS_save_rerun_small_run0';
-load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/',...
+%dataSet  = 'Beauty/LDS_save_2ndOrderTempStitching';
+%dataSet  = 'Beauty/LDS_save_spaceTimeStitching';
+dataSet  = 'LDS_save_spaceTime_okay_fit';
+%dataSet  = '/LDS_save';
+load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems',...
       '/', dataSet, '.mat'])
-baseSet  = 'LDS_save_rerun_small_run0';
-load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/',...
-      '/', baseSet, '.mat'], 'A', 'B', 'Q', 'mu0', 'V0', 'C', 'd', 'R', 'Pi', 'Pi_t')  
-  
   
 % gives the following variables:
 % observed data traces              y
@@ -65,6 +51,7 @@ end
   yDim = size(y,1);   % p 
   uDim = size(u,1);   % r
     
+%% Visualise observation protocol
 
 if ~ iscell(obsScheme.subpops)
   numPops = size(obsScheme.subpops,1);
@@ -85,78 +72,166 @@ idxStitched = true(yDim,yDim); % (i,j) for each pair of variables ...
 for k = 1:numPops
     idxStitched(subpops{k},subpops{k}) = 0;
 end
-%% Display parameter fits
-figure('Units', 'normalized','Position', [0.0,0.5,0.4,0.5]);
-subplot(2,3,1)
-imagesc(A_h)
-box off
-title('$\hat{A}$', 'interpreter', 'latex')
-set(gca, 'XTick', unique([1, xDim]))
-set(gca, 'YTick', unique([1, xDim]))
-set(gca, 'TickDir', 'out')
 
-subplot(2,3,2)
-if ifUseB
-    imagesc(B_h)
-    title('$\hat{B}$', 'interpreter', 'latex')
-    set(gca, 'XTick', unique([1, uDim]))
-    set(gca, 'YTick', unique([1, xDim]))
-    set(gca, 'TickDir', 'out')
-    box off    
-else
-    text(0,1,'Did not fit parameter B') 
-    axis([0,5,0,2])
-    axis off
-    box off
-    title('$\hat{B}$', 'interpreter', 'latex')
+protocol = false(yDim, T);
+for i = 2:length(obsScheme.obsTime)
+    idx = subpops{obsScheme.obsPops(i)+1};
+    protocol(idx,obsScheme.obsTime(i-1)+1:obsScheme.obsTime(i)) = true;
 end
 
-subplot(2,3,3)
+figure('Units', 'normalized','Position', [0.1,0.3,0.8,0.6]);
+imagesc(protocol)
+title('stitching protocol (probably too dense to properly visualize')
+xlabel('time')
+ylabel('neurons')
+
+%for i = 1:numPops:
+%    idxtPop = find(obsScheme.obsPops==i-1);
+%    for j = 1:length(idxtPop):
+%      protocol(subpops{i},obsScheme.obsTime(idxtPop(j)-1)+1:obsScheme.obsTime(idxtPop(j)))=1;
+%    end
+%end
+
+% %% Display parameter fits
+% figure('Units', 'normalized','Position', [0.0,0.5,0.4,0.5]);
+% subplot(2,3,1)
+% imagesc(A_h)
+% box off
+% title('$\hat{A}$', 'interpreter', 'latex')
+% set(gca, 'XTick', unique([1, xDim]))
+% set(gca, 'YTick', unique([1, xDim]))
+% set(gca, 'TickDir', 'out')
+% 
+% subplot(2,3,2)
+% if ifUseB
+%     imagesc(B_h)
+%     title('$\hat{B}$', 'interpreter', 'latex')
+%     set(gca, 'XTick', unique([1, uDim]))
+%     set(gca, 'YTick', unique([1, xDim]))
+%     set(gca, 'TickDir', 'out')
+%     box off    
+% else
+%     text(0,1,'Did not fit parameter B') 
+%     axis([0,5,0,2])
+%     axis off
+%     box off
+%     title('$\hat{B}$', 'interpreter', 'latex')
+% end
+% 
+% subplot(2,3,3)
+% imagesc(Q_h)
+% title('$\hat{Q}$', 'interpreter', 'latex')
+% set(gca, 'XTick', unique([1, xDim]))
+% set(gca, 'YTick', unique([1, xDim]))
+% set(gca, 'TickDir', 'out')
+% box off
+% 
+% subplot(2,3,4)
+% imagesc(C_h)
+% title('$\hat{C}$', 'interpreter', 'latex')
+% set(gca, 'XTick', unique([1, xDim]))
+% set(gca, 'YTick', unique([1, yDim]))
+% set(gca, 'TickDir', 'out')
+% box off
+% 
+% subplot(2,3,5)
+% bar(d_h)
+% title('$\hat{d}$', 'interpreter', 'latex')
+% set(gca, 'XTick', unique([1, yDim]))
+% set(gca, 'TickDir', 'out')
+% axis([0, yDim+1, 0, 1])
+% axis autoy
+% box off
+% 
+% subplot(2,3,6)
+% imagesc(diag(R_h))
+% title('$\hat{R}$', 'interpreter', 'latex')
+% set(gca, 'XTick', unique([1, yDim]))
+% set(gca, 'YTick', unique([1, yDim]))
+% set(gca, 'TickDir', 'out')
+% box off
+
+
+%% Show distance from initialisation
+
+figure('Units', 'normalized','Position', [0.0,0.5,0.55,0.4]);
+
+m = min([min(A_0(:)),min(A_h(:))]);
+M = max([max(A_0(:)),max(A_h(:))]);
+subplot(2,4,1)
+imagesc(A_0)
+axis off
+title('A_0')
+subplot(2,4,5)
+caxis([m,M])
+imagesc(A_h)
+axis off
+title('$\hat{A}$', 'interpreter', 'latex')
+caxis([m,M])
+
+m = min([min(Q_0(:)),min(Q_h(:))]);
+M = max([max(Q_0(:)),max(Q_h(:))]);
+subplot(2,4,2)
+imagesc(Q_0)
+caxis([m,M])
+axis off
+title('Q_0')
+subplot(2,4,6)
 imagesc(Q_h)
+caxis([m,M])
+axis off
 title('$\hat{Q}$', 'interpreter', 'latex')
-set(gca, 'XTick', unique([1, xDim]))
-set(gca, 'YTick', unique([1, xDim]))
-set(gca, 'TickDir', 'out')
-box off
 
-subplot(2,3,4)
+m = min([min(C_0(:)),min(C_h(:))]);
+M = max([max(C_0(:)),max(C_h(:))]);
+subplot(2,4,3)
+imagesc(C_0)
+caxis([m,M])
+axis off
+title('C_0')
+subplot(2,4,7)
 imagesc(C_h)
+caxis([m,M])
+axis off
 title('$\hat{C}$', 'interpreter', 'latex')
-set(gca, 'XTick', unique([1, xDim]))
-set(gca, 'YTick', unique([1, yDim]))
-set(gca, 'TickDir', 'out')
-box off
 
-subplot(2,3,5)
-bar(d_h)
-title('$\hat{d}$', 'interpreter', 'latex')
-set(gca, 'XTick', unique([1, yDim]))
+subplot(2,4,4)
+plot(d_h, 'g', 'linewidth', 2)
+hold on
+plot(d_0, '--', 'linewidth', 2)
+legend({'$\hat{d}$', '$d_0$'}, 'interpreter', 'latex')
+box off
 set(gca, 'TickDir', 'out')
-axis([0, yDim+1, 0, 1])
+set(gca, 'XTick', [0, yDim])
+axis([0,yDim+1,0,1])
 axis autoy
+title('d')
+subplot(2,4,8)
+plot(R_h, 'g', 'linewidth', 2)
+hold on
+plot(R_0, '--', 'linewidth', 2)
+legend({'diag $\hat{R}$', 'diag $R_0$'}, 'interpreter', 'latex')
 box off
-
-subplot(2,3,6)
-imagesc(diag(R_h))
-title('$\hat{R}$', 'interpreter', 'latex')
-set(gca, 'XTick', unique([1, yDim]))
-set(gca, 'YTick', unique([1, yDim]))
 set(gca, 'TickDir', 'out')
-box off
+set(gca, 'XTick', [0, yDim])
+axis([0,yDim+1,0,1])
+axis autoy
+title('diag(R)')
 
 %% Compare parameters with ground truth
 if groundTruthKnown
     figure('Units', 'normalized','Position', [0.5,0.5,0.4,0.5]);
     subplot(2,2,1)
+    [eigA_hs, idxS] = sort(real(eig(A_h)));
     if xDim > 1
         plot(1:xDim, sort(real(eig(A))), 'g', 'linewidth', 2)
         hold on
-        plot(1:xDim, sort(real(eig(A_h))), 'b', 'linewidth', 2)
+        plot(1:xDim, eigA_hs, 'b', 'linewidth', 2)
         xlabel('(sorted) eigenvalue')
     else
         plot(1:xDim, sort(eig(A)), 'go', 'linewidth', 2, 'markerSize', 8)
         hold on
-        plot(1:xDim, sort(eig(A_h)), 'bo', 'linewidth', 2, 'markerSize', 8)
+        plot(1:xDim, eigA_hs, 'bo', 'linewidth', 2, 'markerSize', 8)
         set(gca, 'XTick', [])
         xlabel('A_{11} (A is scalar)')
     end   
@@ -170,8 +245,9 @@ if groundTruthKnown
 
     subplot(2,2,2)
     if xDim > 1
-        text(0,0,'Here be something with C and maybe Q')
-        axis([0,5,-1,1])
+        imagesc(C(:,idxS))
+        title('C_{est}')
+        
     else    
         bar(1:yDim, C, 0.5, 'b', 'faceColor', 'b', 'edgeColor', 'none')
         hold on
@@ -374,7 +450,7 @@ else
     set(gca, 'XTick', [])
     set(gca, 'YTick', [1, yDim])
     box off
-    title(['empirical cov(y)'])
+    title(['Instantaneous covariances cov(y_n, y_n)'])
     ylabel('# neuron')
     subplot(2,2,4)
     mc = min([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
@@ -512,7 +588,7 @@ if numel(u)>1 && stcmp(inputType,'pwdconst')
     end
 else
     subplot(2,2,2)
-    LDScovy_h = C_h * (A_h * Pi_h) * C_h';
+    LDScovy_h = C_h * (A_h *Pi_h) * C_h';
     imagesc(LDScovy_h)
     for ip = 1:numPops
         if unique(diff(sort(subpops{ip}))) == [1]
@@ -565,7 +641,7 @@ else
     set(gca, 'XTick', [])
     set(gca, 'YTick', [1, yDim])
     box off
-    title(['empirical cov(y)'])
+    title(['Time-lagged covariances cov(y_n, y_{n-1})'])
     ylabel('# neuron')
     subplot(2,2,4)
     mc = min([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
@@ -647,5 +723,24 @@ end
 %     t = 0.9 * obsScheme.obsTime(3);
 %     imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
 %     title(['cov(x) at t = ', num2str(t)])
+% end
+
+%%
+% dt = 10;
+% figure; 
+% crosscov = A_h*Pi_h;
+% crosscorr_emp = zeros(2*dt+1,1);
+% for i = 1:xDim
+%     for j = i:xDim
+%         for t = -dt:dt, 
+%             crosscorr_emp(t+dt+1) = corr(x(i,(dt+1:end-dt))', x(j,(dt+1:end-dt)+t)'); 
+%         end
+%         plot(-dt:dt, crosscorr_emp)
+%         hold on
+%         plot(1, A_h(i,j), 'ro');
+%         hold off
+%         title(['i = ', num2str(i), ', j = ', num2str(j)])
+%         pause;
+%     end
 % end
 

@@ -16,112 +16,9 @@ rngSeed = random.randint(0, 1000) # other 'randomness' is also fixed
 
 from scipy.io import savemat # store results for comparison with Matlab code   
 
-def generatePars(xDim, yDim, uDim): 
-
-    while True:
-        W    = np.random.normal(size=[xDim,xDim])
-        if np.abs(np.linalg.det(W)) > 0.001:
-            break
-    A    = np.diag(np.linspace(0.8,0.999,xDim)) #np.diag(np.random.uniform(size=[xDim]))
-    #A    = np.dot(np.dot(W, A), np.linalg.inv(W))
-    Q    = np.identity(xDim)/2
-    mu0  = np.random.normal(size=[xDim]) #np.random.normal(size=[xDim])
-    V0   = np.identity(xDim)
-    #C    = np.ones([yDim,xDim])
-    C = np.random.normal(size=[yDim, xDim])
-
-    Pi    = np.array([sp.linalg.solve_discrete_lyapunov(A, Q)])[0,:,:]
-    Pi_t  = np.dot(A.transpose(), Pi)
-    CPiC = np.dot(C, np.dot(Pi, C.transpose()))
-
-    # set R_ii as 25% to 125% of total variance of y_i
-    R = (0.25 + np.random.uniform(size=[yDim])) * CPiC.diagonal() 
-    R = np.diag(R)
-    d  = np.arange(yDim)
-    d -= 10
-
-    B = np.random.normal(size=[xDim,uDim])            
-    return [A,B,Q,mu0,V0,C,d,R]
-
-def simulateExperiment(pars,T,Trial=1,obsScheme=None,
-                       u=None,inputType='pwconst',constInputLngth=1):
-
-    xDim = pars[0].shape[0] # get xDim from A
-    yDim = pars[5].shape[0] # get yDim from C
-
-    if u is None:
-        uDim = 0
-        ifGenInput = False
-    elif isinstance(u, np.ndarray) and u.shape[1]==T and u.shape[2]==Trial:
-        uDim = u.shape[0]
-        ifGenInput = False
-    elif isinstance(u, numbers.Integral):
-        uDim = u
-        ifGenInput = True        
-
-    if isinstance(pars[1],np.ndarray) and pars[1].size>0 and uDim==0:
-        print(('Warning: Parameter B is initialised, but uDim = 0. '
-               'Algorithm will ignore input for the LDS, outcomes may be '
-               'not as expected.'))
-
-    if ifGenInput:
-        if inputType=='pwconst': # generate piecewise constant input
-            u = np.zeros([uDim,T,Trial])
-            for tr in range(Trial):
-                for i in range(int(np.floor(T/constInputLngth))):
-                    idxRange = range((i-1)*constInputLngth, i*constInputLngth)
-                    u[:,idxRange,tr] = np.random.normal(size=[1])
-                u[:,:,tr] -= np.mean(u[:,:,tr])
-        elif inputType=='random': # generate random Gaussian input
-            u = np.random.normal(size=[uDim,T,Trial])
-            for tr in range(Trial):
-                u[:,:,tr] -= np.mean(u[:,:,tr])
-        else:
-            raise Exception(('selected option for input generation '
-                             'not supported. It is possible to directly '
-                             'hand over pre-computed inputs u.'))
-
-    if uDim > 0:
-      seq = ts.setStateSpaceModel('iLDS',[xDim,yDim,uDim],pars) # initiate model
-      seq.giveEmpirical().addData(Trial,T,[u],rngSeed)          # draw data
-    else: 
-      parsNoInput = pars.copy()
-      parsNoInput[1] = np.zeros([xDim,1])
-      seq = ts.setStateSpaceModel('iLDS',[xDim,yDim,1],parsNoInput) 
-      seq.giveEmpirical().addData(Trial,T,None,rngSeed)          # draw data
-
-
-    x = seq.giveEmpirical().giveData().giveTracesX()
-    y = seq._empirical._data.giveTracesY()        
-
-    return [x,y,u]
-
-def computeEstep(pars, y, u=None, obsScheme=None, eps=1e-30):
-
-    [A,B,Q,mu0,V0,C,d,R] = pars
-
-    if (u is None and 
-        not (B is None or B == [] or
-             (isinstance(B,np.ndarray) and B.size==0) or
-             (isinstance(B,np.ndarray) and B.size>0 and np.max(abs(B))==0) or
-             (isinstance(B,(float,numbers.Integral)) and B==0))):
-        print(('Warning: Parameter B is initialised, but input u = None. '
-               'Algorithm will ignore input for the LDS, outcomes may be '
-               'not as expected.'))
-
-    if obsScheme is None:
-        print('creating default observation scheme: Full population observed')
-        obsScheme = {'subpops': [list(range(yDim))], # creates default case
-                     'obsTime': [T],                 # of fully observed
-                     'obsPops': [0]}                 # population
-
-    [Ext_true, Extxt_true, Extxtm1_true, LLtr, tCovConvFt, tCovConvSm] = \
-        ssm_fit._LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme, eps)
-
-    return [Ext_true, Extxt_true, Extxtm1_true, LLtr, tCovConvFt, tCovConvSm]
-
 def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
         u=None, inputType='pwconst',constInputLngth=1,
+        truePars=None,
         y=None, x=None,
         saveFile='LDS_data.mat'):
 
@@ -204,8 +101,9 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
 
     Trial = 1 # fix to always just one repetition for now
 
+    truePars = generatePars(xDim, yDim, uDim, truePars)
+
     if y is None or x is None:
-        truePars = generatePars(xDim, yDim, uDim)
         [x,y,u] = simulateExperiment(truePars,T,Trial,obsScheme,
                                      u,inputType,constInputLngth)
         [A,B,Q,mu0, V0, C,d,R] = truePars
@@ -242,6 +140,8 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
     [initPars, initOptions] = ssm_fit._getInitPars(y, u, xDim,
                                                    fitOptions['ifUseB'], 
                                                    obsScheme)
+    print('A_0:')
+    print(initPars[0])
 
     # check initial goodness of fit for initial parameters
     [Ext_0,Extxt_0,Extxtm1_0,LL_0, 
@@ -311,3 +211,163 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
     savemat(saveFile,matlabSaveFile) # does the actual saving
 
     return [y,x,u,learnedPars,initPars,truePars]
+
+
+def generatePars(xDim, yDim, uDim,truePars): 
+
+    genPars = np.ones(8, dtype=bool)
+
+    if isinstance(truePars, dict):
+
+        if 'A' in truePars:
+            A = truePars['A']
+            genPars[0] = False
+        if 'B' in truePars:
+            B = truePars['B']
+            genPars[1] = False
+        if 'Q' in truePars:
+            Q = truePars['Q']
+            genPars[2] = False
+        if 'mu0' in truePars:
+            mu0 = truePars['mu0']
+            genPars[3] = False
+        if 'V0' in truePars:
+            V0 = truePars['V0']
+            genPars[4] = False
+        if 'C' in truePars:
+            C = truePars['C']
+            genPars[5] = False
+        if 'd' in truePars:
+            d = truePars['d']
+            genPars[6] = False
+        if 'R' in truePars:
+            R = truePars['R']
+            genPars[7] = False
+    elif ((isinstance(truePars,list) and len(truePars)==8) or 
+          (isinstance(truePars,np.ndarray) and truePars.size==8)):
+        for i in range(8):
+            if isinstance(truePars[i],np.ndarray): # just checking for type,   
+                genPars[i] = False                 # not fordimensionality! 
+        [A,B,Q,mu0,V0,C,d,R] = truePars # potentially overwrite some of those
+
+    if genPars[0]:
+        while True:
+            W    = np.random.normal(size=[xDim,xDim])
+            if np.abs(np.linalg.det(W)) > 0.001:
+                break
+        A    = np.diag(np.linspace(0.9,0.98,xDim)) 
+        #A    = np.dot(np.dot(W, A), np.linalg.inv(W))
+
+    if genPars[1]:
+        B = np.random.normal(size=[xDim,uDim])            
+
+    if genPars[2]:
+        Q    = np.identity(xDim)
+
+    if genPars[3]:
+        mu0  = np.random.normal(size=[xDim]) #np.random.normal(size=[xDim])
+
+    if genPars[4]:
+        V0   = np.identity(xDim)
+
+    if genPars[5]:
+        C = np.random.normal(size=[yDim, xDim])
+
+    Pi    = np.array([sp.linalg.solve_discrete_lyapunov(A, Q)])[0,:,:]
+    Pi_t  = np.dot(A.transpose(), Pi)
+    CPiC = np.dot(C, np.dot(Pi, C.transpose()))
+
+    print(CPiC.shape)
+    if genPars[7]:
+        # set R_ii as 25% to 125% of total variance of y_i
+        R = (0.25 + np.random.uniform(size=[yDim])) * CPiC.diagonal() 
+        R = np.diag(R)
+
+    if np.all(R.shape==(yDim,)):
+        R = np.diag(R)
+
+    if genPars[6]:
+        d = np.sqrt(np.mean(np.diag(CPiC+np.diag(R)))) * np.random.normal(size=yDim)
+
+    return [A.copy(),B.copy(),Q.copy(),
+            mu0.copy(),V0.copy(),
+            C.copy(),d.copy(),R.copy()]
+
+
+def simulateExperiment(pars,T,Trial=1,obsScheme=None,
+                       u=None,inputType='pwconst',constInputLngth=1):
+
+    xDim = pars[0].shape[0] # get xDim from A
+    yDim = pars[5].shape[0] # get yDim from C
+
+    if u is None:
+        uDim = 0
+        ifGenInput = False
+    elif isinstance(u, np.ndarray) and u.shape[1]==T and u.shape[2]==Trial:
+        uDim = u.shape[0]
+        ifGenInput = False
+    elif isinstance(u, numbers.Integral):
+        uDim = u
+        ifGenInput = True        
+
+    if isinstance(pars[1],np.ndarray) and pars[1].size>0 and uDim==0:
+        print(('Warning: Parameter B is initialised, but uDim = 0. '
+               'Algorithm will ignore input for the LDS, outcomes may be '
+               'not as expected.'))
+
+    if ifGenInput:
+        if inputType=='pwconst': # generate piecewise constant input
+            u = np.zeros([uDim,T,Trial])
+            for tr in range(Trial):
+                for i in range(int(np.floor(T/constInputLngth))):
+                    idxRange = range((i-1)*constInputLngth, i*constInputLngth)
+                    u[:,idxRange,tr] = np.random.normal(size=[1])
+                u[:,:,tr] -= np.mean(u[:,:,tr])
+        elif inputType=='random': # generate random Gaussian input
+            u = np.random.normal(size=[uDim,T,Trial])
+            for tr in range(Trial):
+                u[:,:,tr] -= np.mean(u[:,:,tr])
+        else:
+            raise Exception(('selected option for input generation '
+                             'not supported. It is possible to directly '
+                             'hand over pre-computed inputs u.'))
+
+    if uDim > 0:
+      seq = ts.setStateSpaceModel('iLDS',[xDim,yDim,uDim],pars) # initiate model
+      seq.giveEmpirical().addData(Trial,T,[u],rngSeed)          # draw data
+    else: 
+      parsNoInput = pars.copy()
+      parsNoInput[1] = np.zeros([xDim,1])
+      seq = ts.setStateSpaceModel('iLDS',[xDim,yDim,1],parsNoInput) 
+      seq.giveEmpirical().addData(Trial,T,None,rngSeed)          # draw data
+
+
+    x = seq.giveEmpirical().giveData().giveTracesX()
+    y = seq._empirical._data.giveTracesY()        
+
+    return [x,y,u]
+
+
+def computeEstep(pars, y, u=None, obsScheme=None, eps=1e-30):
+
+    [A,B,Q,mu0,V0,C,d,R] = pars
+
+    if (u is None and 
+        not (B is None or B == [] or
+             (isinstance(B,np.ndarray) and B.size==0) or
+             (isinstance(B,np.ndarray) and B.size>0 and np.max(abs(B))==0) or
+             (isinstance(B,(float,numbers.Integral)) and B==0))):
+        print(('Warning: Parameter B is initialised, but input u = None. '
+               'Algorithm will ignore input for the LDS, outcomes may be '
+               'not as expected.'))
+
+    if obsScheme is None:
+        print('creating default observation scheme: Full population observed')
+        obsScheme = {'subpops': [list(range(yDim))], # creates default case
+                     'obsTime': [T],                 # of fully observed
+                     'obsPops': [0]}                 # population
+
+    [Ext_true, Extxt_true, Extxtm1_true, LLtr, tCovConvFt, tCovConvSm] = \
+        ssm_fit._LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme, eps)
+
+    return [Ext_true, Extxt_true, Extxtm1_true, LLtr, tCovConvFt, tCovConvSm]

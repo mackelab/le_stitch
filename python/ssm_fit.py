@@ -81,7 +81,7 @@ def _getInitPars(y, u, xDim, obsScheme, ifUseB,
 
     # Innovation noise matrix Q
     if initQ == 'unity':
-        Q_0   = np.identity(xDim)              
+        Q_0   = 3 * np.identity(xDim)              
     # There is inherent degeneracy in any LDS regarding the basis in the latent
     # space. One way to counter this is to set the latent covariance to unity.
     # We do not do this, as it prevents careful study of when stitching can
