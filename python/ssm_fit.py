@@ -329,6 +329,7 @@ def _fitLDS(y,
         mu0s = [mu0]
         V0s  = [V0]
         Cs   = [C]
+        ds   = [d]
         Rs   = [R]
         Exts    = [Ext]
         Extxts  = [Extxt]
@@ -555,6 +556,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
             V[:,:,0,tr] = np.dot(Iq - KC, P0)
             P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q
             Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])
+            #print('filter -1 touched t =' + str(0))
 
             # compute marginal probability y_0
             M    = sp.linalg.cholesky(P0)
@@ -574,6 +576,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
             P[:,:,0,tr] = np.dot(np.dot(A,V[:,:,0,tr]), Atr) + Q  
             Pinv[:,:,0,tr] = sp.linalg.inv(P[:,:,0,tr])          
             logc[ 0, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
+            #print('filter 0 touched t =' + str(0))
 
                 
         t = 1 # now start with second time step ...
@@ -621,6 +624,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
 
                     # update posterior mean
                     mu[ :,t,tr] = AmuBu + np.dot(PKsht,CtrRyDiff_CAmu)
+                    #print('filter 1 touched t =' + str(t))
 
                     # compute marginal probability y_t | y_0, ..., y_{t-1}
                     logc[ t,tr] = (  np.sum((yDiff * yDiff) / Rj)   
@@ -641,6 +645,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
                     Pinv[:,:,t,tr] = sp.linalg.inv(P[:,:,t,tr])          
                     logc[ t, tr] = 0   # setting log(N(y|0,Inf)) = log(1)
 
+                    #print('filter 2 touched t =' + str(t))
                     t += 1
 
             # copy posterior covariances from the time we stopped updating
@@ -666,7 +671,7 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
     T     = mu.shape[1]
     Trial = mu.shape[2]
     mu_h = mu
-    V_h  = V
+    V_h  = V.copy()
     J    = np.zeros([mu.shape[0],mu.shape[0],T,Trial])
     Atr = A.transpose()
 
@@ -721,6 +726,7 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
                 t -= 1
             # at t = tCovConvFt[i], we update V_h to ensure we get the transition
             mu_h[ :,t,tr] += np.dot(Jconv, mu_h[:,t+1,tr] - AmuBu[:,t]) 
+
             # now V_h[:,:,t,tr] = Vconv, and if ifCoConv==False, it is still 
             # tCovConvSm[i] = tCovConvFt[i]+1 = t+1. Otherwise we the covariance
             # did converge and we also should look at tCovConvSm[i] now.
@@ -738,6 +744,7 @@ def _KalmanSmoother(A, Bu, mu, V, P, Pinv, obsTime, tCovConvFt, eps=0):
                 J[:,:,t,tr] = np.dot(np.dot(V[:,:,t,tr], Atr),
                                             Pinv[:,:,t,tr])
                 mu_h[ :,t,tr] += np.dot(J[:,:,t,tr], mu_h[:,t+1,tr]-AmuBu[:,t]) 
+
                 V_h[:,:,t,tr] += np.dot(np.dot(J[:,:,t,tr], 
                                                V_h[:,:,t+1,tr] - P[:,:,t,tr]),
                                                J[:,:,t,tr].transpose()) 
@@ -834,11 +841,7 @@ def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
 
     for tr in range(Trial):
         t = 1        
-        if obsTime[0] == 1:               # we already processed a whole subpop
-            rangeobstime = range(1,len(obsTime)) # and need to skip it
-        else:     # i.e. obsTime[-1]-obsTime[-2] > 1:
-            rangeobstime = range(0,len(obsTime))
-        for i in rangeobstime:            
+        for i in range(len(obsTime)):            
             while t <= tCovConvFt[i]: # before the filter covariances converged
                 # in this interval, the filtered covariances kept changing, and
                 # thus so did the smoothed covariances. We have to look up all.                
@@ -982,7 +985,6 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     for tr in range(Trial):              # collapse over trials ...
         ytr = y[:,:,tr]
         for i in rangeobstime:         # ... but keep  apart
-            idg = obsIdxG[i]           # list of currently observed idx groups
             idx = subpops[obsPops[i]]  # list of currently observed y_i
             if i == 0:
                 ts  = range(0, obsTime[i])                                            
@@ -997,13 +999,10 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                 sExts[:,j]      += tsExt    # these only sum entries 
                 sExtxts[:,:,j]  += tsExtxt  # seen by their index group
 
-            if len(idx)>0:
-                tsyExt  = np.einsum('in,jn->ij', 
-                                    ytr[np.ix_(idx,ts)], 
-                                    Ext[:,ts,tr])     
-                syExt[idx,:] += tsyExt # index groups are non-overlapping, i.e.
-                                       # can store outer products y(i)_t x_t'
-                                       # for all i in the same matrix. 
+            if len(idx)>0:     
+                syExt[idx,:] += np.einsum('in,jn->ij',   # index groups are non-overlapping, i.e.
+                                    ytr[np.ix_(idx,ts)], # can store outer products y(i)_t x_t'
+                                    Ext[:,ts,tr])        # for all i in the same matrix. 
 
     del ytr
 
@@ -1011,6 +1010,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
     sExtxt2toN   = sExtxt1toN - np.sum(Extxt[:,:,0 , :],2)  
     sExtxt1toNm1 = sExtxt1toN - np.sum(Extxt[:,:,T-1,:],2)           
+
     sExtxtm1 = np.sum(Extxtm1[:,:,1:T,:], (2,3)) # sum over E[x_t x_{t-1}']        
 
     
