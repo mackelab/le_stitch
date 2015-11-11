@@ -27,8 +27,8 @@ def generatePars(xDim, yDim, uDim):
     Q    = np.identity(xDim)/2
     mu0  = np.random.normal(size=[xDim]) #np.random.normal(size=[xDim])
     V0   = np.identity(xDim)
-    C    = np.ones([yDim,xDim])
-    #C = np.random.normal(size=[yDim, xDim])
+    #C    = np.ones([yDim,xDim])
+    C = np.random.normal(size=[yDim, xDim])
 
     Pi    = np.array([sp.linalg.solve_discrete_lyapunov(A, Q)])[0,:,:]
     Pi_t  = np.dot(A.transpose(), Pi)
@@ -39,7 +39,6 @@ def generatePars(xDim, yDim, uDim):
     R = np.diag(R)
     d  = np.arange(yDim)
     d -= 10
-    d *= 10
 
     B = np.random.normal(size=[xDim,uDim])            
     return [A,B,Q,mu0,V0,C,d,R]
@@ -206,20 +205,20 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
     Trial = 1 # fix to always just one repetition for now
 
     if y is None or x is None:
-        pars = generatePars(xDim, yDim, uDim)
-        [x,y,u] = simulateExperiment(pars,T,Trial,obsScheme,
+        truePars = generatePars(xDim, yDim, uDim)
+        [x,y,u] = simulateExperiment(truePars,T,Trial,obsScheme,
                                      u,inputType,constInputLngth)
-        [A,B,Q,mu0, V0, C,d,R] = pars
+        [A,B,Q,mu0, V0, C,d,R] = truePars
         Pi      = np.array([sp.linalg.solve_discrete_lyapunov(A,Q)])[0,:,:]
         Pi_t    = np.dot(A.transpose(),   Pi  )
 
         [Ext_true, Extxt_true, Extxtm1_true, LLtr, tCovConvFt, tCovConvSm] = \
-                        computeEstep(pars, y, u, obsScheme, 
+                        computeEstep(truePars, y, u, obsScheme, 
                         fitOptions['covConvEps'])
     else: 
 
-        pars = [0,0,0,0,0,0,0,0]
-        [A,B,Q,mu0, V0, C,d,R] = pars
+        truePars = [0,0,0,0,0,0,0,0]
+        [A,B,Q,mu0, V0, C,d,R] = truePars
         Pi   = 0
         Pi_t = 0
         Ext_true = 0
@@ -255,21 +254,13 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
                                                     u, 
                                                     fitOptions['covConvEps'])
     # fit the model to data           
-    [A_hs,B_hs,Q_hs,mu0_hs,V0_hs,C_hs,d_hs,R_hs,LL] = ssm_fit._fitLDS(
+    [[A_h],[B_h],[Q_h],[mu0_h],[V0_h],[C_h],[d_h],[R_h],LL] = ssm_fit._fitLDS(
                 y, 
                 u,
                 obsScheme,
                 initPars, 
                 fitOptions,
                 xDim)
-    A_h = A_hs[-1].copy()
-    B_h = B_hs[-1].copy()
-    Q_h = Q_hs[-1].copy()
-    mu0_h = mu0_hs[-1].copy()
-    V0_h = V0_hs[-1].copy()
-    C_h = C_hs[-1].copy()
-    d_h = d_hs[-1].copy()
-    R_h = R_hs[-1].copy()
 
     elapsedTime = time.time() - t
     print('elapsed time for fitting is')
@@ -284,7 +275,9 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
                                                                          y,None,obsScheme, 
                                                                          fitOptions['covConvEps'])
             
+    learnedPars = [A_h.copy(),B_h.copy(),Q_h.copy(),mu0_h.copy(),V0_h.copy(),C_h.copy(),d_h.copy(),R_h.copy()]
     [A_0,B_0,Q_0,mu0_0, V0_0, C_0,d_0,R_0] = initPars
+
 
     Pi_h    = np.array([sp.linalg.solve_discrete_lyapunov(A_h, Q_h)])[0,:,:]
     Pi_t_h  = np.dot(A_h.transpose(), Pi_h)
@@ -305,7 +298,7 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
                       'A_0':A_0, 'B_0':B_0, 'Q_0':Q_0, 'mu0_0':mu0_0,'V0_0':V0_0,'C_0':C_0,'d_0':d_0, 'R_0':R_0,
                       'A_1':A_1, 'B_1':B_1, 'Q_1':Q_1, 'mu0_1':mu0_1,'V0_1':V0_1,'C_1':C_1,'d_1':d_1, 'R_1':R_1,
                       'A_h':A_h, 'B_h':B_h, 'Q_h':Q_h, 'mu0_h':mu0_h,'V0_h':V0_h,'C_h':C_h,'d_h':d_h, 'R_h':R_h,
-                      'A_hs':A_hs, 'B_hs':B_hs, 'Q_hs':Q_hs, 'mu0_hs':mu0_hs,'V0_hs':V0_hs,'C_hs':C_hs,'d_hs':d_hs, 'R_hs':R_hs,
+                      #'A_hs':A_hs, 'B_hs':B_hs, 'Q_hs':Q_hs, 'mu0_hs':mu0_hs,'V0_hs':V0_hs,'C_hs':C_hs,'d_hs':d_hs, 'R_hs':R_hs,
                       'fitOptions'  : fitOptions,
                       'initOptions' : initOptions, 
                       'Ext':Ext_0, 'Extxt':Extxt_0, 'Extxtm1':Extxtm1_0,
@@ -317,4 +310,4 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
 
     savemat(saveFile,matlabSaveFile) # does the actual saving
 
-    return [y,x,u,pars,initPars]
+    return [y,x,u,learnedPars,initPars,truePars]
