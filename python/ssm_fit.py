@@ -7,6 +7,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 from IPython import display  # for live plotting in jupyter
 
+from scipy.io import savemat # store intermediate results 
+
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _getInitPars(y, u, xDim, obsScheme, ifUseB,
@@ -190,7 +192,8 @@ def _fitLDS(y,
             obsScheme,
             initPars,
             fitoptions,
-            xDim=None):
+            xDim=None,
+            saveFile=None):
     """ OUT = _fitLDS(y*,obsScheme*,initPars, maxIter, epsilon, 
                     ifPlotProgress,xDim)
         y:         data array of observed variables
@@ -373,6 +376,12 @@ def _fitLDS(y,
             Extxtm1s.append(Extxtm1.copy())
         
         stepCount += 1            
+
+        if not saveFile is None:
+            np.savez(saveFile+'_tmp_'+str(stepCount),
+                     stepCount,LLtr,  
+                     A,B,Q,mu0,V0,C,d,R,
+                     covConvEps,tCovConvFt,tCovConvSm)
         
         [Ext, Extxt, Extxtm1, LLtr, tCovConvFt, tCovConvSm] = E_step(
                                              A, 
@@ -387,6 +396,7 @@ def _fitLDS(y,
                                              u,
                                              obsScheme,
                                              covConvEps)
+
 
         LL_new = np.sum(LLtr) # discarding distinction between trials
         LLs.append(LL_new.copy())

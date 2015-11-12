@@ -19,6 +19,7 @@ from scipy.io import savemat # store results for comparison with Matlab code
 def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
         u=None, inputType='pwconst',constInputLngth=1,
         truePars=None,
+	initPars=None,
         y=None, x=None,
         saveFile='LDS_data.mat'):
 
@@ -137,9 +138,12 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
     t = time.time()
 
     # get initial parameters
-    [initPars, initOptions] = ssm_fit._getInitPars(y, u, xDim,
-                                                   fitOptions['ifUseB'], 
-                                                   obsScheme)
+    if initPars is None:
+        [initPars, initOptions] = ssm_fit._getInitPars(y, u, xDim,
+                                                       fitOptions['ifUseB'], 
+                                                       obsScheme)
+    else:
+        print('Using provided initial parameters. User is responsible for making sure they work!')
     print('A_0:')
     print(initPars[0])
 
@@ -160,7 +164,8 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
                 obsScheme,
                 initPars, 
                 fitOptions,
-                xDim)
+                xDim,
+                saveFile)
 
     elapsedTime = time.time() - t
     print('elapsed time for fitting is')
