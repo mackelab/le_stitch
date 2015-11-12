@@ -15,8 +15,8 @@ clc
 
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
-
-load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_check_E.mat'])
+%load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_check_E.mat'])
+load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_save.mat'])
 % gives data traces x, y, data length T
 % also gives true parameters {A,Q,mu0,V0,C,R} used to generate the data
 % also gives E-step results (E[xt], E[x_t x_t'], E[x_t x_{t-1}']) as
@@ -61,7 +61,7 @@ trueparams.opts.algorithmic.EMIterations.abortDecresingVarBound = 1;
 
 seq.x = x;
 seq.y = y;
-seq.T = T;
+seq.T = double(T);
 
 % what the python E-step got as parameter estimate initializations
 pyparamsIn.model.A = A_0;
@@ -129,7 +129,6 @@ clearvars -except xDim yDim trueparams pyparamsOut pyparamsIn seq pySeq Ext Extx
 % E-step: Get Matlab version of Ext, Extxt, Extxtm1
 seq = LDSInference(pyparamsIn,seq); % adds seq.posterior, otherwise returns
                                     % the exact same seq
-
 %%
 % M-step 
 matparamsOut = LDSMStepLDS(pyparamsIn,pySeq);  
@@ -171,7 +170,7 @@ for i = 1:xDim
     line([1.1*m,1.1*M], ...
      [1.1*m,1.1*M],'color','c')
     axis(1.1*[m,M+0.001,m,M+0.001])
-    plot(Ext(i,:), seq.posterior.xsm(i,:), '.', 'color', clrs(end,:))
+    plot(Ext(i,:), seq.posterior.xsm(i,:), '.', 'color', clrs(end,:), 'markerSize', 10)
     plot(squeeze(Extxt(i,i,:))'-Ext(i,:).^2, ...
          seq.posterior.Vsm((0:xDim:end-1)+i, i), ...
          'o', 'color', clrs(1,:))

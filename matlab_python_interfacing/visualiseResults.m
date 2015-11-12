@@ -13,8 +13,9 @@ addpath( ...
 
 %dataSet  = 'Beauty/LDS_save_2ndOrderTempStitching';
 %dataSet  = 'Beauty/LDS_save_spaceTimeStitching';
-dataSet  = 'LDS_save_spaceTime_okay_fit';
-%dataSet  = '/LDS_save';
+%dataSet  = 'LDS_save_spaceTime_okay_fit';
+%dataSet = 'LDS_save_p200_good_fit_bad_stitch';
+dataSet  = 'LDS_save';
 load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems',...
       '/', dataSet, '.mat'])
   
@@ -74,6 +75,8 @@ for k = 1:numPops
 end
 
 protocol = false(yDim, T);
+idx = subpops{obsScheme.obsPops(1)+1};
+protocol(idx,1:obsScheme.obsTime(1)) = true;
 for i = 2:length(obsScheme.obsTime)
     idx = subpops{obsScheme.obsPops(i)+1};
     protocol(idx,obsScheme.obsTime(i-1)+1:obsScheme.obsTime(i)) = true;

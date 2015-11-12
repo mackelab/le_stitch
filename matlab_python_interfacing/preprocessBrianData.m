@@ -17,7 +17,7 @@ close all
 
 
 %% specify data set to load
-dataset = '081115_v1'; % date/month/year/_version
+dataset = '091115_v2'; % date/month/year/_version
 load(['/home/mackelab/Desktop/Projects/Stitching/data/clustered_networks/raw_spikes/',dataset,'.mat'])
 % loading gives two variables, ext and inh, that got translated from
 % python dictionaries into matlab structures. Let's hope that nothing 
@@ -168,7 +168,7 @@ set(gca, 'TickDir', 'out')
 axis([x(1)-width*(x(2)-x(1))/2, x(end)+(x(2)-x(1))*width/2, 0, 1.1*max(h)])
 
 subplot(2,3,3)
-covx = cov(X');
+covx = cov(X(1:Ne,:)');
 imagesc(covx)
 colormap('gray')
 title('full covariance (exc. & inh.)')
@@ -258,21 +258,17 @@ box off
 set(gca, 'TickDir', 'out')
 title('est. emission offsets d')
 
-%% A HEAVEN'S GIFT. OR GERSNTER'S: a professional fluorescence generator! 
+%% generating fluorescence traces
 
-idx = 4;
-
-S = [];
-S.dur      = 200;
-S.spkTimes = st{idx};
-S.recycleSpikeTimes = 1;
-S.frameRate = 50;
-OUT = modelCalcium(S,1);
-subplot(3,1,1)
-for i = 1:length(st{idx})
-    line(st{idx}(i)*[1,1], [0,5], 'color', 'r'); 
-end
-%%
-S.dur      = 200;
-S.spkTimes = st{5};
-OUT = modelCalcium(S,1);
+% idx = 4;
+% 
+% S = [];
+% S.dur      = 200;
+% S.spkTimes = st{idx};
+% S.recycleSpikeTimes = 1;
+% S.frameRate = 50;
+% OUT = modelCalcium(S,1);
+% subplot(3,1,1)
+% for i = 1:length(st{idx})
+%     line(st{idx}(i)*[1,1], [0,5], 'color', 'r'); 
+% end
