@@ -63,6 +63,8 @@ def _getInitPars(y, u, xDim, obsScheme, ifUseB,
     # Latent dynamics matrix A
     if initA == 'random':
         A_0   = np.diag(np.random.uniform(size=[xDim]))
+    if initA == 'zero':
+        A_0   = np.zeros([xDim,xDim])
     # There is inherent degeneracy in any LDS regarding the basis in the latent
     # space. Any rotation of A can be corrected for by rightmultiplying C with
     # the inverse rotation matrix. We do not wish to limit A to any certain
@@ -253,6 +255,7 @@ def _fitLDS(y,
     ifTraceParamHist  = fitoptions['ifTraceParamHist']
     ifRDiagonal       = fitoptions['ifRDiagonal']     
     covConvEps        = fitoptions['covConvEps']
+    ifFitA            = fitoptions['ifFitA']
 
     if not (isinstance(maxIter, numbers.Integral) and maxIter > 0):
         print('maxIter:')
@@ -280,6 +283,11 @@ def _fitLDS(y,
         print(ifRDiagonal)
         raise Exception('argument ifRDiagonal has to be a boolean')   
 
+    if not isinstance(ifFitA, bool):
+        print('ifFitA:')
+        print(ifFitA)
+        raise Exception('argument ifFitA has to be a boolean')   
+
     if (not isinstance(covConvEps,(float,numbers.Integral))
         or not covConvEps >= 0):
         print('covConvEps:')
@@ -306,6 +314,8 @@ def _fitLDS(y,
     [A,B,Q,mu0,V0,C,d,R,xDim] = _unpackInitPars(initPars,
                                                 uDim,yDim,None,
                                                 ifRDiagonal)  
+
+    A_0 = A.copy()
 
     E_step = _LDS_E_step 
     M_step = _LDS_M_step 
@@ -360,6 +370,10 @@ def _fitLDS(y,
                                              suu,
                                              suuinv,
                                              Ti)
+
+        if not ifFitA:
+            A = A_0 # diry solution: just revert to initialisation
+
 
         # store intermediate results for each time step
         if ifTraceParamHist:
@@ -1058,6 +1072,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
         sExsuuusuExm1  = np.dot(sExtu,               suuvinvsuExtm1)
         sExm1suusuExm1 = np.dot(suExtm1.transpose(), suuvinvsuExtm1)
                       
+
         A = np.dot(sExtxtm1-sExsuuusuExm1, 
                    sp.linalg.inv(sExtxt1toNm1-sExm1suusuExm1))                                    
         Atr = A.transpose()
@@ -1324,7 +1339,8 @@ def _unpackInitPars(initPars, uDim, yDim=None, xDim=None,
         
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30):
+def _getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30,
+                            ifFitA=True):
     """ OUT = _getNumericsFirstEMCycle(initPars*,obsScheme*,y*,u*,eps)
         initPars: collection of initial parameters for LDS
         obsScheme: observation scheme for given data, stored in dictionary
@@ -1344,6 +1360,10 @@ def _getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30):
     # do one M-step      
     [A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti] = \
       _LDS_M_step(Ext_0,Extxt_0,Extxtm1_0,y,u,obsScheme) 
+
+    if not ifFitA:
+        A_1 = A_0.copy() # simply discard the update!
+
     # do another E-step
     [Ext_1, Extxt1_1, Extxtm1_1,LL_1, tCovConvFt, tCovConvSm] = \
       _LDS_E_step(A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,y,u,obsScheme, eps)

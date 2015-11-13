@@ -85,6 +85,24 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
         raise Exception(('ifRDiagonal has to be a boolean'))
 
     try:
+        fitOptions['ifFitA']
+    except:
+        fitOptions['ifFitA'] = True
+    if not isinstance(fitOptions['ifFitA'],bool):
+        print('ifFitA:')
+        print(fitOptions['ifFitA'] )
+        raise Exception(('ifFitA has to be a boolean'))
+
+    try:
+        fitOptions['ifInitCwithPCA']
+    except:
+        fitOptions['ifInitCwithPCA'] = False
+    if not isinstance(fitOptions['ifInitCwithPCA'],bool):
+        print('ifInitCwithPCA:')
+        print(fitOptions['ifInitCwithPCA'] )
+        raise Exception(('ifInitCwithPCA has to be a boolean'))        
+
+    try:
         fitOptions['covConvEps']
     except:
         fitOptions['covConvEps'] = 1e-30
@@ -139,9 +157,22 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
 
     # get initial parameters
     if initPars is None:
+        if fitOptions['ifFitA']:
+            initAType = 'random'
+        elif not fitOptions['ifFitA']:
+            initAType = 'zero'
+        if fitOptions['ifInitCwithPCA']:
+            print(('Warning: Using full data information for initialisation of C. '
+                   'When doing spatial stitching, this is cheating.'))
+            initCType = 'PCA'
+        else: 
+            initCType = 'random'
         [initPars, initOptions] = ssm_fit._getInitPars(y, u, xDim,
                                                        fitOptions['ifUseB'], 
-                                                       obsScheme)
+                                                       obsScheme,
+                                                       initA   =initAType,
+                                                       initC   =initCType)
+
     else:
         print('Using provided initial parameters. User is responsible for making sure they work!')
     print('A_0:')
@@ -156,7 +187,8 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
                                                     obsScheme, 
                                                     y, 
                                                     u, 
-                                                    fitOptions['covConvEps'])
+                                                    fitOptions['covConvEps'],
+                                                    fitOptions['ifFitA'])
     # fit the model to data           
     [[A_h],[B_h],[Q_h],[mu0_h],[V0_h],[C_h],[d_h],[R_h],LL] = ssm_fit._fitLDS(
                 y, 
