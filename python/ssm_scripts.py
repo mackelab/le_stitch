@@ -19,7 +19,7 @@ from scipy.io import savemat # store results for comparison with Matlab code
 def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
         u=None, inputType='pwconst',constInputLngth=1,
         truePars=None,
-	initPars=None,
+	    initPars=None,
         y=None, x=None,
         saveFile='LDS_data.mat'):
 
@@ -94,6 +94,15 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
         raise Exception(('ifFitA has to be a boolean'))
 
     try:
+        fitOptions['ifInitAwith0_8']
+    except:
+        fitOptions['ifInitAwith0_8'] = False
+    if not isinstance(fitOptions['ifInitAwith0_8'],bool):
+        print('ifInitAwith0_8:')
+        print(fitOptions['ifInitAwith0_8'] )
+        raise Exception(('ifInitAwith0_8 has to be a boolean'))        
+
+    try:
         fitOptions['ifInitCwithPCA']
     except:
         fitOptions['ifInitCwithPCA'] = False
@@ -101,7 +110,6 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
         print('ifInitCwithPCA:')
         print(fitOptions['ifInitCwithPCA'] )
         raise Exception(('ifInitCwithPCA has to be a boolean'))        
-
     try:
         fitOptions['covConvEps']
     except:
@@ -158,7 +166,10 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
     # get initial parameters
     if initPars is None:
         if fitOptions['ifFitA']:
-            initAType = 'random'
+            if fitOptions['ifInitAwith0_8']:
+                initAType = '0_8I'
+            else:
+                initAType = 'random'
         elif not fitOptions['ifFitA']:
             initAType = 'zero'
         if fitOptions['ifInitCwithPCA']:

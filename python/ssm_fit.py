@@ -63,8 +63,10 @@ def _getInitPars(y, u, xDim, obsScheme, ifUseB,
     # Latent dynamics matrix A
     if initA == 'random':
         A_0   = np.diag(np.random.uniform(size=[xDim]))
-    if initA == 'zero':
+    elif initA == 'zero':
         A_0   = np.zeros([xDim,xDim])
+    elif initA == '0_8I':
+        A_0   = 0.8 * np.identity(xDim)
     # There is inherent degeneracy in any LDS regarding the basis in the latent
     # space. Any rotation of A can be corrected for by rightmultiplying C with
     # the inverse rotation matrix. We do not wish to limit A to any certain
