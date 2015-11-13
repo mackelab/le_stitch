@@ -23,7 +23,7 @@ load(['/home/mackelab/Desktop/Projects/Stitching/data/clustered_networks/raw_spi
 % python dictionaries into matlab structures. Let's hope that nothing 
 % important broke in the process.
 
-T  = 200000; % length of simulation, has to be verified
+T  = 2000000; % length of simulation, has to be verified
 dt = 20;     % 
 
 disp('CHECK THIS TIME AND TIME AGAIN:')

@@ -15,7 +15,10 @@ addpath( ...
 %dataSet  = 'Beauty/LDS_save_spaceTimeStitching';
 %dataSet  = 'LDS_save_spaceTime_okay_fit';
 %dataSet = 'LDS_save_p200_good_fit_bad_stitch';
-dataSet  = 'LDS_save';
+%dataSet  = 'LDS_save_9x3_trulyNoDynamics';
+%dataSet = 'LDS_save_9x3_withDynamicsLowOverlap';
+
+dataSet = 'stitchingInTime_FullFullFull';
 load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems',...
       '/', dataSet, '.mat'])
   
@@ -33,7 +36,7 @@ load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems',...
 %                                   ifInputPiecewiseConstant
 %                                   constantInputLength
 
-constantInputLength = double(constantInputLength);
+%constantInputLength = double(constantInputLength);
 
 if max(abs([A(:);C(:)])) > 0
     groundTruthKnown = 1;
