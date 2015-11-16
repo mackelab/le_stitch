@@ -2141,8 +2141,8 @@ class timeSeriesModel:
             self._modelDescr = modelDescr
         elif modelClass in ['empirical','unknown','experiment']:
             self._modelDescr = 'unknown'
-            print(('no data model. Assuming data is given by real experiment '
-                   'or other external source'))
+            #print(('no data model. Assuming data is given by real experiment '
+            #       'or other external source'))
         else:
             print('modelClass = ')
             print(modelClass)
@@ -4126,7 +4126,7 @@ class stateSpaceModelFactorization:
         return tmp.copy()
     
     def _checkFactorizationHomogeneous(cls, conds):        
-        print('checking factorization of model ...')
+        #print('checking factorization of model ...')
         varDescr = cls._tsmodel.giveVarDescr()
         if not cls._tsmodel.giveIfCausal():
             print(('WARNING: Provided model is acausal. Could potentially '
@@ -4143,7 +4143,7 @@ class stateSpaceModelFactorization:
                 raise Exception(('checking if directed acyclic graph... ' 
                                  'Factorization describes a cyclic graph!'))                      
             i += 1
-        print('... factorization (locally) describes directed acyclic graph')
+        #print('... factorization (locally) describes directed acyclic graph')
             
     @staticmethod
     def _checkIfOwnFather(conds, parents, template):

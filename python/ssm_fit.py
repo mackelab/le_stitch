@@ -11,193 +11,21 @@ from scipy.io import savemat # store intermediate results
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
-def _getInitPars(y, u, xDim, obsScheme, ifUseB,
-                 initA   ='random',
-                 initB   ='random',
-                 initQ   ='unity',
-                 initmu0 ='zero',
-                 initV0  ='unity',
-                 initC   ='random',
-                 initd   ='mean',
-                 initR   ='fraction',
-                 ifVisualiseInitPars = True,
-                 ):
-    """ OUT = _getInitPars(y*,u*,xDim*,obsScheme*,ifUseB*,
-                           initA,initB,initQ,initmu0,initV0,initC,initd,initR,
-                           ifVisualiseInitPars)
-        y:         data array of observed variables
-        u:         data array of input variables
-        xDim:      dimensionality of (sole subgroup of) latent state X
-        obsScheme: observation scheme for given data, stored in dictionary
-                   with keys 'subpops', 'obsTimes', 'obsPops'
-        initA   : string specifying methods of parameter initialisation
-        initB   :  ""
-        initQ   :  ""
-        initmu0 :  "" 
-        initV0  :  ""
-        initC   :  "" 
-        initd   :  ""
-        initR   : (see below for details)
-        ifVisualiseInitPars : boolean, specifying whether to plot the outputs
-                              of this function for inspection
-        Initialises parameters of an LDS, potentially by looking at the data.
-
-    """
-    yDim  = y.shape[0]
-    T     = y.shape[1]
-    Trial = y.shape[2]
-    if isinstance(u,np.ndarray) and u.shape[1]==T and u.shape[2]==Trial:
-        uDim = u.shape[0]
-    else:
-        uDim = 0        
-
-    covy = np.cov(y[:,:,0]-np.mean(y, (1,2)).reshape(yDim,1)) 
-    # Depending on the observation scheme, not all entries of the data 
-    # covariance are also interpretable, and the entries of covy for pairs of 
-    # variables (y_i,y_j) that were not observed together may indeed contain
-    # NaN's depending on the choice of representation of missing data entries.
-    # Keep this in mind when selecting parameter initialisation methods such
-    # as options['initC']=='PCA', which will work with the full matrix covy.
-    # Note that the diagonal of covy should also be safe to use. 
-
-    # Latent dynamics matrix A
-    if initA == 'random':
-        A_0   = np.diag(np.random.uniform(size=[xDim]))
-    elif initA == 'zero':
-        A_0   = np.zeros([xDim,xDim])
-    elif initA == '0_8I':
-        A_0   = 0.8 * np.identity(xDim)
-    # There is inherent degeneracy in any LDS regarding the basis in the latent
-    # space. Any rotation of A can be corrected for by rightmultiplying C with
-    # the inverse rotation matrix. We do not wish to limit A to any certain
-    # basis in latent space, but in a first approach may still initialise A as
-    # diagonal matrix .     
-
-    # Input matrix B for input to latent dynamics
-    if uDim > 0 and ifUseB and initB == 'random':
-        B_0   = np.random.normal(size=[xDim, uDim])   
-    elif not ifUseB:
-        B_0   = 0
-    elif uDim == 0:
-        B_0 = np.zeros([xDim, uDim])
-        print(('Warning: Latent input parameter B was innitialised with '
-               'shape (xDim,0), and is flagged to be used (ifUseB = True).'))
-    # Parameter B is never touched within the code unless ifUseB == True,
-    # hence we don't need to ensure its correct dimensionality if ifUseB==False
-
-    # Innovation noise matrix Q
-    if initQ == 'unity':
-        Q_0   = 3 * np.identity(xDim)              
-    # There is inherent degeneracy in any LDS regarding the basis in the latent
-    # space. One way to counter this is to set the latent covariance to unity.
-    # We do not do this, as it prevents careful study of when stitching can
-    # really work. Nevertheless, we can still initialise parameters Q as 
-    # unity matrices without commiting to any assumed structure in the  final
-    # innovation noise estimate. 
-    # Note that the initialisation choice for Q should be in agreement with the
-    # initialisation of C! For instance when setting Q to the identity and 
-    # when getting C from PCA, one should also normalise the rows of C with
-    # the sqrt of the variances of y_i, i.e. really whiten the assumed 
-    # latent covariances instead of only diagonalising them.
-
-    # Mean mu0 and covariance V0 of latent Markov chain initial element x_0
-    if initmu0 == 'zero':
-        mu0_0 = np.zeros(xDim)   
-    elif initmu0 == 'random':
-        mu0_0 = np.random.normal(size=[xDim])   
-
-    if initV0 == 'unity':
-        V0_0  = np.identity(xDim)               
-    # Assuming long time series lengths, parameters for the very first time
-    # step are usually of minor importance for the overall fitting result
-    # unless they are overly restrictive. We by default initialise V0 
-    # non-commitingly to the identity matrix (same as Q) and mu0 either
-    # to all zero or with a slight random perturbation on that.   
-
-    # Emission mixture matrix C and (privat) emission noise variances R
-    if initR == 'fraction':
-        R_0   = 0.1 * covy.diagonal()
-    if initC == 'PCA':
-        w, v = np.linalg.eig(covy-np.diag(R_0))                           
-        w = np.sort(w)[::-1] # eigenvalues not always sorted according to numpy                                              
-        C_0 = np.dot(v[:, range(xDim)], np.diag(np.sqrt(w[range(xDim)])))  
-    elif initC == 'random':
-        C_0 = np.random.normal(size=[yDim,xDim])
-    # C and R should not be initialised independently!
-    # C in many cases is the single-most important parameter to properly 
-    # initialise. If the data is fully observed, a basic and powerful solution
-    # is to use PCA on the full data covariance (after attributing a certain 
-    # fraction of variance to R). In stitching contexts, this however is not
-    # possible. Finding a good initialisation in the context of incomplete data
-    # observation is not trivial. 
-
-    # Emission offset d
-    if initd == 'mean':
-        d_0    = np.mean(y,(1,2)) 
-    if initd == 'zero':            # can lead to really bad results (see below)
-        d_0    = np.zeros(yDim) 
-    # A bad initialisation for d can spell doom for the entire EM algorithm,
-    # as this may offset the estimates of E[x_t] far away from zero mean in
-    # the first E-step, so as to capture the true offset present in data y. 
-    # This in turn ruins estimates of the linear dynamics: all the eigenvalues
-    # of A suddenly have to be close to 1 to explain the constant non-decaying
-    # offset of the estimates E[x_t]. Hence the ensuing M-step will generate
-    # a parameter solution that is immensely far away from optimal parameters,
-    # and the algorithm most likely gets stuck in a local optimum long before
-    # it found its way to any useful parameter settings (in fact, C and d of
-    # the first M-step will adjust to the offset in the latent states and 
-    # hence contribute to the EM algorithm sticking to latent offset and bad A)
-
-    # wrap up initialisation parameters for documentation
-    initOptions = {
-                 'initA'   : initA,
-                 'initB'   : initB,
-                 'initQ'   : initQ,
-                 'initmu0' : initmu0,
-                 'initV0'  : initV0,
-                 'initC'   : initC,
-                 'initd'   : initd,
-                 'initR'   : initR,
-                 'ifVisualiseInitPars' : ifVisualiseInitPars,
-                    }
-
-    if ifVisualiseInitPars:
-        plt.figure(1, figsize=(15,10))
-        if initC == 'PCA':
-            plt.subplot(1,2,1)
-            plt.plot(w)
-            plt.title('spectrum of data covariance matrix (R_0 removed)')         
-            plt.subplot(1,2,2)
-            plt.imshow(C_0, interpolation='none')
-            plt.title('C_0 : initialisation for C')
-            plt.ylabel('y_i')
-            plt.xlabel('x_j')
-        else:   
-            plt.imshow(C_0.transpose(), interpolation='none')
-            plt.title('C_0 : initialisation for C (transposed!)')
-            plt.xlabel('y_i')
-            plt.ylabel('x_j')
-        plt.figure(2, figsize=(15,10))
-        plt.subplot(1,2,1)
-        plt.imshow(covy, interpolation='none')
-        plt.title('true covariance matrix')
-        plt.subplot(1,2,2)
-        plt.imshow(np.dot(C_0, C_0.transpose()), interpolation='none')
-        plt.title('C_0 * C_0^T')
-
-    initPars = [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] 
-
-    return [initPars, initOptions]
-
-#----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
 def _fitLDS(y, 
             u,
             obsScheme,
             initPars,
-            fitoptions,
+            maxIter=100,
+            epsilon=0, 
+            covConvEps=0,
+            ifPlotProgress=True, 
+            ifTraceParamHist=False, 
+            ifRDiagonal=True,
+            ifUseA=True, 
+            ifUseB=True,
             xDim=None,
             saveFile=None):
+
     """ OUT = _fitLDS(y*,obsScheme*,initPars, maxIter, epsilon, 
                     ifPlotProgress,xDim)
         y:         data array of observed variables
@@ -207,13 +35,15 @@ def _fitLDS(y,
         initPars:  set of parameters to start fitting. If == None, the 
                    parameters currently stored in the model will be used,
                    otherwise needs initPars = [A,Q,mu0,V0,C,R]
-        fitoptions: dictionary containing fitting options
-        -maxIter:   maximum allowed iterations for iterative fitting (e.g. EM)
-        -epsilon:   convergence criterion, e.g. difference of log-likelihoods
-        -ifPlotProgress: boolean, specifying if fitting progress is visualized
-        -ifTraceParamHist: boolean, specifying if entire parameter updates 
+        maxIter:   maximum allowed iterations for iterative fitting (e.g. EM)
+        epsilon:   convergence criterion, e.g. difference of log-likelihoods
+        ifPlotProgress: boolean, specifying if fitting progress is visualized
+        ifTraceParamHist: boolean, specifying if entire parameter updates 
                            history or only the current state is kept track of 
-        -ifRDiagonal: boolean, specifying diagonality of observation noise
+        ifRDiagonal: boolean, specifying diagonality of observation noise
+        covConvEps: convergence criterion for posterior covariances
+        ifUseA:    boolean, specifying whether or not to fit parameter A
+        ifUseB:    boolean, specifying whether or not to use parameter B
         xDim:      dimensionality of (sole subgroup of) latent state X
         Fits an LDS model to data.
 
@@ -227,49 +57,20 @@ def _fitLDS(y,
     # The observation scheme is crucial to both the sitching context and to
     # any missing data in y! One should always check if the provided 
     # observation scheme is the intended one.
-    if obsScheme is None:
-        obsScheme = {'subpops': [list(range(yDim))], # creates default case
-                     'obsTime': [T],                 # of fully observed
-                     'obsPops': [0]}                 # population
-    else: 
-        try:
-            obsScheme['subpops'] # check for the 
-            obsScheme['obsTime'] # fundamental
-            obsScheme['obsPops'] # information
-        except:                   # have to give hard error here !
-            print('obsScheme')
-            print(obsScheme)
-            raise Exception(('provided observation scheme is insufficient. '
-                             'It requires the fields subpops, obsTime and '
-                             'obsPops. Not all those fields were given.'))
-    try:
-        obsScheme['obsIdxG']     # check for addivional  
-        obsScheme['idxgrps']     # (derivable) information
-    except:                       # can fill in if missing !
-        [obsIdxG, idxgrps] = _computeObsIndexGroups(obsScheme,yDim)
-        obsScheme['obsIdxG'] = obsIdxG # add index groups and 
-        obsScheme['idxgrps'] = idxgrps # their occurences                                
-    
+    obsScheme = _checkObsScheme(obsScheme,yDim,T)
+                                    
     # unpack some of the fitting options to keep code uncluttered
-    maxIter           = fitoptions['maxIter']
-    epsilon           = fitoptions['epsilon']
-    ifPlotProgress    = fitoptions['ifPlotProgress']
-    ifTraceParamHist  = fitoptions['ifTraceParamHist']
-    ifRDiagonal       = fitoptions['ifRDiagonal']     
-    covConvEps        = fitoptions['covConvEps']
-    ifFitA            = fitoptions['ifFitA']
-
     if not (isinstance(maxIter, numbers.Integral) and maxIter > 0):
         print('maxIter:')
         print(maxIter)
         raise Exception('argument maxIter has to be a positive integer')
 
     if (not (isinstance(epsilon, (float, numbers.Integral)) and
-            epsilon > 0) ):
+            epsilon >= 0) ):
         print('epsilon:')
         print(epsilon)
-        raise Exception('argument epsilon has to be a positive number')
-            
+        raise Exception('argument epsilon has to be a non-negative number')
+
     if not isinstance(ifPlotProgress, bool):
         print('ifPlotProgress:')
         print(ifPlotProgress)
@@ -279,24 +80,39 @@ def _fitLDS(y,
         print('ifTraceParamHist:')
         print(ifTraceParamHist)
         raise Exception('argument ifTraceParamHist has to be a boolean')
+
+    if not isinstance(ifStoreIntermediateResults,bool):
+        print('ifStoreIntermediateResults:')
+        print( ifStoreIntermediateResults  )
+        raise Exception(('argument ifStoreIntermediateResults has to be '
+                         'a boolean'))
      
     if not isinstance(ifRDiagonal, bool):
         print('ifRDiagonal:')
         print(ifRDiagonal)
         raise Exception('argument ifRDiagonal has to be a boolean')   
 
-    if not isinstance(ifFitA, bool):
-        print('ifFitA:')
-        print(ifFitA)
-        raise Exception('argument ifFitA has to be a boolean')   
+    if not isinstance(ifUseA, bool):
+        print('ifUseA:')
+        print(ifUseA)
+        raise Exception('argument ifUseA has to be a boolean')   
+
+    if not isinstance(ifUseB, bool):
+        print('ifUseB:')
+        print(ifUseB)
+        raise Exception('argument ifUseB has to be a boolean')   
 
     if (not isinstance(covConvEps,(float,numbers.Integral))
         or not covConvEps >= 0):
         print('covConvEps:')
-        print(epsilon)
+        print( covConvEps  )
         raise Exception(('covConvEps has to be a non-negative number'))
+    if covConvEps > 1e-1:
+        print(('Warning: Selected convergence criterion for latent '
+               'covariance is very generous. Results of the E-step may '
+               'be very imprecise. Consider using something like 1e-30.'))
 
-    if not fitoptions['ifUseB']:
+    if not ifUseB:
         u = None
         uDim = 0
     elif (isinstance(u, np.ndarray) and len(u.shape)==3
@@ -316,9 +132,6 @@ def _fitLDS(y,
     [A,B,Q,mu0,V0,C,d,R,xDim] = _unpackInitPars(initPars,
                                                 uDim,yDim,None,
                                                 ifRDiagonal)  
-
-    A_0 = A.copy()
-
     E_step = _LDS_E_step 
     M_step = _LDS_M_step 
 
@@ -371,10 +184,9 @@ def _fitLDS(y,
                                              syy,
                                              suu,
                                              suuinv,
-                                             Ti)
-
-        if not ifFitA:
-            A = A_0 # diry solution: just revert to initialisation
+                                             Ti, 
+                                             ifUseA,
+                                             ifUseB)
 
 
         # store intermediate results for each time step
@@ -555,7 +367,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
         # first time step: [mu0,V0] -> [mu1,V1]
         idx = subpops[obsPops[0]]
 
-        if len(idx) > 0:
+        if idx.size > 0:
             # pre-compute for this group of observed variables
             Cj   = C[np.ix_(idx,xRange)]                    # all these
             Rinv = 1/R[idx]                                 # operations    
@@ -609,7 +421,7 @@ def _KalmanFilter(A,Bu,Q,mu0,V0,C,d,R,y,obsScheme,eps=0):
         for i in range(len(obsTime)):
             idx = subpops[obsPops[i]]
 
-            if len(idx) > 0:                                       
+            if idx.size > 0:                                       
                 # pre-compute for this group of observed variables
                 Cj   = C[np.ix_(idx,xRange)]                    # all these
                 Rj   = R[idx]                                   # operations                        PRECOMPUTE AND TABULARIZE THESE
@@ -901,7 +713,8 @@ def _KalmanParsToMoments(mu_h, V_h, J,obsTime,tCovConvFt,tCovConvSm):
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme, 
-                 sy=None, syy=None, suu=None, suuinv=None, Ti=None):   
+                 sy=None, syy=None, suu=None, suuinv=None, Ti=None,
+                 ifUseA = True, ifUseB = True):   
     """ OUT = _LDS_M_step(Ext*,Extxt*,Extxtm1*,y*,obsScheme*,syy)
     see Bishop, 'Pattern Recognition and Machine Learning', ch. 13
     for formulas and input/output naming conventions   
@@ -911,6 +724,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     y. If not provided, it will be computed on the fly.
     The optional variable Ti counts the number of times that variables
     y_i, i=1,..,yDim occured. If not provided, it will be computed on the fly.
+    The boolean ifUseA can be used to fix A=0 by setting ifUseA=False.
     
     """                        
     xDim  = Ext.shape[0]
@@ -922,7 +736,8 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
         u.shape[1]==y.shape[1] and u.shape[2]==y.shape[2]):
         uDim  = u.shape[0]
     else:
-        uDim  = 0
+        uDim   = 0
+        ifUseB = False
     
     xRange = range(xDim)
 
@@ -980,7 +795,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                     ts  = range(0, obsTime[i])                                            
                 else:
                     ts  = range(obsTime[i-1],obsTime[i])   
-                if len(idx)>0:
+                if idx.size>0:
                     sy[idx] += np.sum(ytr[np.ix_(idx,ts)],1)          
     if syy is None:
         syy   = np.zeros(yDim) # sum over outer product y_t y_t'
@@ -992,7 +807,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                     ts  = range(0, obsTime[i])                                            
                 else:
                     ts  = range(obsTime[i-1],obsTime[i])                 
-                if len(idx)>0:
+                if idx.size>0:
                     ytmp = ytr[np.ix_(idx,ts)]
                     syy[idx] += np.sum(ytmp*ytmp,1) 
         del ytmp      
@@ -1025,7 +840,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
                 sExts[:,j]      += tsExt    # these only sum entries 
                 sExtxts[:,:,j]  += tsExtxt  # seen by their index group
 
-            if len(idx)>0:     
+            if idx.size>0:     
                 syExt[idx,:] += np.einsum('in,jn->ij',   # index groups are non-overlapping, i.e.
                                     ytr[np.ix_(idx,ts)], # can store outer products y(i)_t x_t'
                                     Ext[:,ts,tr])        # for all i in the same matrix. 
@@ -1047,7 +862,7 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
     V0  = 1/Trial * np.sum( Extxt[:,:,0,:], 2) - np.outer(mu0, mu0)            # wrong
 
     # latent dynamics paramters
-    if uDim > 0:
+    if ifUseB:
 
         # compute scatter matrix for input states
         if suu is None:
@@ -1075,8 +890,12 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
         sExm1suusuExm1 = np.dot(suExtm1.transpose(), suuvinvsuExtm1)
                       
 
-        A = np.dot(sExtxtm1-sExsuuusuExm1, 
-                   sp.linalg.inv(sExtxt1toNm1-sExm1suusuExm1))                                    
+        if ifUseA:
+            A = np.dot(sExtxtm1-sExsuuusuExm1, 
+                       sp.linalg.inv(sExtxt1toNm1-sExm1suusuExm1))                                    
+        else:
+            A = np.zeros([xDim,xDim])
+
         Atr = A.transpose()
 
         B = np.dot(sExtu - np.dot(A, suExtm1.transpose()), suuinv)
@@ -1097,8 +916,11 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
     else: # reduce to non-input LDS equations
 
-        A = np.dot(sExtxtm1, 
-                   sp.linalg.inv(sExtxt1toNm1))                                    
+        if ifUseA:
+            A = np.dot(sExtxtm1, 
+                       sp.linalg.inv(sExtxt1toNm1))                                    
+        else:
+            A = np.zeros([xDim,xDim])
         Atr = A.transpose()
         sExtxtm1Atr = np.dot(sExtxtm1, Atr)
         B = np.zeros([xDim,uDim])                
@@ -1151,6 +973,176 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 
     return [A,B,Q,mu0,V0,C,d,R,sy,syy,suu,suuinv,Ti]           
 
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _checkObsScheme(obsScheme,yDim,T):
+
+    if obsScheme is None:
+        obsScheme = {'subpops': [np.arange(yDim)], # creates default case
+                     'obsTime': np.array([T]),     # of fully observed
+                     'obsPops': np.array([0])}     # population
+    else: 
+        try:
+            obsScheme['subpops'] # check for the 
+            obsScheme['obsTime'] # fundamental
+            obsScheme['obsPops'] # information
+        except:                   # have to give hard error here !
+            print('obsScheme')
+            print(obsScheme)
+            raise Exception(('provided observation scheme is insufficient. '
+                             'It requires the fields subpops, obsTime and '
+                             'obsPops. Not all those fields were given.'))
+
+        # check subpops
+        if not isinstance(obsScheme['subpops'], list):
+            print('subpops:')
+            print( obsScheme['subpops'] )
+            raise Exception('Variable subpops on top-level has to be a list')
+        else: 
+            for i in range(len(obsScheme['subpops'])): 
+                if isinstance(obsScheme['subpops'][i], list):
+                    obsScheme['subpops'][i] = np.array(obsScheme['subpops'][i])
+                elif not isinstance(obsScheme['subpops'][i], np.ndarray):
+                    print('subpop #' + str(i) + ' :')
+                    print(obsScheme['subpops'][i])
+                    raise Exception(('entries of variable subpops have to be '
+                                     'ndarrays of variable indexes'))
+        idxUnion = np.sort(obsScheme['subpops'][0]) # while loop for speed
+        i = 1                                       # (could break early!)
+        while not idxUnion.size == yDim and i < len(obsScheme['subpops']):
+            idxUnion = np.union1d(idxUnion, obsScheme['subpops'][i]) 
+            i += 1            
+        if not (idxUnion.size == yDim and np.all(idxUnion==np.arange(yDim))):
+            print('union of indices of all subpopulations:')
+            print(idxUnion)
+            print('yDim:')
+            print(yDim)
+            raise Exception(('all subpopulations together have to cover '
+                             'exactly all included observed varibles y_i in y.'
+                             'This is not the case. Change the difinition of '
+                             'subpopulations in variable subpops or reduce '
+                             'the number of observed variables yDim.'))
+
+        # check obsTime
+        if isinstance(obsScheme['obsTime'], list):
+            obsScheme['obsTime'] = np.array(obsScheme['obsTime'])
+        elif not isinstance(obsScheme['obsTime'], np.ndarray):
+            print('obsTime:')
+            print(obsScheme['obsTime'])
+            raise Exception(('variable obsTime has to be an ndarray of time '
+                             'points where observed subpopulations switch.'))
+        if not obsScheme['obsTime'][-1]==T:
+            print('obsTime[-1] :')
+            print(obsScheme['obsTime'][-1])
+            print(('Warning: entries of obsTime give the respective ends of '
+                             'the periods of observation for any '
+                             'subpopulation. Hence the last entry of obsTime '
+                             'has to be the full recording length. Will '
+                             'change the provided obsTime accordingly'))
+            obsScheme['obsTime'][-1] = T
+        if np.any(np.diff(obsScheme['obsTime'])<1):
+            print('minimal observation time for a subpopulation:')
+            print(np.min(np.diff(obsScheme['obsTime'])))
+            raise Exception('lengths of observation have to be at least 1')
+
+        # check obsPops
+        if isinstance(obsScheme['obsPops'], list):
+            obsScheme['obsPops'] = np.array(obsScheme['obsPops'])
+        elif not isinstance(obsScheme['obsPops'], np.ndarray):
+            raise Exception('variable obsPops has to be an np.ndarray')
+        if not obsScheme['obsTime'].size == obsScheme['obsPops'].size:
+            print('number of subpopulation switch points (obsTime):')
+            print(obsScheme['obsTime'].size)
+            print(('number of subpopulations observed up to switch points '
+                   '(obsPops):'))
+            print(obsScheme['obsPops'].size)
+            raise Exception(('each entry of obsPops gives the index of the '
+                             'subpopulation observed up to the respective '
+                             'time given in obsTime. Thus the sizes of the '
+                             'two arrays have to match. They do not.'))
+
+        idxPops = np.sort(np.unique(obsScheme['obsPops']))
+        if not np.min(idxPops)==0:
+            print('index of first subpop:')
+            print(np.min(idxPops))
+            raise Exception('first subpopulation has to have index 0')
+        elif not np.all(np.diff(idxPops)==1):
+            print('subpop indices:')
+            print(idxPops)
+            raise Exception(('subpopulation indices have to be consecutive '
+                             'integers from 0 to the total number of '
+                             'subpopulations. This is not the case.'))
+        elif not idxPops.size == len(obsScheme['subpops']):
+            print('number of given subpopulations:')
+            print(len(obsScheme['subpops']))
+            print('number of indexed subpopulations:')
+            print(idxPops.size)
+            raise Exception(('number of specified subpopulations in variable '
+                             'subpops does not meet the number of '
+                             'subpopulations indexed in variable obsPops. '
+                             'Delete subpopulations that are never observed, '
+                             'or change the observed subpopulations in '
+                             'variable obsPops accordingly'))
+
+
+    try:
+        obsScheme['obsIdxG']     # check for addivional  
+        obsScheme['idxgrps']     # (derivable) information
+    except:                       # can fill in if missing !
+        [obsIdxG, idxgrps] = _computeObsIndexGroups(obsScheme,yDim)
+        obsScheme['obsIdxG'] = obsIdxG # add index groups and 
+        obsScheme['idxgrps'] = idxgrps # their occurences
+
+    return obsScheme
+
+
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def _computeObsIndexGroups(obsScheme,yDim):
+    """ OUT = _computeObsIndexGroups(obsScheme,yDim)
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        yDim:        dimensionality of observed variables y
+    Computes index groups for given observation scheme. 
+
+    """
+    try:
+        subpops = obsScheme['subpops'];
+        obsTime = obsScheme['obsTime'];
+        obsPops = obsScheme['obsPops'];
+    except:
+        print('obsScheme:')
+        print(obsScheme)
+        raise Exception(('provided obsScheme dictionary does not have '
+                         'the required fields: subpops, obsTimes, '
+                         'and obsPops.'))        
+
+    J = np.zeros([yDim, len(subpops)]) # binary matrix, each row gives which 
+    for i in range(len(subpops)):      # subpopulations the observed variable
+        if subpops[i].size > 0:        # y_i is part of
+            J[subpops[i],i] = 1   
+
+    twoexp = np.power(2,np.arange(len(subpops))) # we encode the binary rows 
+    hsh = np.sum(J*twoexp,1)                     # of J using binary numbers
+
+    lbls = np.unique(hsh)         # each row of J gets a unique label 
+                                     
+    idxgrps = [] # list of arrays that define the index groups
+    for i in range(lbls.size):
+        idxgrps.append(np.where(hsh==lbls[i])[0])
+
+    obsIdxG = [] # list f arrays giving the index groups observed at each
+                 # given time interval
+    for i in range(len(obsPops)):
+        obsIdxG.append([])
+        for j in np.unique(hsh[np.where(J[:,obsPops[i]]==1)]):
+            obsIdxG[i].append(np.where(lbls==j)[0][0])            
+    # note that we only store *where* the entry was found, i.e. its 
+    # position in labels, not the actual label itself - hence we re-defined
+    # the labels to range from 0 to len(idxgrps)
+
+    return [obsIdxG, idxgrps]
+                      
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _unpackInitPars(initPars, uDim, yDim=None, xDim=None, 
@@ -1340,150 +1332,3 @@ def _unpackInitPars(initPars, uDim, yDim=None, xDim=None,
     return [A,B,Q,mu0,V0,C,d,R,xDim]
         
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
-def _getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30,
-                            ifFitA=True):
-    """ OUT = _getNumericsFirstEMCycle(initPars*,obsScheme*,y*,u*,eps)
-        initPars: collection of initial parameters for LDS
-        obsScheme: observation scheme for given data, stored in dictionary
-                   with keys 'subpops', 'obsTimes', 'obsPops'
-        y:         data array of observed variables
-        u:         data array of input variables
-        eps:       precision (stopping criterion) for deciding on convergence
-                   of latent covariance estimates durgin the E-step                   
-        This function serves to quickly get the results of one EM-cycle. It is
-        mostly intended to generate results that can quickly be compared against
-        other EM implementations or different parameter initialisation methods. 
-    """
-    [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] = initPars
-    # do one E-step
-    [Ext_0, Extxt_0, Extxtm1_0,LL_0, tCovConvFt, tCovConvSm]    = \
-      _LDS_E_step(A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0,y,u,obsScheme,eps)
-    # do one M-step      
-    [A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti] = \
-      _LDS_M_step(Ext_0,Extxt_0,Extxtm1_0,y,u,obsScheme) 
-
-    if not ifFitA:
-        A_1 = A_0.copy() # simply discard the update!
-
-    # do another E-step
-    [Ext_1, Extxt1_1, Extxtm1_1,LL_1, tCovConvFt, tCovConvSm] = \
-      _LDS_E_step(A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,y,u,obsScheme, eps)
-
-    return [Ext_0, Extxt_0, Extxtm1_0,LL_0, 
-            A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti,
-            Ext_1, Extxt1_1, Extxtm1_1,LL_1]
-
-#----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
-def _computeObsIndexGroups(obsScheme,yDim):
-    """ OUT = _computeObsIndexGroups(obsScheme,yDim)
-        obsScheme: observation scheme for given data, stored in dictionary
-                   with keys 'subpops', 'obsTimes', 'obsPops'
-        yDim:        dimensionality of observed variables y
-    Computes index groups for given observation scheme. 
-
-    """
-    try:
-        subpops = obsScheme['subpops'];
-        obsTime = obsScheme['obsTime'];
-        obsPops = obsScheme['obsPops'];
-    except:
-        print('obsScheme:')
-        print(obsScheme)
-        raise Exception(('provided obsScheme dictionary does not have '
-                         'the required fields: subpops, obsTimes, '
-                         'and obsPops.'))        
-
-    J = np.zeros([yDim, len(subpops)]) # binary matrix, each row gives which 
-    for i in range(len(subpops)):      # subpopulations the observed variable
-        J[subpops[i],i] = 1            # y_i is part of
-
-    twoexp = np.power(2,np.arange(len(subpops))) # we encode the binary rows 
-    hsh = np.sum(J*twoexp,1)                     # of J using binary numbers
-
-    lbls = np.unique(hsh)         # each row of J gets a unique label 
-                                     
-    idxgrps = [] # list of arrays that define the index groups
-    for i in range(lbls.size):
-        idxgrps.append(np.where(hsh==lbls[i])[0])
-
-    obsIdxG = [] # list f arrays giving the index groups observed at each
-                 # given time interval
-    for i in range(len(obsPops)):
-        obsIdxG.append([])
-        for j in np.unique(hsh[np.where(J[:,obsPops[i]]==1)]):
-            obsIdxG[i].append(np.where(lbls==j)[0][0])            
-    # note that we only store *where* the entry was found, i.e. its 
-    # position in labels, not the actual label itself - hence we re-defined
-    # the labels to range from 0 to len(idxgrps)
-
-    return [obsIdxG, idxgrps]
-                      
-#----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
-def _evaluateFit(A, B, Q, C, d, R, y, u, Ext, Extxt, Extxtm1, LLs):
-    """ TO BE EXTENDED """
-
-    T    = y.shape[1]
-    Trial= y.shape[2]
-    xDim = A.shape[0]
-    yDim = C.shape[0]
-    uDim = u.shape[0]
-
-    Pi_h    = np.array([sp.linalg.solve_discrete_lyapunov(A, Q)])[0,:,:]
-    Pi_t_h  = np.dot(A.transpose(), Pi_h)
-
-
-    dataCov  = np.cov(y[:,0:T-1,0], y[:,1:T,0])
-    covyy    = dataCov[np.ix_(np.arange(0, yDim), np.arange(0,     yDim))]
-    covyy_m1 = dataCov[np.ix_(np.arange(0, yDim), np.arange(yDim,2*yDim))]
-
-    plt.figure(1)
-    cmap = matplotlib.cm.get_cmap('brg')
-    clrs = [cmap(i) for i in np.linspace(0, 1, xDim)]
-    for i in range(xDim):
-        plt.subplot(xDim,1,i)
-        plt.plot(x[i,:,0], color=clrs[i])
-        plt.hold(True)
-        if np.mean( np.square(x[i,:,0] - Ext_h[i,:,0]) ) < np.mean( np.square(x[i,:,0] + Ext_h[i,:,0]) ):
-            plt.plot( Ext_h[i,:,0], color=clrs[i], ls=':')
-        else:
-            plt.plot(-Ext_h[i,:,0], color=clrs[i], ls=':')
-
-    m = np.min([Pi_h.min(), covyy.min()])
-    M = np.max([Pi_h.max(), covyy.max()])       
-    plt.figure(1)
-    plt.subplot(1,3,1)
-    plt.imshow(np.dot(np.dot(C_h, Pi_h), C_h.transpose()) + R_h, interpolation='none')
-    plt.title('cov_hat(y_t,y_t)')
-    plt.clim(m,M)
-    plt.subplot(1,3,2)
-    plt.imshow(covyy,    interpolation='none')
-    plt.title('cov_emp(y_t,y_t)')
-    plt.clim(m,M)
-    plt.subplot(1,3,3)
-    plt.imshow(np.dot(np.dot(C, Pi), C.transpose()) + R, interpolation='none')
-    plt.title('cov_true(y_t,y_t)')
-    plt.clim(m,M)
-    plt.figure(3)
-
-    m = np.min([covyy_m1.min(), Pi_t_h.min()])
-    M = np.max([covyy_m1.max(), Pi_t_h.max()])
-    plt.subplot(1,3,1)
-    plt.imshow(np.dot(np.dot(C_h, Pi_t_h), C_h.transpose()), interpolation='none')
-    plt.title('cov_hat(y_t,y_{t-1})')
-    plt.clim(m,M)
-    plt.subplot(1,3,2)
-    plt.imshow(covyy_m1,    interpolation='none')
-    plt.title('cov(y_t,y_{t-1})')
-    plt.clim(m,M)
-    plt.subplot(1,3,3)
-    plt.imshow(np.dot(np.dot(C, Pi_t), C.transpose()), interpolation='none')
-    plt.title('cov_true(y_t,y_{t-1})')
-    plt.clim(m,M)
-    plt.figure(4)
-    plt.plot(np.sort(np.linalg.eig(A)[0]), 'r')
-    plt.hold(True)
-    plt.plot(np.sort(np.linalg.eig(A_h)[0]), 'b')
-    plt.legend(['true', 'est'])
