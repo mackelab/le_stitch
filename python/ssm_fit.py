@@ -58,7 +58,7 @@ def _fitLDS(y,
     # any missing data in y! One should always check if the provided 
     # observation scheme is the intended one.
     obsScheme = _checkObsScheme(obsScheme,yDim,T)
-                                    
+
     # unpack some of the fitting options to keep code uncluttered
     if not (isinstance(maxIter, numbers.Integral) and maxIter > 0):
         print('maxIter:')
@@ -80,12 +80,6 @@ def _fitLDS(y,
         print('ifTraceParamHist:')
         print(ifTraceParamHist)
         raise Exception('argument ifTraceParamHist has to be a boolean')
-
-    if not isinstance(ifStoreIntermediateResults,bool):
-        print('ifStoreIntermediateResults:')
-        print( ifStoreIntermediateResults  )
-        raise Exception(('argument ifStoreIntermediateResults has to be '
-                         'a boolean'))
      
     if not isinstance(ifRDiagonal, bool):
         print('ifRDiagonal:')

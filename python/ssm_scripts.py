@@ -27,7 +27,6 @@ def run(xDim,
         covConvEps=0,        
         ifPlotProgress=False,
         ifTraceParamHist=False,
-        ifStoreIntermediateResults=False,
         ifRDiagonal=True,
         ifUseA=True,
         ifUseB=False,
@@ -57,6 +56,7 @@ def run(xDim,
         u=None, inputType='pwconst',constInputLngth=1,
         y=None, 
         x=None,
+        ifStoreIntermediateResults = False,
         saveFile='LDS_data.mat'):
 
     if not isinstance(ifUseB,bool):
@@ -64,15 +64,22 @@ def run(xDim,
         print( ifUseB  )
         raise Exception(('ifUseB has to be a boolean'))
 
+    if not isinstance(ifUseA,bool):
+        print('ifUseA:')
+        print( ifUseA  )
+        raise Exception(('ifUseA has to be a boolean'))     
+
     if not isinstance(ifRDiagonal,bool):
         print('ifRDiagonal:')
         print( ifRDiagonal  )
         raise Exception(('ifRDiagonal has to be a boolean'))
 
-    if not isinstance(ifUseA,bool):
-        print('ifUseA:')
-        print( ifUseA  )
-        raise Exception(('ifUseA has to be a boolean'))     
+    if not isinstance(ifStoreIntermediateResults,bool):
+        print('ifStoreIntermediateResults:')
+        print( ifStoreIntermediateResults  )
+        raise Exception(('ifStoreIntermediateResults has to be a boolean'))
+
+    obsScheme = ssm_fit._checkObsScheme(obsScheme,yDim,T) 
        
     if y is None:
         if truelts is None:
@@ -154,14 +161,6 @@ def run(xDim,
                       x=x, y=y, u=u)
 
     # check initial goodness of fit for initial parameters
-    try:
-        obsScheme['obsIdxG']     # check for addivional  
-        obsScheme['idxgrps']     # (derivable) information
-    except:                       # can fill in if missing !
-        [obsIdxG, idxgrps] = ssm_fit._computeObsIndexGroups(obsScheme,yDim)
-        obsScheme['obsIdxG'] = obsIdxG # add index groups and 
-        obsScheme['idxgrps'] = idxgrps # their occurences    
-
     [Ext_0,Extxt_0,Extxtm1_0,LL_0, 
      A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,
      my,syy,suu,suuinv,Ti,
@@ -195,7 +194,7 @@ def run(xDim,
                 ifUseA, 
                 ifUseB,
                 xDim,
-                saveFile)
+                intermediateSaveFile)
 
     elapsedTime = time.time() - t
     print('elapsed time for fitting is')
