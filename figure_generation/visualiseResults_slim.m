@@ -2,7 +2,7 @@
 % Stitching in space and time.
 
 clear all
-%close all
+close all
 clc
 
 %% load, translate, compute
@@ -12,7 +12,7 @@ addpath( ...
 
 %dataSet = '200x100_stitchingInSpace_slim';
 %dataSet = 'stitchingInTime_SparseSparseSparse_slim';
-dataSet = 'stitchingInTime_SparseFullFull_slim';
+dataSet = '200x100_stitchingInSpace_slim';
 
 load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems',...
       '/', dataSet, '.mat'])
@@ -294,6 +294,16 @@ if groundTruthKnown
     axis([0, yDim+1, 0, 1])
     axis autoy
 end
+%%
+idxStitchedPlot = triu(idxStitched,0);
+notIdxStitchedPlot = triu(~idxStitched,0);
+figure;
+subplot(1,2,1)
+imagesc(idxStitchedPlot);
+subplot(1,2,2)
+imagesc(notIdxStitchedPlot);
+
+
 %% Compare instantaneous covariances of model with truth
 figure('Units', 'normalized','Position', [0.5,0.0,0.4,0.5]);
 % if numel(u)>1 && stcmp(inputType,'pwdconst')
@@ -406,10 +416,10 @@ figure('Units', 'normalized','Position', [0.5,0.0,0.4,0.5]);
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
             MP = max(subpops{ip})+0.5;
-            line([mP,MP], [mP,mP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,MP], [MP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,mP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([MP,MP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
+            line([mP,MP], [mP,mP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,MP], [MP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,mP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([MP,MP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
         end
     end
     set(gca, 'YTick', [1, yDim])
@@ -424,10 +434,10 @@ figure('Units', 'normalized','Position', [0.5,0.0,0.4,0.5]);
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
             MP = max(subpops{ip})+0.5;
-            line([mP,MP], [mP,mP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,MP], [MP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,mP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([MP,MP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
+            line([mP,MP], [mP,mP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,MP], [MP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,mP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([MP,MP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
         end
     end
     set(gca, 'XTick', [1, yDim])
@@ -443,10 +453,10 @@ figure('Units', 'normalized','Position', [0.5,0.0,0.4,0.5]);
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
             MP = max(subpops{ip})+0.5;
-            line([mP,MP], [mP,mP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,MP], [MP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,mP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([MP,MP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
+            line([mP,MP], [mP,mP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,MP], [MP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,mP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([MP,MP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
         end
     end
     set(gca, 'XTick', [])
@@ -455,31 +465,31 @@ figure('Units', 'normalized','Position', [0.5,0.0,0.4,0.5]);
     title(['Instantaneous covariances cov(y_n, y_n)'])
     ylabel('# neuron')
     subplot(2,2,4)
-    mc = min([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
-    Mc = max([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
-    mc = min([mc;vec(covy(~idxStitched));LDScovy_h(~idxStitched)]);
-    Mc = max([Mc;vec(covy(~idxStitched));LDScovy_h(~idxStitched)]);
+    mc = min([vec(covy(idxStitchedPlot));LDScovy_h(idxStitchedPlot)]);
+    Mc = max([vec(covy(idxStitchedPlot));LDScovy_h(idxStitchedPlot)]);
+    mc = min([mc;vec(covy(notIdxStitchedPlot));LDScovy_h(notIdxStitchedPlot)]);
+    Mc = max([Mc;vec(covy(notIdxStitchedPlot));LDScovy_h(notIdxStitchedPlot)]);
     hold off
     line(1.1*[mc, Mc], 1.1*[mc, Mc], 'color', 'k', 'linewidth', 1.5)
     hold on
-    plot(covy(idxStitched), LDScovy_h(idxStitched), 'b.', 'markerSize',7)
+    plot(covy(idxStitchedPlot), LDScovy_h(idxStitchedPlot), 'k.', 'markerSize',7)
     hold on
     if sum(idxStitched(:)>0)
      text(mc,0.9*Mc, ...
         ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
-        num2str(corr(covy(idxStitched),LDScovy_h(idxStitched)))])
+        num2str(corr(covy(idxStitchedPlot),LDScovy_h(idxStitchedPlot)))])
     end
-    plot(covy(~idxStitched), LDScovy_h(~idxStitched), 'g.', 'markerSize',7)
+    plot(covy(notIdxStitchedPlot), LDScovy_h(notIdxStitchedPlot), 'g.', 'markerSize',7)
     text(mc,0.7*Mc, ...
         ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
-        num2str(corr(covy(~idxStitched),LDScovy_h(~idxStitched)))])
+        num2str(corr(covy(notIdxStitchedPlot),LDScovy_h(notIdxStitchedPlot)))])
     line(1.1*[mc, Mc], 1.1*[mc, Mc], 'color', 'k', 'linewidth', 1.5)
     axis(1.1*[mc, Mc, mc, Mc])
     xlabel('true cov(y)')
     ylabel('est. cov(y)')
     box off
+    colormap('gray')    
 % end
-
 
 %% Compare time-lag covariances of model with truth
 figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
@@ -596,10 +606,10 @@ figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
             MP = max(subpops{ip})+0.5;
-            line([mP,MP], [mP,mP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,MP], [MP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,mP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([MP,MP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
+            line([mP,MP], [mP,mP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,MP], [MP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,mP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([MP,MP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
         end
     end
     set(gca, 'YTick', [1, yDim])
@@ -614,10 +624,10 @@ figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
             MP = max(subpops{ip})+0.5;
-            line([mP,MP], [mP,mP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,MP], [MP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,mP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([MP,MP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
+            line([mP,MP], [mP,mP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,MP], [MP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,mP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([MP,MP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
         end
     end
     set(gca, 'XTick', [1, yDim])
@@ -635,10 +645,10 @@ figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
             MP = max(subpops{ip})+0.5;
-            line([mP,MP], [mP,mP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,MP], [MP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([mP,mP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
-            line([MP,MP], [mP,MP], 'color', 'k', 'linewidth', 1.2)
+            line([mP,MP], [mP,mP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,MP], [MP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([mP,mP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
+            line([MP,MP], [mP,MP], 'color', 'g', 'linewidth', 1.2)
         end
     end
     set(gca, 'XTick', [])
@@ -654,7 +664,7 @@ figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
     hold off
     line(1.1*[mc, Mc], 1.1*[mc, Mc], 'color', 'k', 'linewidth', 1.5)
     hold on
-    plot(covy_tl(idxStitched), LDScovy_h(idxStitched), 'b.', 'markerSize',7)
+    plot(covy_tl(idxStitched), LDScovy_h(idxStitched), 'k.', 'markerSize',7)
     if sum(idxStitched(:))>0
       text(mc,0.9*Mc, ...
         ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
@@ -670,6 +680,7 @@ figure('Units', 'normalized','Position', [0.1,0.0,0.4,0.5]);
     xlabel('true cov(y)')
     ylabel('est. cov(y)')
     box off    
+    colormap('gray')
 % end
 
 % %% Check for twists in latent space

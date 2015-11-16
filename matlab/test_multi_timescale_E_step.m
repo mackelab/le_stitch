@@ -187,7 +187,7 @@ for sp = 1:length(dtsp)-1
 end
 for sp = 1:length(dtsp)-1
     subplot(length(dtsp)-1,3,3*sp-2)
-    plot(x(:,dtsp(sp)+(0:1000))')
+    plot(x(:,dtsp(sp)+(0:max(dts)/dt:end)')
     axis([0, 1001, 0, 1]); axis autoy
     xlabel('n')
     ylabel(['x_{i,n}, i = 1, ..., ', num2str(q)])

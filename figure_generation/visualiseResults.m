@@ -1,7 +1,7 @@
 %% Visualises results of the EM stitching implementation
 % Stitching in space and time.
 
-clear all
+clearvars -except RES
 close all
 clc
 
@@ -14,12 +14,12 @@ addpath( ...
 %dataSet  = 'Beauty/LDS_save_2ndOrderTempStitching';
 %dataSet  = 'Beauty/LDS_save_spaceTimeStitching';
 %dataSet  = 'LDS_save_spaceTime_okay_fit';
-%dataSet = 'LDS_save_p200_good_fit_bad_stitch';
 %dataSet  = 'LDS_save_9x3_trulyNoDynamics';
-%dataSet = 'LDS_save_9x3_withDynamicsLowOverlap';
+dataSet = 'LDS_save_9x3_withDynamicsLowOverlap';
+%dataSet = 'test_problemsLDS_save_tempStitching_sparse';
 
-dataSet = 'stitchingInTime_FullFullFull';
-load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems',...
+%dataSet = '200x100_stitchingInSpace_slim';
+load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/',...
       '/', dataSet, '.mat'])
   
 % gives the following variables:
@@ -494,8 +494,8 @@ if numel(u)>1 && stcmp(inputType,'pwdconst')
     spwidth = 17;
     sphight = 17;    
     subplot(sphight,spwidth,vec(bsxfun(@plus,(14:17)',(6:10)*spwidth)))
-    LDScovy_h = C_h * (A_h * Pi_h) * C_h';
-    imagesc(LDScovy_h)
+    LDScovy_tl_h = C_h * (A_h * Pi_h) * C_h';
+    imagesc(LDScovy_tl_h)
     for ip = 1:numPops
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
@@ -512,8 +512,8 @@ if numel(u)>1 && stcmp(inputType,'pwdconst')
     ylabel('# neuron')
     title('$\hat{C} \hat{A} \hat{\Pi} \hat{C}^T$' ,'interpreter','latex')
     subplot(sphight,spwidth,vec(bsxfun(@plus,(14:17)',(12:16)*spwidth)))
-    LDScovy = C * (A* Pi) * C';
-    imagesc(LDScovy)
+    LDScovy_tl = C * (A* Pi) * C';
+    imagesc(LDScovy_tl)
     for ip = 1:numPops
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
@@ -530,13 +530,13 @@ if numel(u)>1 && stcmp(inputType,'pwdconst')
     ylabel('# neuron')
     box off
     for i = 1:numPieces
-        covy = cov([y(:, (i-1)*constantInputLength + ...
+        covy_tl = cov([y(:, (i-1)*constantInputLength + ...
                      (round(constantInputLength/2):constantInputLength));
                     y(:, (i-1)*constantInputLength -1 +  ...
                      (round(constantInputLength/2):constantInputLength))]');
-        covy = covy(yDim+1:end, 1:yDim); % take lover left corner                 
+        covy_tl = covy_tl(yDim+1:end, 1:yDim); % take lover left corner                 
         subplot(sphight,spwidth,vec(bsxfun(@plus,(14:17)',(0:4)*spwidth)))
-        imagesc(covy)
+        imagesc(covy_tl)
         for ip = 1:numPops
             if unique(diff(sort(subpops{ip}))) == [1]
                 mP = min(subpops{ip})-0.5;
@@ -568,22 +568,22 @@ if numel(u)>1 && stcmp(inputType,'pwdconst')
         ylabel('u[n]')
         subplot(sphight,spwidth,vec(bsxfun(@plus,(1:11)',(9:16)*spwidth)))
         hold off
-        mc = min([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
-        Mc = max([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
-        mc = min([mc;vec(covy(~idxStitched));LDScovy_h(~idxStitched)]);
-        Mc = max([Mc;vec(covy(~idxStitched));LDScovy_h(~idxStitched)]);
+        mc = min([vec(covy_tl(idxStitched));LDScovy_tl_h(idxStitched)]);
+        Mc = max([vec(covy_tl(idxStitched));LDScovy_tl_h(idxStitched)]);
+        mc = min([mc;vec(covy_tl(~idxStitched));LDScovy_tl_h(~idxStitched)]);
+        Mc = max([Mc;vec(covy_tl(~idxStitched));LDScovy_tl_h(~idxStitched)]);
         hold off
         plot(0,0)
         line(1.1*[mc, Mc], 1.1*[mc, Mc], 'color', 'k', 'linewidth', 1.5)
         hold on
-        plot(covy(idxStitched), LDScovy_h(idxStitched), 'b.', 'markerSize',7)
+        plot(covy_tl(idxStitched), LDScovy_tl_h(idxStitched), 'b.', 'markerSize',7)
         text(mc,0.9*Mc, ...
              ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
-              num2str(corr(covy(idxStitched),LDScovy_h(idxStitched)))])
-        plot(covy(~idxStitched), LDScovy_h(~idxStitched), 'g.', 'markerSize',7)           
+              num2str(corr(covy_tl(idxStitched),LDScovy_tl_h(idxStitched)))])
+        plot(covy_tl(~idxStitched), LDScovy_tl_h(~idxStitched), 'g.', 'markerSize',7)           
         text(mc,0.7*Mc, ...
              ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
-              num2str(corr(covy(~idxStitched),LDScovy_h(~idxStitched)))])
+              num2str(corr(covy_tl(~idxStitched),LDScovy_tl_h(~idxStitched)))])
         axis(1.1*[mc, Mc, mc, Mc])
         xlabel('true cov(y)')
         ylabel('est. cov(y)')
@@ -594,8 +594,8 @@ if numel(u)>1 && stcmp(inputType,'pwdconst')
     end
 else
     subplot(2,2,2)
-    LDScovy_h = C_h * (A_h *Pi_h) * C_h';
-    imagesc(LDScovy_h)
+    LDScovy_tl_h = C_h * (A_h *Pi_h) * C_h';
+    imagesc(LDScovy_tl_h)
     for ip = 1:numPops
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
@@ -612,8 +612,8 @@ else
     ylabel('# neuron')
     title('$\hat{C}  \hat{A}  \hat{\Pi} \hat{C}^T$' ,'interpreter','latex')
     subplot(2,2,3)
-    LDScovy = C * (A* Pi) * C';
-    imagesc(LDScovy)
+    LDScovy_tl = C * (A* Pi) * C';
+    imagesc(LDScovy_tl)
     for ip = 1:numPops
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
@@ -630,10 +630,10 @@ else
     ylabel('# neuron')
     box off
         
-    covy = cov([y(:,2:end);y(:,1:end-1)]');
-    covy = covy(yDim+1:end, 1:yDim);
+    covy_tl = cov([y(:,2:end);y(:,1:end-1)]');
+    covy_tl = covy_tl(yDim+1:end, 1:yDim);
     subplot(2,2,1)
-    imagesc(covy)
+    imagesc(covy_tl)
     for ip = 1:numPops
         if unique(diff(sort(subpops{ip}))) == [1]
             mP = min(subpops{ip})-0.5;
@@ -650,24 +650,24 @@ else
     title(['Time-lagged covariances cov(y_n, y_{n-1})'])
     ylabel('# neuron')
     subplot(2,2,4)
-    mc = min([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
-    Mc = max([vec(covy(idxStitched));LDScovy_h(idxStitched)]);
-    mc = min([mc;vec(covy(~idxStitched));LDScovy_h(~idxStitched)]);
-    Mc = max([Mc;vec(covy(~idxStitched));LDScovy_h(~idxStitched)]);
+    mc = min([vec(covy_tl(idxStitched));LDScovy_tl_h(idxStitched)]);
+    Mc = max([vec(covy_tl(idxStitched));LDScovy_tl_h(idxStitched)]);
+    mc = min([mc;vec(covy_tl(~idxStitched));LDScovy_tl_h(~idxStitched)]);
+    Mc = max([Mc;vec(covy_tl(~idxStitched));LDScovy_tl_h(~idxStitched)]);
     hold off
     line(1.1*[mc, Mc], 1.1*[mc, Mc], 'color', 'k', 'linewidth', 1.5)
     hold on
-    plot(covy(idxStitched), LDScovy_h(idxStitched), 'b.', 'markerSize',7)
+    plot(covy_tl(idxStitched), LDScovy_tl_h(idxStitched), 'b.', 'markerSize',7)
     if sum(idxStitched(:))>0
       text(mc,0.9*Mc, ...
         ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
-        num2str(corr(covy(idxStitched),LDScovy_h(idxStitched)))])
+        num2str(corr(covy_tl(idxStitched),LDScovy_h(idxStitched)))])
     end
-    plot(covy(~idxStitched), LDScovy_h(~idxStitched), 'g.', 'markerSize',7)
+    plot(covy_tl(~idxStitched), LDScovy_tl_h(~idxStitched), 'g.', 'markerSize',7)
     if sum(~idxStitched(:))>0
       text(mc,0.7*Mc, ...
         ['corr(cov(y)_{est},cov(y)_{true})  = ', ...
-        num2str(corr(covy(~idxStitched),LDScovy_h(~idxStitched)))])
+        num2str(corr(covy_tl(~idxStitched),LDScovy_tl_h(~idxStitched)))])
     end
     axis(1.1*[mc, Mc, mc, Mc])
     xlabel('true cov(y)')
