@@ -186,6 +186,7 @@ def run(xDim, yDim, uDim, T, obsScheme, fitOptions=None,
 
     else:
         print('Using provided initial parameters. User is responsible for making sure they work!')
+        initOptions = []
     print('A_0:')
     print(initPars[0])
 
@@ -329,7 +330,7 @@ def generatePars(xDim, yDim, uDim,truePars):
     if genPars[7]:
         # set R_ii as 25% to 125% of total variance of y_i
         R = (0.25 + np.random.uniform(size=[yDim])) * CPiC.diagonal() 
-        R = np.diag(R)
+        R = np.diag(R)/5
 
     if np.all(R.shape==(yDim,)):
         R = np.diag(R)
