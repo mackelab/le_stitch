@@ -20,7 +20,7 @@ def run(xDim,
         yDim, 
         uDim, 
         T, 
-        obsScheme, 
+        obsScheme=None, 
 
         maxIter=10, 
         epsilon=np.log(1.001),
@@ -59,6 +59,79 @@ def run(xDim,
         ifStoreIntermediateResults = False,
         saveFile='LDS_data.mat'):
 
+    """ OUT = run(xDim*,yDim*,uDim*,T*,obsScheme, 
+                  maxIter, epsilon, covConvEps, 
+                  ifPlotProgress, ifTraceParamHist, ifRDiagonal,
+                  ifUseA, ifUseB,
+                  truePars, trueAgen, truelts, trueBgen, trueQgen,
+                  truemu0gen,trueV0gen,trueCgen,truedgen,trueRgen,
+                  initPars, initAgen, initlts, initBgen, initQgen,
+                  initmu0gen,initV0gen,initCgen,initdgen,initRgen,
+                  u, inputType, constInputLngth,
+                  y, x, ifStoreIntermediateResults, saveFile)
+
+        xDim : dimensionality of latent states x
+        yDim : dimensionality of observed states y
+        uDim : dimensionality of input states u
+        T    : trial length (in number of time points)
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        maxIter: maximum number of allowed EM steps
+        epsilon:    precision (stopping criterion) for deciding on convergence
+                    of overall EM algorithm
+        covConvEps: precision (stopping criterion) for deciding on convergence
+                    of latent covariance estimates durgin the E-step        
+        ifPlotProgress   : boolean specifying if to visualise fitting progress`
+        ifTraceParamHist : boolean specifying if to keep track of param updates
+        ifRDiagonal      : boolean specifying if R is represented as diagonal
+        ifUseA  : boolean specifying whether to fit the LDS with parameter A
+        ifUseB  : boolean specifying whether to fit the LDS with parameter B
+
+        truePars : None, or list/np.ndarray/dict containing no, some or all
+                   of the desired ground-truth parameters. Will identify any
+                   parameters not handed over and will fill in the rest
+                   according to selected strings below.
+        trueAgen   : string specifying methods of parameter generation
+        truelts    : ndarray with one entry per latent time scale (i.e. xDim)
+        trueBgen   : string specifying methods of parameter generation
+        trueQgen   :  ""
+        truemu0gen :  "" 
+        trueV0gen  :  ""
+        trueCgen   :  "" 
+        truedgen   :  ""
+        trueRgen   : (see below for details)
+        initPars : None, or list/np.ndarray/dict containing no, some or all
+                   of the desired parameter initialisations. Will identify any
+                   parameters not handed over and will fill in the rest
+                   according to selected strings below.
+        initAgen   : string specifying methods of parameter initialisation
+        initlts    : ndarray with one entry per latent time scale (i.e. xDim)
+        initBgen   : string specifying methods of parameter initialisation
+        initQgen   :  ""
+        initmu0gen :  "" 
+        initV0gen  :  ""
+        initCgen   :  "" 
+        initdgen   :  ""
+        initRgen   : (see below for details)
+        x: data array of latent variables
+        y: data array of observed variables
+        u: data array of input variables
+        ifStoreIntermediateResults : boolean, specifying whether or not to 
+                                     store the intermediate results after 
+                                     each EM cycle to the same folder as
+                                     given by input variable saveFile
+        saveFile : (path to folder and) name of file for storing results.  
+        Generates parameters of an LDS, potentially by looking at given data.
+        Can be used for for generating ground-truth parameters for generating
+        data from an artificial experiment using the LDS, or for finding 
+        parameter initialisations for fitting an LDS to data. Usage is slightly
+        different in the two cases (see below). By nature of the wide range of
+        applicability of the LDS model, this function contains many options
+        (implemented as strings differing different cases, and arrays giving
+         user-specified values such as timescale ranges), and is to be extended
+        even further in the future.
+
+    """
     if not isinstance(ifUseB,bool):
         print('ifUseB:')
         print( ifUseB  )
@@ -270,7 +343,6 @@ def generateModelPars(xDim, yDim, uDim=0,
                       dgen='scaled', 
                       Rgen='fraction',
                       x=None, y=None, u=None): 
-
     """ OUT = generateModelPars(xDim*,yDim*,uDim,parsIn, 
                                 Agen,lts,Bgen,Qgen,mu0gen,V0gen, 
                                 Cgen, dgen, Rgen,x,y,u,ifVisualiseInitPars)
@@ -295,11 +367,17 @@ def generateModelPars(xDim, yDim, uDim=0,
         x: data array of latent variables
         y: data array of observed variables
         u: data array of input variables
-        ifVisualisePars : boolean, specifying whether to plot the outputs
-                          of this function for inspection
-        Initialises parameters of an LDS, potentially by looking at the data.
-    """
+        Generates parameters of an LDS, potentially by looking at given data.
+        Can be used for for generating ground-truth parameters for generating
+        data from an artificial experiment using the LDS, or for finding 
+        parameter initialisations for fitting an LDS to data. Usage is slightly
+        different in the two cases (see below). By nature of the wide range of
+        applicability of the LDS model, this function contains many options
+        (implemented as strings differing different cases, and arrays giving
+         user-specified values such as timescale ranges), and is to be extended
+        even further in the future.
 
+    """
     totNumParams = 8 # an input-LDS model has 8 parameters: A,B,Q,mu0,V0,C,d,R
 
     """ pars optional inputs to this function """
@@ -597,8 +675,11 @@ def generateModelPars(xDim, yDim, uDim=0,
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def checkPars(pars, xDim, yDim, uDim):
+    """ checkPars(pars*,xDim*,yDim*,uDim*)
+        Short function to check the consistency of dimensionality of parameters
+        Returns nothing, only raises exceptions in case of inconsistencies.
 
-
+    """
     # check latent state tranition matrix A
     if not np.all(pars[0].shape == (xDim,xDim)):
         print(     'A.shape')
@@ -665,7 +746,28 @@ def checkPars(pars, xDim, yDim, uDim):
 
 def simulateExperiment(pars,T,Trial=1,obsScheme=None,
                        u=None,inputType='pwconst',constInputLngth=1):
+    """ OUT = simulateExperiment(pars*,T*,Trial,obsScheme,
+                                 u,inputType,constInputLngth):
+        pars  : (list of) LDS parameters
+        T     : trial length (in number of time points)
+        Trial : number of trials
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        u: data array of input variables
+        inputType: string specifying the type of input data to be generated
+        constInputLngth: if inputType=='pwconst', gives the stretches of time
+                         over which u will be generated as piecewise constant
+        Generates data from an LDS model with ground-truth parameters pars. 
+        Data will be of recording length T, with Trial many trials. 
+        Input u is optional, and can also be generated by this function
+        in case of simple piecewise constant input, when specifying the
+        relevant input variables 'inputType' and 'constInpugLngth'. 
+        A core task of with this function (that at core just calls 
+        upon the ssm_timeSeries library) is to correctly differ between
+        the cases of i) having no input u and ii) having input matrix B=0,
+        in a way that will be understood by ssm_timeSeries.
 
+    """
     xDim = pars[0].shape[0] # get xDim from A
     yDim = pars[5].shape[0] # get yDim from C
 
@@ -723,7 +825,19 @@ def simulateExperiment(pars,T,Trial=1,obsScheme=None,
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def computeEstep(pars, y, u=None, obsScheme=None, eps=1e-30):
-
+    """ OUT = computeEstep(pars*, y*, u, obsScheme, eps)
+        pars  : (list of) LDS parameters
+        y: data array of observed variables
+        u: data array of input variables
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        eps:       precision (stopping criterion) for deciding on convergence
+                   of latent covariance estimates durgin the E-step 
+        Wrapper function to quickly compute a single E-step with given data y
+        and LDS parameters pars. This function mostly exists to deal with the
+        difference between having no input u and not using it (i.e. parameter
+        B = 0). 
+    """
     [A,B,Q,mu0,V0,C,d,R] = pars
 
     if (u is None and 
@@ -745,6 +859,42 @@ def computeEstep(pars, y, u=None, obsScheme=None, eps=1e-30):
         ssm_fit._LDS_E_step(A,B,Q,mu0,V0,C,d,R,y,u,obsScheme, eps)
 
     return [Ext_true, Extxt_true, Extxtm1_true, LLtr, tCovConvFt, tCovConvSm]
+
+#----this -------is ------the -------79 -----char ----compa rison---- ------bar
+
+def getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30, 
+                           ifUseA=True,ifUseB=True):
+    """ OUT = _getNumericsFirstEMCycle(initPars*,obsScheme*,y*,u*,eps)
+        initPars: collection of initial parameters for LDS
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        y:         data array of observed variables
+        u:         data array of input variables
+        eps:       precision (stopping criterion) for deciding on convergence
+                   of latent covariance estimates durgin the E-step                   
+        This function serves to quickly get the results of one EM-cycle. It is
+        mostly intended to generate results that can quickly be compared with
+        other EM implementations or different parameter initialisation methods. 
+    """
+    [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] = initPars
+    # do one E-step
+    [Ext_0, Extxt_0, Extxtm1_0,LL_0, tCovConvFt, tCovConvSm]    = \
+      ssm_fit._LDS_E_step(A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0,y,u,obsScheme,eps)
+    # do one M-step      
+    [A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti] = \
+      ssm_fit._LDS_M_step(Ext_0,Extxt_0,Extxtm1_0,y,u,obsScheme,
+                          ifUseA=ifUseA,ifUseB=ifUseB) 
+
+    if not ifUseA:
+        A_1 = A_0.copy() # simply discard the update!
+
+    # do another E-step
+    [Ext_1, Extxt1_1, Extxtm1_1,LL_1, tCovConvFt, tCovConvSm] = \
+      ssm_fit._LDS_E_step(A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,y,u,obsScheme,eps)
+
+    return [Ext_0, Extxt_0, Extxtm1_0,LL_0, 
+            A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti,
+            Ext_1, Extxt1_1, Extxtm1_1,LL_1]
 
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
@@ -816,39 +966,3 @@ def evaluateFit(A, B, Q, C, d, R, y, u, Ext, Extxt, Extxtm1, LLs):
     plt.hold(True)
     plt.plot(np.sort(np.linalg.eig(A_h)[0]), 'b')
     plt.legend(['true', 'est'])
-
-#----this -------is ------the -------79 -----char ----compa rison---- ------bar
-
-def getResultsFirstEMCycle(initPars, obsScheme, y, u, eps=1e-30, 
-                           ifUseA=True,ifUseB=True):
-    """ OUT = _getNumericsFirstEMCycle(initPars*,obsScheme*,y*,u*,eps)
-        initPars: collection of initial parameters for LDS
-        obsScheme: observation scheme for given data, stored in dictionary
-                   with keys 'subpops', 'obsTimes', 'obsPops'
-        y:         data array of observed variables
-        u:         data array of input variables
-        eps:       precision (stopping criterion) for deciding on convergence
-                   of latent covariance estimates durgin the E-step                   
-        This function serves to quickly get the results of one EM-cycle. It is
-        mostly intended to generate results that can quickly be compared with
-        other EM implementations or different parameter initialisation methods. 
-    """
-    [A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0] = initPars
-    # do one E-step
-    [Ext_0, Extxt_0, Extxtm1_0,LL_0, tCovConvFt, tCovConvSm]    = \
-      ssm_fit._LDS_E_step(A_0,B_0,Q_0,mu0_0,V0_0,C_0,d_0,R_0,y,u,obsScheme,eps)
-    # do one M-step      
-    [A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti] = \
-      ssm_fit._LDS_M_step(Ext_0,Extxt_0,Extxtm1_0,y,u,obsScheme,
-                          ifUseA=ifUseA,ifUseB=ifUseB) 
-
-    if not ifUseA:
-        A_1 = A_0.copy() # simply discard the update!
-
-    # do another E-step
-    [Ext_1, Extxt1_1, Extxtm1_1,LL_1, tCovConvFt, tCovConvSm] = \
-      ssm_fit._LDS_E_step(A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,y,u,obsScheme,eps)
-
-    return [Ext_0, Extxt_0, Extxtm1_0,LL_0, 
-            A_1,B_1,Q_1,mu0_1,V0_1,C_1,d_1,R_1,my,syy,suu,suuinv,Ti,
-            Ext_1, Extxt1_1, Extxtm1_1,LL_1]

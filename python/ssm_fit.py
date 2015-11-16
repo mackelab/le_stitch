@@ -45,6 +45,7 @@ def _fitLDS(y,
         ifUseA:    boolean, specifying whether or not to fit parameter A
         ifUseB:    boolean, specifying whether or not to use parameter B
         xDim:      dimensionality of (sole subgroup of) latent state X
+        saveFile : (path to folder and) name of file for storing results.  
         Fits an LDS model to data.
 
     """
@@ -970,7 +971,19 @@ def _LDS_M_step(Ext, Extxt, Extxtm1, y, u, obsScheme,
 #----this -------is ------the -------79 -----char ----compa rison---- ------bar
 
 def _checkObsScheme(obsScheme,yDim,T):
+    """ OUT = _checkObsScheme(obsScheme*,yDim*,T*)    
+        yDim : dimensionality of observed states y
+        T    : trial length (in number of time points)
+        obsScheme: observation scheme for given data, stored in dictionary
+                   with keys 'subpops', 'obsTimes', 'obsPops'
+        Checks the internal validity of provided obsScheme dictionaries that 
+        contain the information on the observation scheme that is key to 
+        any stitching and missing-value context. Checks if formatting is 
+        correct, finds superfluous (e.g. never observed) subpopulations,
+        and fills in index groups (via _computeObsIndexGroups()) if 
+        necessary.
 
+    """
     if obsScheme is None:
         obsScheme = {'subpops': [np.arange(yDim)], # creates default case
                      'obsTime': np.array([T]),     # of fully observed
