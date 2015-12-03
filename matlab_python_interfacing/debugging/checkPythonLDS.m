@@ -16,7 +16,7 @@ clc
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
 %load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_check_E.mat'])
-load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_save.mat'])
+load(['/home/mackelab/Desktop/Projects/Stitching/results/LDS_save.mat'])
 % gives data traces x, y, data length T
 % also gives true parameters {A,Q,mu0,V0,C,R} used to generate the data
 % also gives E-step results (E[xt], E[x_t x_t'], E[x_t x_{t-1}']) as
@@ -26,17 +26,17 @@ load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_save.
 %            results also provided)
 
 % squeezing parameters into Lars' formatting
-trueparams.model.A  = A;
-trueparams.model.B  = B;
-trueparams.model.Q  = Q;
-trueparams.model.x0 = mu0;
-trueparams.model.Q0 = V0;
-trueparams.model.C  = C;
-trueparams.model.d  = d(:);
-if min(size(R)) == 1
- trueparams.model.R  = diag(R);    
+trueparams.model.A  = truePars.A;
+trueparams.model.B  = truePars.B;
+trueparams.model.Q  = truePars.Q;
+trueparams.model.x0 = truePars.mu0;
+trueparams.model.Q0 = truePars.V0;
+trueparams.model.C  = truePars.C;
+trueparams.model.d  = truePars.d(:);
+if min(size(truePars.R)) == 1
+ trueparams.model.R  = diag(truePars.R);    
 else
- trueparams.model.R  = R;
+ trueparams.model.R  = truePars.R;
 end
 trueparams.model.Pi = 1;
 trueparams.model.notes.useR = 1;
@@ -64,17 +64,17 @@ seq.y = y;
 seq.T = double(T);
 
 % what the python E-step got as parameter estimate initializations
-pyparamsIn.model.A = A_0;
-pyparamsIn.model.B = B_0;
-pyparamsIn.model.Q = Q_0;
-pyparamsIn.model.x0 = mu0_0;
-pyparamsIn.model.Q0 = V0_0;
-pyparamsIn.model.C = C_0;
-pyparamsIn.model.d = d_0(:);
-if min(size(R_0)) == 1
- pyparamsIn.model.R  = diag(R_0);    
+pyparamsIn.model.A = initPars.A;
+pyparamsIn.model.B = initPars.B;
+pyparamsIn.model.Q = initPars.Q;
+pyparamsIn.model.x0 = initPars.mu0;
+pyparamsIn.model.Q0 = initPars.V0;
+pyparamsIn.model.C = initPars.C;
+pyparamsIn.model.d = initPars.d(:);
+if min(size(initPars.R)) == 1
+ pyparamsIn.model.R  = diag(initPars.R);    
 else
- pyparamsIn.model.R  = R_0;
+ pyparamsIn.model.R  = initPars.R;
 end
 pyparamsIn.model.Pi = 1;
 pyparamsIn.model.notes = trueparams.model.notes;
@@ -84,18 +84,18 @@ pyparamsIn.model.ParamPenalizerHandle = @LDSemptyParamPenalizerHandle;
 pyparamsIn.opts = trueparams.opts;
 
 % what the python M-step returned
-pyparamsOut.model.A = A_1;
-pyparamsOut.model.B = B_1;
-pyparamsOut.model.Q = Q_1;
-pyparamsOut.model.x0 = mu0_1;
-pyparamsOut.model.Q0 = V0_1;
-pyparamsOut.model.C = C_1;
-if min(size(R_1)) == 1
- pyparamsOut.model.R  = diag(R_1);    
+pyparamsOut.model.A = firstPars.A;
+pyparamsOut.model.B = firstPars.B;
+pyparamsOut.model.Q = firstPars.Q;
+pyparamsOut.model.x0 = firstPars.mu0;
+pyparamsOut.model.Q0 = firstPars.V0;
+pyparamsOut.model.C = firstPars.C;
+if min(size(firstPars.R)) == 1
+ pyparamsOut.model.R  = diag(firstPars.R);    
 else
- pyparamsOut.model.R  = R_1;
+ pyparamsOut.model.R  = firstPars.R;
 end
-pyparamsOut.model.d  = d_1(:);
+pyparamsOut.model.d  = firstPars.d(:);
 pyparamsOut.model.Pi = 1;
 pyparamsOut.model.notes = trueparams.model.notes;
 pyparamsOut.model.inferenceHandle =  @LDSInference;
@@ -123,7 +123,7 @@ for i = 1:xDim
 end
 pySeq.u = u;
 
-clearvars -except xDim yDim trueparams pyparamsOut pyparamsIn seq pySeq Ext Extxt Extxtm1 T 
+%clearvars -except xDim yDim trueparams pyparamsOut pyparamsIn seq pySeq Ext Extxt Extxtm1 T Pi Pi_h Pi_t Pi_t_h 
 
 
 % E-step: Get Matlab version of Ext, Extxt, Extxtm1
@@ -609,4 +609,55 @@ text(0.3*M, 0.5*m, ['MSE (eig): ', num2str(MSE_Reig)])
 text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_R)])
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_R)])
 
+%% Check for twists in latent space
+figure;
+subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
+subplot(2,3,2),
+plot(squeeze(Extxt_true(1,1,:))' - squeeze(Ext_true(1,:).*Ext_true(1,:)))
+title('cov(x_1,x_1) over time')
+subplot(2,3,3),
+if xDim > 1
+plot(squeeze(Extxt_true(xDim-1,xDim,:))' - squeeze(Ext_true(xDim-1,:).*Ext_true(xDim,:)))
+end
+title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
+subplot(2,3,4),
+t = 0.9 * obsScheme.obs_time(1);
+imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))'))
+title(['cov(x) at t = ', num2str(t)])
+if length(obsScheme.obs_time)>1
+subplot(2,3,5),
+t = 0.9 * obsScheme.obs_time(2);
+imagesc(squeeze(Extxt_true(:,:,t)- squeeze(Ext_true(:,t))*squeeze(Ext_true(:,t))))
+title(['cov(x) at t = ', num2str(t)])
+end
 
+%% Check for twists in latent space
+figure;
+subplot(2,3,1), imagesc(Pi_h), title('\Pi = A \Pi A^T + Q')
+subplot(2,3,2),
+plot(squeeze(Extxt_h(1,1,:))' - squeeze(Ext_h(1,:).*Ext_h(1,:)))
+title('cov(x_1,x_1) over time')
+subplot(2,3,3),
+if xDim > 1
+plot(squeeze(Extxt_h(xDim-1,xDim,:))' - squeeze(Ext_h(xDim-1,:).*Ext_h(xDim,:)))
+end
+title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
+subplot(2,3,4),
+%t = 0.9 * obsScheme.obs_time(1);
+t = 1000;
+imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
+title(['cov(x) at t = ', num2str(t)])
+if length(obsScheme.obs_time)>1
+subplot(2,3,5),
+t = 3000;
+%t = 0.9 * obsScheme.obs_time(2);
+imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
+title(['cov(x) at t = ', num2str(t)])
+end
+if length(obsScheme.obs_time)>2
+subplot(2,3,6),
+t = 4000;
+%t = 0.9 * obsScheme.obs_time(3);
+imagesc(squeeze(Extxt_h(:,:,t)- squeeze(Ext_h(:,t))*squeeze(Ext_h(:,t))'))
+title(['cov(x) at t = ', num2str(t)])
+end
