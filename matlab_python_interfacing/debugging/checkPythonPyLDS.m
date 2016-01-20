@@ -116,9 +116,9 @@ for i = 1:xDim
     for j = 1:xDim
       pySeq.posterior.Vsm((0:xDim:end-1)+i, j)  = ...
        squeeze(stats_0.V_h(:,i,j));
-%      pySeq.posterior.VVsm((0:xDim:end-1)+i, j) = ...
-%       squeeze(stats_0.extxtm1(2:end,i,j))' - ...
-%         (pySeq.posterior.xsm(i,2:end).*pySeq.posterior.xsm(j,1:end-1));        
+      pySeq.posterior.VVsm((0:xDim:end-1)+i, j) = ...
+       squeeze(stats_0.extxtm1(1:end,i,j))' - ...
+         (pySeq.posterior.xsm(i,2:end).*pySeq.posterior.xsm(j,1:end-1));   
     end
 end
 
@@ -637,66 +637,66 @@ text(0.3*M, 0.5*m, ['MSE (eig): ', num2str(MSE_Reig)])
 text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_R)])
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_R)])
 
-%% Check for twists in latent space
-figure;
-subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
-subplot(2,3,2),
-plot(squeeze(stats_true.extxt(1,1,:))' - ...
-     squeeze(stats_true.ext(1,:).*stats_true.ext(1,:)))
-title('cov(x_1,x_1) over time')
-subplot(2,3,3),
-if xDim > 1
-plot(squeeze(stats_true.extxt(xDim-1,xDim,:))' - ...
-     squeeze(stats_true.ext(xDim-1,:).*stats_true.ext(xDim,:)))
-end
-title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
-subplot(2,3,4),
-t = 0.9 * obsScheme.obs_time(1);
-imagesc(squeeze(stats_true.extxt(:,:,t)- ...
-        squeeze(stats_true.ext(:,t)) * ...
-        squeeze(stats_true.ext(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-if length(obsScheme.obs_time)>1
-subplot(2,3,5),
-t = 0.9 * obsScheme.obs_time(2);
-imagesc(squeeze(stats_true.extxt(:,:,t) - ...
-        squeeze(stats_true.ext(:,t)) * ...
-        squeeze(stats_true.ext(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-end
-
-%% Check for twists in latent space
-figure;
-subplot(2,3,1), imagesc(Pi_h), title('\Pi = A \Pi A^T + Q')
-subplot(2,3,2),
-plot(squeeze(stats_h.extxt(1,1,:))' - ...
-     squeeze(stats_h.ext(1,:).*stats_h.ext(1,:)))
-title('cov(x_1,x_1) over time')
-subplot(2,3,3),
-if xDim > 1
-plot(squeeze(stats_h.extxt(xDim-1,xDim,:))' - ...
-     squeeze(stats_h.ext(xDim-1,:).*stats_h.ext(xDim,:)))
-end
-title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
-subplot(2,3,4),
-%t = 0.9 * obsScheme.obs_time(1);
-t = 1000;
-imagesc(squeeze(stats_h.extxt(:,:,t) - ...
-        squeeze(stats_h.ext(:,t))*squeeze(stats_h.ext(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-if length(obsScheme.obs_time)>1
-subplot(2,3,5),
-t = 3000;
-%t = 0.9 * obsScheme.obs_time(2);
-imagesc(squeeze(stats_h.extxt(:,:,t) - ...
-        squeeze(stats_h.ext(:,t))*squeeze(stats_h.ext(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-end
-if length(obsScheme.obs_time)>2
-subplot(2,3,6),
-t = 4000;
-%t = 0.9 * obsScheme.obs_time(3);
-imagesc(squeeze(stats_h.extxt(:,:,t) - ...
-        squeeze(stats_h.ext(:,t))*squeeze(stats_h.ext(:,t))'))
-title(['cov(x) at t = ', num2str(t)])
-end
+% %% Check for twists in latent space
+% figure;
+% subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
+% subplot(2,3,2),
+% plot(squeeze(stats_true.extxt(1,1,:))' - ...
+%      squeeze(stats_true.ext(1,:).*stats_true.ext(1,:)))
+% title('cov(x_1,x_1) over time')
+% subplot(2,3,3),
+% if xDim > 1
+% plot(squeeze(stats_true.extxt(xDim-1,xDim,:))' - ...
+%      squeeze(stats_true.ext(xDim-1,:).*stats_true.ext(xDim,:)))
+% end
+% title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
+% subplot(2,3,4),
+% t = 0.9 * obsScheme.obs_time(1);
+% imagesc(squeeze(stats_true.extxt(:,:,t)- ...
+%         squeeze(stats_true.ext(:,t)) * ...
+%         squeeze(stats_true.ext(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% if length(obsScheme.obs_time)>1
+% subplot(2,3,5),
+% t = 0.9 * obsScheme.obs_time(2);
+% imagesc(squeeze(stats_true.extxt(:,:,t) - ...
+%         squeeze(stats_true.ext(:,t)) * ...
+%         squeeze(stats_true.ext(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% end
+% 
+% %% Check for twists in latent space
+% figure;
+% subplot(2,3,1), imagesc(Pi_h), title('\Pi = A \Pi A^T + Q')
+% subplot(2,3,2),
+% plot(squeeze(stats_h.extxt(1,1,:))' - ...
+%      squeeze(stats_h.ext(1,:).*stats_h.ext(1,:)))
+% title('cov(x_1,x_1) over time')
+% subplot(2,3,3),
+% if xDim > 1
+% plot(squeeze(stats_h.extxt(xDim-1,xDim,:))' - ...
+%      squeeze(stats_h.ext(xDim-1,:).*stats_h.ext(xDim,:)))
+% end
+% title(['cov(x_',num2str(xDim-1), ',x_',num2str(xDim),') over time'])
+% subplot(2,3,4),
+% %t = 0.9 * obsScheme.obs_time(1);
+% t = 1000;
+% imagesc(squeeze(stats_h.extxt(:,:,t) - ...
+%         squeeze(stats_h.ext(:,t))*squeeze(stats_h.ext(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% if length(obsScheme.obs_time)>1
+% subplot(2,3,5),
+% t = 3000;
+% %t = 0.9 * obsScheme.obs_time(2);
+% imagesc(squeeze(stats_h.extxt(:,:,t) - ...
+%         squeeze(stats_h.ext(:,t))*squeeze(stats_h.ext(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% end
+% if length(obsScheme.obs_time)>2
+% subplot(2,3,6),
+% t = 4000;
+% %t = 0.9 * obsScheme.obs_time(3);
+% imagesc(squeeze(stats_h.extxt(:,:,t) - ...
+%         squeeze(stats_h.ext(:,t))*squeeze(stats_h.ext(:,t))'))
+% title(['cov(x) at t = ', num2str(t)])
+% end
