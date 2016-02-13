@@ -16,7 +16,7 @@ clc
 addpath( ...
    genpath('/home/mackelab/Desktop/Projects/Stitching/code/pop_spike_dyn'))
 %load(['/home/mackelab/Desktop/Projects/Stitching/results/test_problems/LDS_check_E.mat'])
-load(['/home/mackelab/Desktop/Projects/Stitching/results/pylds_debug/pylds_1x2_full.mat'])
+load(['/home/mackelab/Desktop/Projects/Stitching/results/pylds_debug/pylds_1x2_diag.mat'])
 % gives data traces x, y, data length T
 % also gives true parameters {A,Q,mu0,V0,C,R} used to generate the data
 % also gives E-step results (E[xt], E[x_t x_t'], E[x_t x_{t-1}']) as
@@ -38,6 +38,7 @@ if min(size(truePars.R)) == 1
 else
  trueparams.model.R  = truePars.R;
 end
+trueparams.model.notes.diagR  = 1;
 trueparams.model.Pi = 1;
 trueparams.model.notes.useR = 1;
 trueparams.model.notes.useS = 0;
@@ -46,7 +47,6 @@ trueparams.model.notes.learnx0 = 1;
 trueparams.model.notes.learnQ0 = 1;
 trueparams.model.notes.learnA = 1;
 trueparams.model.notes.learnR = 1;
-trueparams.model.notes.diagR  = 0;
 trueparams.model.notes.useCMask= 0;
 trueparams.model.inferenceHandle =  @LDSInference;
 trueparams.model.MStepHandle = @LDSMStep;
@@ -120,6 +120,10 @@ for i = 1:xDim
        squeeze(stats_0.extxtm1(1:end,i,j))' - ...
          (pySeq.posterior.xsm(i,2:end).*pySeq.posterior.xsm(j,1:end-1));   
     end
+end
+
+if size(stats_0.extxtm1,1) == 1
+    pySeq.posterior.VVsm = pySeq.posterior.VVsm / pySeq.T;
 end
 
 pySeq.u = u;
@@ -637,7 +641,59 @@ text(0.3*M, 0.5*m, ['MSE (eig): ', num2str(MSE_Reig)])
 text(0.3*M, 0.5*m+0.1*(M-m), ['MSE: ', num2str(MSE_R)])
 text(0.3*M, 0.5*m+0.2*(M-m), ['corr: ', num2str(corr_R)])
 
-% %% Check for twists in latent space
+%%
+
+if min(size(truePars.R)) == 1
+ truePars.R = diag(truePars.R);    
+end
+if min(size(estPars.R)) == 1
+ estPars.R = diag(estPars.R);    
+end
+
+figure;
+covyyt = cov([seq.y(:,2:end);seq.y(:,1:end-1)]');
+covy_true = truePars.C * Pi * truePars.C' + truePars.R;
+covy_est = estPars.C * Pi_h * estPars.C' + estPars.R;
+covy_emp = covyyt(1:yDim, 1:yDim);
+
+m = min([covy_true(:); covy_est(:); covy_emp(:)]);
+M = max([covy_true(:); covy_est(:); covy_emp(:)]);
+subplot(2,3,1)
+imagesc(covy_true)
+set(gca, 'clim', [m,M])
+title('$C \Pi C^T + R$', 'Interpreter', 'latex')
+subplot(2,3,2)
+imagesc(covy_est)
+set(gca, 'clim', [m,M])
+title('$\hat{C} \hat{\Pi} \hat{C}^T + \hat{R}$', 'Interpreter', 'latex')
+subplot(2,3,3)
+imagesc(covy_emp)
+set(gca, 'clim', [m,M])
+title('$cov(y_t,y_t)$', 'Interpreter', 'latex')
+
+covy_t_true = truePars.C * (Pi_t) * truePars.C';
+covy_t_est = estPars.C * (Pi_t_h) * estPars.C';
+covy_t_emp = covyyt(1:yDim, yDim+(1:yDim));
+
+m = min([covy_true(:); covy_est(:); covy_t_emp(:)]);
+M = max([covy_true(:); covy_est(:); covy_t_emp(:)]);
+subplot(2,3,4)
+imagesc(covy_t_true)
+set(gca, 'clim', [m,M])
+title('$C A \Pi C^T$', 'Interpreter', 'latex')
+subplot(2,3,5)
+imagesc(covy_t_est)
+set(gca, 'clim', [m,M])
+title('$\hat{C} \hat{A} \hat{\Pi} \hat{C}$', 'Interpreter', 'latex')
+subplot(2,3,6)
+imagesc(covy_t_emp)
+set(gca, 'clim', [m,M])
+title('$cov(y_{t-1}, y_{t})$', 'Interpreter', 'latex')
+
+
+
+
+%% Check for twists in latent space
 % figure;
 % subplot(2,3,1), imagesc(Pi), title('\Pi = A \Pi A^T + Q')
 % subplot(2,3,2),
