@@ -327,6 +327,8 @@ def post_process(params):
 
     p, n = params['C'].shape
 
+    #params = stabilize_A(params)
+
     if isinstance(params['Q'], complex):
         params['Q'] = np.real(params['Q'])
         
@@ -342,6 +344,20 @@ def post_process(params):
     
     params.update({'mu0':np.zeros(n)}) 
     params['R']  = np.diag(np.diag(params['R']))
+
+
+    return params
+
+def stabilize_A(params):
+
+    D, V = np.linalg.eig(params['A'])
+    if np.any(np.abs(D) > 1):
+        print(np.abs(D))
+        warnings.warn(('Produced instable dynamics matrix A. Bluntly pushing '
+                       'eigenvalues into the unit circle'))  
+        D /= np.maximum(np.abs(D), 1)
+        print(np.abs(D))
+        params['A'] = np.real(V.dot(np.diag(D).dot(np.linalg.inv(V))))
 
     return params
 
