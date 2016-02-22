@@ -165,6 +165,8 @@ def iterSSID(seq, n, num_iter=100, init=None, alpha=1.,pi_method='proper'):
 
 def flip_emission_signs(SIGyy, sub_pops, params):
 
+    # we drop this for now, as it hardly ever flips anything
+    """
     if len(sub_pops) == 1:
         idx_overlap = sub_pops[0]
     elif len(sub_pops) == 2:
@@ -182,7 +184,7 @@ def flip_emission_signs(SIGyy, sub_pops, params):
 
         if check_flip(SIGp_est, SIGp_true):
             params['C'][idx_sub,:] *= -1
-        
+    """    
     return params
 
 def check_flip(x_est, x_true, thresh=0.5):
