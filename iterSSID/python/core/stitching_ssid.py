@@ -64,29 +64,31 @@ def run_exp_iterSSID(seq, seq_f, n, num_iter=100,pi_method='proper', plot_flag=T
         plt.xlabel('est.')
         plt.ylabel('true')
 
-        idx_stitched = np.invert(lPSIGfp)
-        m = np.min([SIGfp.min(), SIGfp_f.min()])
-        M = np.max([SIGfp.max(), SIGfp_f.max()])
-        plt.subplot(2,3,4)
-        plt.imshow(SIGfp_f, interpolation='none')
-        plt.clim(m,M)
-        plt.title('SIGfp true')
-        plt.subplot(2,3,5)
-        plt.imshow(SIGfp, interpolation='none')
-        plt.clim(m,M)
-        plt.title('SIGfp est.')
-        plt.subplot(2,3,6)
-        if np.any(idx_stitched):
-            m = np.min([SIGfp[idx_stitched].min(), SIGfp_f[idx_stitched].min()])
-            M = np.max([SIGfp[idx_stitched].max(), SIGfp_f[idx_stitched].max()])
-            plt.plot([m,M], [m,M], 'k')
-            plt.axis([m,M,m,M])
-        plt.hold(True)
-        plt.plot(SIGfp[np.invert(idx_stitched)], 
-                 SIGfp_f[np.invert(idx_stitched)], 'b.')
-        plt.plot(SIGfp[idx_stitched], SIGfp_f[idx_stitched], 'r.')
-        plt.xlabel('est.')
-        plt.ylabel('true')
+        if n*p <= 2000:
+            idx_stitched = np.invert(lPSIGfp)
+            m = np.min([SIGfp.min(), SIGfp_f.min()])
+            M = np.max([SIGfp.max(), SIGfp_f.max()])
+            plt.subplot(2,3,4)
+            plt.imshow(SIGfp_f, interpolation='none')
+            plt.clim(m,M)
+            plt.title('SIGfp true')
+            plt.subplot(2,3,5)
+            plt.imshow(SIGfp, interpolation='none')
+            plt.clim(m,M)
+            plt.title('SIGfp est.')
+            plt.subplot(2,3,6)
+            if np.any(idx_stitched):
+                m = np.min([SIGfp[idx_stitched].min(), SIGfp_f[idx_stitched].min()])
+                M = np.max([SIGfp[idx_stitched].max(), SIGfp_f[idx_stitched].max()])
+                plt.plot([m,M], [m,M], 'k')
+                plt.axis([m,M,m,M])
+            plt.hold(True)
+            plt.plot(SIGfp[np.invert(idx_stitched)], 
+                     SIGfp_f[np.invert(idx_stitched)], 'b.')
+            plt.plot(SIGfp[idx_stitched], SIGfp_f[idx_stitched], 'r.')
+            plt.xlabel('est.')
+            plt.ylabel('true')
+
         plt.show()    
 
     return params, SIGfp, SIGyy, lPSIGfp, lPSIGyy, SIGfp_f, SIGyy_f
@@ -96,8 +98,20 @@ def iterSSID(seq, n, num_iter=100, init=None, alpha=1.,pi_method='proper'):
 
     T,p = seq['y'].shape
 
+    print(seq['y'].shape)
+
     params = []
     broken = False
+
+    if p > 200:
+        print('p = ', p)
+        print('very high-dimensional data! Will take a while. Switching to verbose...')
+        verbose=True
+    else:
+        verbose=False
+
+    if verbose:
+        print('generating data cov. mat')
 
     SIGfp_new, SIGyy_new = generateCovariancesFP(seq=seq, hS=n)
 
@@ -105,6 +119,9 @@ def iterSSID(seq, n, num_iter=100, init=None, alpha=1.,pi_method='proper'):
     lPSIGfp, lPSIGyy = np.invert(lnPSIGfp), np.invert(lnPSIGyy) 
     PSIGfp, PSIGyy = SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy]  # observed parts
 
+
+    if verbose:
+        print('computing naive iterSSID')
     # 'zero'-th iteration: used ssidSVD on Hankel cov matrix with NaN set to 0:
     SIGfp_new[lnPSIGfp] = 0
     SIGyy_new[lnPSIGyy] = 0
@@ -118,8 +135,12 @@ def iterSSID(seq, n, num_iter=100, init=None, alpha=1.,pi_method='proper'):
     SIGfp_old = SIGfp_new.copy() if init is None else init
     SIGyy_old = SIGyy_new.copy()
 
+    if verbose:
+        print('computing iterative SSID')
     for t in range(1,num_iter+1):
 
+        if verbose:
+            print(t)
         params.append(post_process(ssidSVD(SIGfp=SIGfp_old,
                                            SIGyy=SIGyy_old,
                                            n=n,
@@ -273,9 +294,19 @@ def ssidSVD(SIGfp,SIGyy,n, pi_method='proper', params_old = None):
     
     minVar    = 1e-5
     minVarPi  = 1e-5   
-        
+
     p = np.size(SIGyy,0)
+
+    if p > 200:
+        print('p = ', p)
+        print('very high-dimensional data! Will take a while. Switching to verbose...')
+        verbose=True
+    else:
+        verbose=False
+       
     
+    if verbose:
+        print('computing SVD:')
     UU,SS,VV = np.linalg.svd(SIGfp) # SIGfp = UU.dot(diag(SS).dot(VV)
 
     VV = VV.T
@@ -285,10 +316,15 @@ def ssidSVD(SIGfp,SIGyy,n, pi_method='proper', params_old = None):
    
     Obs = np.dot(UU,SS)
 
+    if verbose:
+        print('computing A, C:')
+
     A = np.linalg.lstsq(Obs[:-p,:],Obs[p:,:])[0]
     C = Obs[:p,:]
     Chat = VV[:p,:n]
     
+    if verbose:
+        print('computing Pi:')
 
     # hack: abolish constant flipping of mathematical signs of latent states...
     if not params_old is None:
@@ -306,6 +342,10 @@ def ssidSVD(SIGfp,SIGyy,n, pi_method='proper', params_old = None):
         #warnings.warn(('Will not solve DARE, using heuristics; this might '
         #    'lead to poor estimates of Q and V0'))  
         Pi = np.linalg.lstsq(A,np.dot(Chat.T,np.linalg.pinv(C.T)))[0]
+
+
+    if verbose:
+        print('computing Q, R:')
                    
     D, V = np.linalg.eig(Pi)
     D[D < minVarPi] = minVarPi
