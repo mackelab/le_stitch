@@ -413,3 +413,396 @@ def symmetrize(A):
 	
     return (A + A.T)/2
 
+def blockarray(*args,**kwargs):
+    "Taken from Matthew J. Johnson's 'pybasicbayes' code package"
+    return np.array(np.bmat(*args,**kwargs),copy=False)
+
+def observability_mat(pars, k):
+
+    if isinstance(pars, dict):
+        A, C = pars['A'], pars['C']
+    elif isinstance(pars, tuple) and len(pars) == 2:
+        A, C = pars[0], pars[1]
+    
+    return blockarray([[C.dot(np.linalg.matrix_power(A,i))] for i in range(k)])
+
+def reachability_mat(pars, l):
+
+    if isinstance(pars, dict):
+        A, B = pars['A'], pars['B']
+    elif isinstance(pars, tuple) and len(pars) == 2:
+        A, B = pars[0], pars[1]  
+
+    return blockarray([np.linalg.matrix_power(A,i).dot(B) for i in range(l)])
+
+###############################################################################
+# deterministic MIMO LTI subspace identification
+###############################################################################
+
+def d_system(pars, stype='LTI'):
+
+    assert stype in ('LTI',)
+
+    if stype=='LTI':
+        def sys(inputs):
+            return d_sim_system_LTI(pars, inputs)
+
+    return sys
+
+
+def d_sim_system_LTI(pars, inputs):
+
+    p,n = pars['C'].shape
+    T,m = inputs.shape
+
+    data, stateseq = np.zeros((T,p)), np.zeros((T,n))
+    stateseq[0,:] = pars['mu0']
+    for t in range(1,T):
+        stateseq[t,:] = pars['A'].dot(stateseq[t-1,:]) + \
+                        pars['B'].dot(inputs[t,:])
+        data[t,:] = pars['C'].dot(stateseq[t,:]) + \
+                    pars['D'].dot(inputs[t,:])
+
+    return data, stateseq
+
+
+def d_est_input_responses(pars, k, l=0, X0=None):
+
+    p,n = pars['C'].shape
+    m = pars['B'].shape[1]
+
+    Pi = dlyap(pars['A'],pars['Q'])  
+    assert np.all(np.isreal(Pi))
+
+    X0 = np.random.multivariate_normal(np.zeros(n),Pi,m) if X0 is None else X0
+
+    assert X0.shape==(m,n)
+    K = k+l+1  # total number of time offsets considered
+    Gs = [np.zeros((p,m)) for i in range(K)]
+
+    for idx in range(m):
+        data,stateseq,inputs = np.zeros((K,p)),np.zeros((K,n)),np.zeros(m)
+        inputs[idx] = 1
+
+        for t in range(K):
+            if t==0:
+                stateseq[0,:] = X0[idx,:]
+            else:
+                stateseq[t,:] = pars['A'].dot(stateseq[t-1,:])
+            if t==l+1:
+                stateseq[t,:] += pars['B'].dot(inputs)
+
+            Gs[t][:,idx] = pars['C'].dot(stateseq[t,:])
+            if t==l:
+                Gs[t][:,idx] += pars['D'].dot(inputs)
+
+    return Gs, X0
+
+
+def d_calc_impulse_responses(pars):
+
+    A,B,C,D = pars['A'], pars['B'], pars['C'], pars['D']
+
+    def G(t):
+        
+        return D if t==0 else C.dot(np.linalg.matrix_power(A,t-1)).dot(B)
+
+    return G
+
+
+def d_transfer_function(A,B,C,D):
+
+    I = np.eye(A.shape[0])
+
+    def G(z):
+
+        return D + C.dot(np.linalg.inv(z * I - A)).dot(B)
+
+    return G
+
+
+def d_est_init_state(pars, Gs):
+
+    k = len(Gs)    
+    observ = observability_mat(pars, k), 
+    Y = blockarray([ [Gs[i]] for i in range(k) ])
+
+    x0 = np.linalg.pinv(observ).dot(Y)
+
+
+def Ho_Kalman(G,k,l=None,comp_A_from='observability'):
+
+    l = k if l is None else l
+    assert k > 1 and l > 1
+
+    if isinstance(G, list):
+        p,m = G[0].shape        
+        assert len(G)>l and len(G)>k  # G[0] is for t=0! 
+        H_kl = blockarray(
+            [[G[i+1].reshape(p,m) for i in range(j,j+l)] for j in range(k)])
+
+    else:
+        p,m = G(0).shape
+        H_kl = blockarray(
+            [[G(i+1).reshape(p,m) for i in range(j,j+l)] for j in range(k)])
+
+    U,s,V = np.linalg.svd(H_kl)
+    sqs = np.sqrt(s)
+
+    n = np.sum(np.abs(sqs)>1e-3) # latent dimensionality determined from data!
+    U, sqS, V = U[:,:n], np.diag(sqs[:n]), V[:n,:]
+
+    observ, reach  = U.dot(sqS), sqS.dot(V)
+    assert np.allclose(H_kl, observ.dot(reach))
+
+    if comp_A_from == 'reachability':
+        A = reach[:,m:l*m].dot(np.linalg.pinv(reach[:,:-m])) 
+    elif comp_A_from == 'observability':
+        A = np.linalg.pinv(observ[:-p,:]).dot(observ[p:k*p,:])
+
+    pars_est = {'A' : A, 
+                'B' : reach[:n,:m],
+                'C' : observ[:p,:n],
+                'D' : G[0] if isinstance(G,list) else G(0)}
+
+    return pars_est, observ, reach, sqs, n
+
+
+def Ho_Kalman_nonzero_init(pars_true, k, l=None):
+
+    l = k if l is None else l
+    assert k > 1 and l > 1
+
+    Gs, _ = d_est_input_responses(pars_true,k+l,k) # zero-padded input
+
+    # do Ho-Kalman with response functions starting from input pulse
+    pars_est, observ , reach , sqs , n_est = Ho_Kalman(Gs[k:],k,l)
+
+    # estimate non-zero x(0) using observablity and the padded zero inputs
+    Y = blockarray([ [Gs[i]] for i in range(k) ])
+    Xmk_est = np.linalg.pinv(observ).dot(Y)
+    X0_est = np.linalg.matrix_power(pars_est['A'],k).dot(Xmk_est)
+
+    # correct estimates of B and D using estimate x(0)
+    pars_est['B'] -= pars_est['A'].dot(X0_est)
+    pars_est['D'] -= pars_est['C'].dot(X0_est)
+
+    return pars_est, sqs, n_est, X0_est
+
+
+def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
+
+    l = k if l is None else l
+    assert k > 1 and l > 1
+
+    assert method in ('impulses', 'parameters_obs', 'parameters_reach')
+
+    p,m = pars_true['D'].shape
+
+    num_sub_pops = len(sub_pops)
+    pars_est_js, X0_est_js, M_js, n_est_js, = [],[],[], np.zeros(num_sub_pops,dtype=int)
+    Gs = [np.zeros((p,m)) for i in range(k+l+1)]
+
+    for j in range(num_sub_pops):
+
+        # estimate response functions from subsets of true parameters
+        pars_obs = pars_true.copy()
+        pars_obs['C'] = pars_obs['C'][sub_pops[j],:]
+        pars_obs['D'] = pars_obs['D'][sub_pops[j],:]
+        # do Ho-Kalman on partial input response functions
+        pars_est_j, _, n_est_j, X0_est_j = Ho_Kalman_nonzero_init(pars_obs,k,l)
+        
+        # store results for rotation later on
+        pars_est_js.append(pars_est_j)
+        X0_est_js.append(X0_est_j)
+        n_est_js[j] = n_est_j
+        
+        #  _directly_ stitch the impulse responses, using x(0)=0 makes the latent coordinate systems unimportant
+
+
+    if method=='impulses':
+        for j in range(num_sub_pops):
+            for t in range(k+l+1):
+                Gs[t][sub_pops[j],:] = d_calc_impulse_responses(pars_est_js[j])(t)
+        pars_est,_,_,_,n_est=Ho_Kalman(Gs,k,l=None,comp_A_from='observability')
+
+    elif len(method)>10 and method[:10] =='parameters':
+
+        n_est = n_est_js[0]
+
+        pars_est = {'A' : pars_est_js[0]['A'].copy(), 
+                    'B' : pars_est_js[0]['B'].copy(), 
+                    'C' : np.zeros((p,n_est)),
+                    'D' : np.zeros((p,m))
+                    }
+
+        # identify overlaps
+        _, idx_grp = get_obs_index_groups({'sub_pops':sub_pops,
+            'obs_pops':np.arange(num_sub_pops)}, p)
+        overlap_grp, idx_overlap = get_obs_index_overlaps(idx_grp, sub_pops)
+
+        if method[10:14]=='_obs':
+
+            pairs_ij = traverse_subpops(sub_pops, idx_overlap, 0).T
+
+            for idx in range(pairs_ij.shape[0]):
+                i, j = pairs_ij[idx,0], pairs_ij[idx,1]
+                overlap = np.intersect1d(sub_pops[i], sub_pops[j])
+
+                assert n_est_js[i] == n_est_js[j]
+
+                ov_i = idx_global2local(overlap,sub_pops[i])
+                ov_j = idx_global2local(overlap,sub_pops[j])
+
+                Oij_i = observability_mat((pars_est_js[i]['A'], pars_est_js[i]['C'][ov_i,:]),n_est)
+                Oij_j = observability_mat((pars_est_js[j]['A'], pars_est_js[j]['C'][ov_j,:]),n_est)
+
+                Mij = np.linalg.pinv(Oij_i).dot(Oij_j)
+                pars_est_js[j]['C'] = pars_est_js[j]['C'].dot(np.linalg.inv(Mij))
+                pars_est_js[j]['A'] = pars_est_js[i]['A'].copy()
+                pars_est_js[j]['B'] = pars_est_js[i]['B'].copy()
+
+                pars_est['D'][sub_pops[i],:] = pars_est_js[i]['D']
+                pars_est['D'][sub_pops[j],:] = pars_est_js[j]['D']
+                pars_est['C'][sub_pops[i],:] = pars_est_js[i]['C']
+                pars_est['C'][sub_pops[j],:] = pars_est_js[j]['C']
+
+
+
+        elif method[10:16]=='_reach':
+
+            pars_est['D'][sub_pops[0],:] = pars_est_js[0]['D']
+            pars_est['C'][sub_pops[0],:] = pars_est_js[0]['C']
+
+            for j in range(1, num_sub_pops):
+
+                assert n_est_js[j] == n_est_js[0]                
+
+                Cij_j = reachability_mat((pars_est_js[j]['A'], pars_est_js[j]['B']),n_est)
+                Cij_i = reachability_mat((pars_est_js[0]['A'], pars_est_js[0]['B']),n_est)
+
+                Mij = Cij_i.dot(np.linalg.pinv(Cij_j))
+
+                pars_est['D'][sub_pops[j],:] = pars_est_js[j]['D']
+                pars_est['C'][sub_pops[j],:] = pars_est_js[j]['C'].dot(np.linalg.inv(Mij))
+
+    return pars_est, n_est  
+
+def traverse_subpops(sub_pops, idx_overlap, i_start=0):
+
+    num_sub_pops = len(sub_pops)
+    sub_pops_todo = np.ones(num_sub_pops,dtype=bool)
+
+    return collect_children(sub_pops_todo, idx_overlap, i_start)
+
+def collect_children(sub_pops_todo, idx_overlap, i):
+
+    sub_pops_todo[i] = False
+    js = find_overlaps(i, idx_overlap, sub_pops_todo)
+
+    if js.size > 0:
+        js = js[np.in1d(js,np.where(sub_pops_todo)[0])]
+        sub_pops_todo[js] = False
+        idx = np.hstack((i * np.ones(js.shape,dtype=int), js))
+        for j in js:
+            idx = np.vstack((idx,collect_children(sub_pops_todo,idx_overlap,j)))
+    else:
+        idx = np.array([],dtype=int).reshape(0,2)
+
+
+    return idx
+
+
+def find_first_overlap(i, idx_overlap, sub_pops_todo):
+
+    for j in np.where(sub_pops_todo)[0]:                
+        for idx in range(len(idx_overlap)):
+            if i in idx_overlap[idx] and j in idx_overlap[idx]:
+                return j, idx_overlap[idx]
+
+    raise Exception('found no overlap with any other subpopulation')
+
+def find_overlaps(i, idx_overlap, sub_pops_todo):
+
+    overlaps = []
+    for j in np.where(sub_pops_todo)[0]:                
+        for idx in range(len(idx_overlap)):
+            if i in idx_overlap[idx] and j in idx_overlap[idx]:
+                overlaps.append(j)
+                break
+    return np.array(overlaps,dtype=int)[:,np.newaxis]
+
+
+
+def idx_global2local(overlap, sub_pop):
+
+    idxi = range(overlap.size) 
+    return np.array([np.where(overlap[i] == sub_pop)[0][0] for i in idxi])
+
+
+def data_reconstruction_MSE(data, data_est):
+
+    return np.mean( (data-data_est)**2, axis=0 )
+
+
+def get_obs_index_groups(obs_scheme,p):
+    """ INPUT:
+        obs_scheme: observation scheme for given data, stored in dictionary
+                    with keys 'sub_pops', 'obs_time', 'obs_pops'
+        p:          dimensionality of observed variables y
+    Computes index groups for given observation scheme. 
+
+    """
+    try:
+        sub_pops = obs_scheme['sub_pops'];
+        obs_pops = obs_scheme['obs_pops'];
+    except:
+        raise Exception(('provided obs_scheme dictionary does not have '
+                         'the required fields sub_pops and obs_pops.'))        
+
+    J = np.zeros((p, len(sub_pops))) # binary matrix, each row gives which 
+    for i in range(len(sub_pops)):      # subpopulations the observed variable
+        if sub_pops[i].size > 0:        # y_i is part of
+            J[sub_pops[i],i] = 1   
+
+    twoexp = np.power(2,np.arange(len(sub_pops))) # we encode the binary rows 
+    hsh = np.sum(J*twoexp,1)                     # of J using binary numbers
+
+    lbls = np.unique(hsh)         # each row of J gets a unique label 
+                                     
+    idx_grp = [] # list of arrays that define the index groups
+    for i in range(lbls.size):
+        idx_grp.append(np.where(hsh==lbls[i])[0])
+
+    obs_idx = [] # list of arrays giving the index groups observed at each
+                 # given time interval
+    for i in range(len(obs_pops)):
+        obs_idx.append([])
+        for j in np.unique(hsh[np.where(J[:,obs_pops[i]]==1)]):
+            obs_idx[i].append(np.where(lbls==j)[0][0])            
+    # note that we only store *where* the entry was found, i.e. its 
+    # position in labels, not the actual label itself - hence we re-defined
+    # the labels to range from 0 to len(idx_grp)
+
+    return obs_idx, idx_grp
+
+
+def get_obs_index_overlaps(idx_grp, sub_pops):
+
+    num_sub_pops = len(sub_pops) if isinstance(sub_pops, (list,tuple)) else subs_pops.size
+    num_idx_grps = len(idx_grp)
+
+    idx_overlap = []
+    idx = np.zeros(num_idx_grps, dtype=int)
+    for j in range(num_idx_grps):
+        idx_overlap.append([])
+        for i in range(num_sub_pops):
+            if np.any(np.intersect1d(sub_pops[i], idx_grp[j])):
+                idx[j] += 1
+                idx_overlap[j].append(i)
+        idx_overlap[j] = np.array(idx_overlap[j])
+
+    overlap_grp = [idx_grp[i] for i in np.where(idx>1)[0]]
+    idx_overlap = [idx_overlap[i] for i in np.where(idx>1)[0]]
+
+    return overlap_grp, idx_overlap
