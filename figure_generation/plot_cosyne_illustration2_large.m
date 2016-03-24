@@ -113,9 +113,9 @@ for idx_set = 1:length(idx_datasets)
 end
 
 %% plot cross-correlograms
-sub_set_i  = [5,11,44,81];
+sub_set_i  = [5,11,46,81];
 num_rows = length(sub_set_i);
-clrs = [0,0,1;1.0,0.2,0.2];
+clrs = [0,100,200;200,50,10]/256;
 %while true
     %sub_set_i = sort(randsample(p,num_rows));
     %figure
@@ -135,7 +135,7 @@ clrs = [0,0,1;1.0,0.2,0.2];
        i = sub_set_i(idxi);    j = sub_set_i(idxj);
 
        if idx_set==1
-           plot(crosscorr_ts, crosscorrs{idx_set,i,j}, '-', 'color', 'k', 'linewidth', 2.5)
+           plot(crosscorr_ts, crosscorrs{idx_set,i,j}, '-', 'color', [0,0,0]/256, 'linewidth', 3)
            hold on
            plot(crosscorr_ts, crossc_est{idx_set,i,j}, '-', 'color', clrs(1,:), 'linewidth', 1.5)
        else
@@ -143,7 +143,7 @@ clrs = [0,0,1;1.0,0.2,0.2];
            hold off 
        end
        title([num2str(i), '/', num2str(j)])
-       axis([min(crosscorr_ts),max(crosscorr_ts), -0.25, 1])
+       axis([min(crosscorr_ts),max(crosscorr_ts), -0.5, 1])
        if j == i
            xlabel('\Delta{}t')
            ylabel('cov')
@@ -158,7 +158,10 @@ clrs = [0,0,1;1.0,0.2,0.2];
     end
 %pause 
 %end
+idx_stitched_1 = 46:90;
+idx_stitched_2 = 1:45;
 
+perfs = zeros(6,2);
 subplots = [5,9,10,13,14,15];
 for t = 0:5
   subplot(num_rows,num_rows,subplots(t+1))
@@ -169,9 +172,16 @@ for t = 0:5
     else
         clr = clrs(2,:);
     end
-    alltrue = [crosscorrs{idx_set,:,:}];
-    allest =  [crossc_est{idx_set,:,:}];
+    alltrue = []; allest = [];
+    for i = idx_stitched_2
+        for j = idx_stitched_1
+            alltrue = [alltrue, crosscorrs{idx_set,i,j}];
+            allest =  [allest, crossc_est{idx_set,i,j}];
+        end
+    end
     plot(alltrue(t+offset_length+1,:), allest(t+offset_length+1,:), '.', 'color', clr)
+    tmp =  corrcoef(alltrue(t+offset_length+1,:),allest(t+offset_length+1,:));
+    perfs(t+1,idx_set) = tmp(1,2);
     hold on
     title(['\Delta{}t +', num2str(t)])
     axis square
@@ -180,3 +190,98 @@ for t = 0:5
   end
   hold off
 end
+
+%% 
+figure; 
+plot(0:5,perfs(:,1), 'color', clrs(1,:), 'linewidth', 2.5)
+hold on
+plot(0:5,perfs(:,2), 'color', clrs(2,:), 'linewidth', 2.5)
+xlabel('\Delta{}t')
+ylabel('$\rho(t, t+\Delta{t})$', 'interpreter', 'Latex')
+box off
+set(gca, 'TickDir', 'out')
+
+
+%% plot 'params' covariances
+
+figure;
+covys_true = cov(y');
+covys_est = C_h * direct_dlyap(A_h,Q_h) * C_h' + diag(R_h);
+m = min([covys_true(:);covys_est(:)]);
+M = max([covys_true(:);covys_est(:)]);
+subplot(1,2,1)
+imagesc(covys_true, [m,M])
+axis square
+axis off
+title('true covs')
+subplot(1,2,2)
+imagesc(covys_est, [m,M])    
+axis off
+axis square
+title('est. covs')
+colormap('gray')
+colorbar
+
+%%
+covy = cov([y(2:end,:),y(1:end-1,:)]);
+
+covy_e = zeros(2*p);
+covy_e(1:p,1:p) = estPars.C * direct_dlyap(estPars.A,estPars.Q) * estPars.C' + estPars.R;
+covy_e(p+(1:p),p+(1:p)) = covy_e(1:p,1:p);
+covy_e(1:p, p+(1:p)) = estPars.C * (estPars.A * direct_dlyap(estPars.A,estPars.Q)) * estPars.C';
+covy_e(p+(1:p), 1:p) = covy_e(1:p, p+(1:p));
+
+m = min([covy(:);covy_e(:)]);
+M = max([covy(:);covy_e(:)]);
+figure;
+subplot(1,2,1)
+imagesc(covy, [m,M])
+axis square
+axis off
+title(['true covs'])
+
+subplot(1,2,2)
+subplot(length(idx_datasets),2, 2*idx_set)
+imagesc(covy_e, [m,M])
+axis off
+axis square
+title(['est. covs'])
+colormap('gray')
+colorbar
+
+
+%%
+figure; 
+
+idx_datasets={'test_problemsLDS_save_tempStitching_sparse', 'test_problemsLDS_save_tempStitching_mixed'};
+idx_set = 1;
+load(['data/', idx_datasets{idx_set}, '.mat'])    
+    
+subplot(1,2,1)
+h = plot(6:-1:1, log(0.5) ./ log(sort(eig(A))), 'ko', 'markerSize', 7, 'linewidth', 3);
+set(h,'MarkerEdgeColor','none','MarkerFaceColor','k')
+hold on
+
+h = plot(6:-1:1, log(0.5) ./ log(sort(eig(A_h))), 'go', 'markerSize', 7, 'linewidth', 3);
+set(h,'MarkerEdgeColor','none','MarkerFaceColor','g')
+axis([0.5,3.5,0,1]), axis autoy
+box off
+set(gca, 'TickDir', 'out')
+xlabel('# latent mode')
+ylabel('half life (bins)')
+set(gca, 'XTick', 1:3)
+
+
+subplot(1,2,2)
+h = plot(6:-1:1, 20 *log(0.5) ./ log(sort(eig(A))), 'ko', 'markerSize', 7, 'linewidth', 3);
+set(h,'MarkerEdgeColor','none','MarkerFaceColor','k')
+hold on
+
+h = plot(6:-1:1, 20 *log(0.5) ./ log(sort(eig(A_h))), 'go', 'markerSize', 7, 'linewidth', 3);
+set(h,'MarkerEdgeColor','none','MarkerFaceColor','g')
+axis([0.5,3.5,0,1]), axis autoy
+box off
+set(gca, 'TickDir', 'out')
+xlabel('# latent mode')
+ylabel('half life [ms]')
+set(gca, 'XTick', 1:3)

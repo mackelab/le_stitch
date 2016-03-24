@@ -10,7 +10,7 @@ cd([abs_path_to_data, exps])
 
 
 p = 9;
-overlap = 3; % data exists for overlap = [1, 3, 9]
+overlap = 1; % data exists for overlap = [1, 3, 9]
 
 %% gather data
 idx_datasets=[7];
@@ -114,7 +114,7 @@ for idx_set = 1:length(idx_datasets)
               if t > 0
                 tmpcove = estPars.C * (estPars.A^t) * Pi_est * estPars.C';
               elseif t < 0
-                tmpcove = estPars.C *  Pi_est * ((estPars.A')^t) * estPars.C';
+                tmpcove = estPars.C *  Pi_est * ((estPars.A')^-t) * estPars.C';
               else
                 tmpcove = covys_est{idx_set};
               end
@@ -193,17 +193,97 @@ for idx_set = 1:length(idx_datasets)
 end
 
 %% plot 'params' covariances
-
 figure;
 for idx_set = 1:length(idx_datasets)
     subplot(length(idx_datasets),2, (idx_set-1)*2+1)
     imagesc(covys_true{idx_set})
-    title(['data set #', num2str(idx_set), ' true covs'])
+    axis square
+    axis off
+    title([num2str(overlap), ' overlap, true covs'])
     subplot(length(idx_datasets),2, 2*idx_set)
     imagesc(covys_est{idx_set})    
-    title(['data set #', num2str(idx_set), ' est. covs'])
+    axis off
+    axis square
+    title([num2str(overlap), ' overlap, est. covs'])
     colormap('gray')
+    colorbar
 end
+%%
+covy = cov([y(2:end,:),y(1:end-1,:)]);
+
+covy_h = zeros(2*p);
+covy_h(1:p,1:p) = estPars.C * direct_dlyap(estPars.A,estPars.Q) * estPars.C' + estPars.R;
+covy_h(p+(1:p),p+(1:p)) = covy_h(1:p,1:p);
+covy_h(1:p, p+(1:p)) = estPars.C * (estPars.A * direct_dlyap(estPars.A,estPars.Q)) * estPars.C';
+covy_h(p+(1:p), 1:p) = covy_h(1:p, p+(1:p))';
+
+
+m = min([covy(:);covy_h(:)]);
+M = max([covy(:);covy_h(:)]);
+
+subplot(1,2,1)
+imagesc(covy, [m,M])
+axis square
+axis off
+title(['true covs'])
+
+subplot(1,2,2)
+subplot(length(idx_datasets),2, 2*idx_set)
+imagesc(covy_h, [m,M])
+axis off
+axis square
+title(['est. covs'])
+colormap('gray')
+colorbar
+
+%%
+figure; 
+subplot(2,2,1)
+imagesc(covy_h(1:p,1:p), [m,M])
+title('cov(yt,yt) est')
+axis square
+axis off
+subplot(2,2,1)
+imagesc(covy(1:p,1:p), [m,M])
+axis square
+axis off
+title('cov(yt,yt) true')
+
+subplot(2,2,2)
+imagesc(covy_h(1:p,p+(1:p)), [m,M])
+axis square
+axis off
+title('cov(yt,yt-1) est')
+subplot(2,2,4)
+imagesc(covy(1:p,p+(1:p)), [m,M])
+axis square
+axis off
+title('cov(yt,yt-1) true')
+colormap('gray')
+%%
+figure;
+subplot(1,2,1)
+plot(vec(covy(1:4, 5:9)), vec(covy_h(1:4, 5:9)), 'k.')
+tmp = corrcoef(vec(covy(1:4, 5:9)), vec(covy_h(1:4, 5:9)))
+axis square
+set(gca, 'TickDir', 'out')
+box off
+xlabel('covy')
+ylabel('covy_{est}')
+axis([-30,30,-30,30])
+subplot(1,2,2)
+plot([vec(covy(p+(1:4), 5:9));vec(covy((1:4), p+(5:9)))], ...
+     [vec(covy_h(p+(1:4), 5:9));vec(covy_h((1:4), p+(5:9)))], 'k.')
+tmp_tl = corrcoef([vec(covy(p+(1:4), 5:9));vec(covy((1:4), p+(5:9)))], ...
+        [vec(covy_h(p+(1:4), 5:9));vec(covy_h((1:4), p+(5:9)))])
+axis square
+set(gca, 'TickDir', 'out')
+box off
+xlabel('covy')
+ylabel('covy_{est}')
+axis([-20,20,-20,20])
+%subplot(1,3,3)
+%bar([0,1], [tmp(1,2), tmp_tl(1,2)], 'faceColor', [0,0,0])
 
 %% plot cross-correlograms
 figure;
@@ -211,11 +291,11 @@ for idx_set = 1:length(idx_datasets)
  for idxi = 1:p
   for idxj =idxi:p
    subplot(p,p,(idxi-1)*p+idxj)
-   plot(crosscorr_ts, crosscorrs{idx_set,idxi,idxj}, 'color', 'k')
+   plot(crosscorr_ts, crosscorrs{idx_set,idxi,idxj}, '-', 'color', 'k')
    hold on
-   plot(crosscorr_ts, crossc_est{idx_set,idxi,idxj}, 'color', 'r')
+   plot(crosscorr_ts, crossc_est{idx_set,idxi,idxj}, 'o', 'markerSize', 3, 'color', 'k', 'markerFaceColor', [0,0,0])
    hold off 
-   axis([min(crosscorr_ts),max(crosscorr_ts), -0.5, 1])
+   axis([min(crosscorr_ts),max(crosscorr_ts), -1, 1])
    if idxi == idxj
        xlabel('\Delta{}t')
        ylabel('cov')
@@ -226,5 +306,4 @@ for idx_set = 1:length(idx_datasets)
    box off
   end
  end
- pause;
 end
