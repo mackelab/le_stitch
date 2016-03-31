@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import warnings
 import control
 from scipy.linalg import solve_discrete_lyapunov as dlyap
+from numpy.lib.stride_tricks import as_strided
 
 def FitLDSParamsSSID(seq, n):
 
@@ -435,6 +436,56 @@ def reachability_mat(pars, l):
 
     return blockarray([np.linalg.matrix_power(A,i).dot(B) for i in range(l)])
 
+def Hankel_data_mat(data, k, l=None, N=None):
+    "returns the *transpose* of Y_l|l+k-1 (see notation of Katayama, 2004)"
+
+    l = k if l is None else l
+    assert k > 1 and l > 1
+
+    data = np.asarray(data, order='C')
+    T,p = data.shape
+    assert T > N+k+l-2
+
+    Y = as_strided(x=data[l:l+k+N-1,:], 
+                   shape=(N,k,p), 
+                   strides=(data.strides[0], data.strides[0], data.strides[1])
+                   ).reshape(N,p*k)
+    assert Y.shape == (N, k*p)
+
+    return Y
+
+
+def input_output_Hankel_mat(data, inputs, k, l=None, N=None):
+    "W_l|l+k-1 = [ U_l|l+k-1, Y_l|l+k-1 ]"
+
+    l = k if l is None else l
+    assert k > 1 and l > 1
+
+    N =  data.shape[0]-k-l+1 if N is None else N
+    assert N > 0
+
+    p,m = data.shape[1], inputs.shape[1]
+
+    W = np.empty((N, k*(p+m)))
+    W[:, :k*m] = Hankel_data_mat(inputs, k, l, N)
+    W[:, k*m:] = Hankel_data_mat(data, k, l, N)
+
+    return W
+
+def soft_impute(X, n, eps = 0, max_iter = 500, P_sig=None):
+
+    nan_m = np.asarray(np.isnan(X),dtype=float)
+    P_sig_X = X.copy()
+    P_sig_X[np.isnan(P_sig_X)] = 0
+
+    Z = np.zeros(X.shape)
+    for i in range(max_iter):
+        U,s,V = np.linalg.svd(P_sig_X + (Z * nan_m))
+        Z = U[:,:n].dot(np.diag(s[:n])).dot(V[:n,:])
+
+    return Z
+
+
 ###############################################################################
 # deterministic MIMO LTI subspace identification
 ###############################################################################
@@ -555,10 +606,11 @@ def Ho_Kalman(G,k,l=None,comp_A_from='observability'):
     observ, reach  = U.dot(sqS), sqS.dot(V)
     assert np.allclose(H_kl, observ.dot(reach))
 
+    if comp_A_from == 'observability':
+        A = comp_A(observ, p, k, comp_A_from)
     if comp_A_from == 'reachability':
-        A = reach[:,m:l*m].dot(np.linalg.pinv(reach[:,:-m])) 
-    elif comp_A_from == 'observability':
-        A = np.linalg.pinv(observ[:-p,:]).dot(observ[p:k*p,:])
+        A = comp_A(reach, m, l, comp_A_from)
+
 
     pars_est = {'A' : A, 
                 'B' : reach[:n,:m],
@@ -566,6 +618,16 @@ def Ho_Kalman(G,k,l=None,comp_A_from='observability'):
                 'D' : G[0] if isinstance(G,list) else G(0)}
 
     return pars_est, observ, reach, sqs, n
+
+def comp_A(mat, p, k, comp_A_from='observability'):
+    "mat is either observability or reachability. p=m, k=l for the latter"
+
+    if comp_A_from == 'reachability':
+        A = mat[:,p:k*p].dot(np.linalg.pinv(mat[:,:-p])) 
+    elif comp_A_from == 'observability':
+        A = np.linalg.pinv(mat[:-p,:]).dot(mat[p:k*p,:])
+
+    return A
 
 
 def Ho_Kalman_nonzero_init(pars_true, k, l=None):
@@ -600,7 +662,7 @@ def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
     p,m = pars_true['D'].shape
 
     num_sub_pops = len(sub_pops)
-    pars_est_js, X0_est_js, M_js, n_est_js, = [],[],[], np.zeros(num_sub_pops,dtype=int)
+    pars_js, X0_est_js, M_js, n_est_js, = [],[],[], np.zeros(num_sub_pops,dtype=int)
     Gs = [np.zeros((p,m)) for i in range(k+l+1)]
 
     for j in range(num_sub_pops):
@@ -610,28 +672,29 @@ def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
         pars_obs['C'] = pars_obs['C'][sub_pops[j],:]
         pars_obs['D'] = pars_obs['D'][sub_pops[j],:]
         # do Ho-Kalman on partial input response functions
-        pars_est_j, _, n_est_j, X0_est_j = Ho_Kalman_nonzero_init(pars_obs,k,l)
+        pars_j, _, n_est_j, X0_est_j = Ho_Kalman_nonzero_init(pars_obs,k,l)
         
         # store results for rotation later on
-        pars_est_js.append(pars_est_j)
+        pars_js.append(pars_j)
         X0_est_js.append(X0_est_j)
         n_est_js[j] = n_est_j
         
-        #  _directly_ stitch the impulse responses, using x(0)=0 makes the latent coordinate systems unimportant
-
 
     if method=='impulses':
+        #  _directly_ stitch the impulse responses  
+        # using x(0)=0 renders the latent coordinate systems unimportant
         for j in range(num_sub_pops):
             for t in range(k+l+1):
-                Gs[t][sub_pops[j],:] = d_calc_impulse_responses(pars_est_js[j])(t)
+                Gs[t][sub_pops[j],:] = d_calc_impulse_responses(pars_js[j])(t)
         pars_est,_,_,_,n_est=Ho_Kalman(Gs,k,l=None,comp_A_from='observability')
 
     elif len(method)>10 and method[:10] =='parameters':
 
-        n_est = n_est_js[0]
+        n_est = n_est_js[0] # assume now that all n's are equal, assert later
 
-        pars_est = {'A' : pars_est_js[0]['A'].copy(), 
-                    'B' : pars_est_js[0]['B'].copy(), 
+        # esp. for stitching from reachability: rotate all systems to subpop #1
+        pars_est = {'A' : pars_js[0]['A'].copy(), 
+                    'B' : pars_js[0]['B'].copy(), 
                     'C' : np.zeros((p,n_est)),
                     'D' : np.zeros((p,m))
                     }
@@ -643,50 +706,79 @@ def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
 
         if method[10:14]=='_obs':
 
+            # get list of pairs (i,j) of systems for rotating j onto i
             pairs_ij = traverse_subpops(sub_pops, idx_overlap, 0).T
+            pars_est['A'] = pars_js[pairs_ij[0,0]]['A'] # use basis of first
+            pars_est['B'] = pars_js[pairs_ij[0,0]]['B'] # subpop i for all
 
             for idx in range(pairs_ij.shape[0]):
                 i, j = pairs_ij[idx,0], pairs_ij[idx,1]
-                overlap = np.intersect1d(sub_pops[i], sub_pops[j])
 
-                assert n_est_js[i] == n_est_js[j]
+                pars_js[j] = rotate_latent_bases_obs(sub_pops[i], 
+                    sub_pops[j], pars_js[i], pars_js[j],overwrite=True)
 
-                ov_i = idx_global2local(overlap,sub_pops[i])
-                ov_j = idx_global2local(overlap,sub_pops[j])
-
-                Oij_i = observability_mat((pars_est_js[i]['A'], pars_est_js[i]['C'][ov_i,:]),n_est)
-                Oij_j = observability_mat((pars_est_js[j]['A'], pars_est_js[j]['C'][ov_j,:]),n_est)
-
-                Mij = np.linalg.pinv(Oij_i).dot(Oij_j)
-                pars_est_js[j]['C'] = pars_est_js[j]['C'].dot(np.linalg.inv(Mij))
-                pars_est_js[j]['A'] = pars_est_js[i]['A'].copy()
-                pars_est_js[j]['B'] = pars_est_js[i]['B'].copy()
-
-                pars_est['D'][sub_pops[i],:] = pars_est_js[i]['D']
-                pars_est['D'][sub_pops[j],:] = pars_est_js[j]['D']
-                pars_est['C'][sub_pops[i],:] = pars_est_js[i]['C']
-                pars_est['C'][sub_pops[j],:] = pars_est_js[j]['C']
-
-
+                pars_est['D'][sub_pops[i],:] = pars_js[i]['D']
+                pars_est['D'][sub_pops[j],:] = pars_js[j]['D']
+                pars_est['C'][sub_pops[i],:] = pars_js[i]['C']
+                pars_est['C'][sub_pops[j],:] = pars_js[j]['C']                
 
         elif method[10:16]=='_reach':
 
-            pars_est['D'][sub_pops[0],:] = pars_est_js[0]['D']
-            pars_est['C'][sub_pops[0],:] = pars_est_js[0]['C']
+            pars_est['D'][sub_pops[0],:] = pars_js[0]['D']
+            pars_est['C'][sub_pops[0],:] = pars_js[0]['C']
 
             for j in range(1, num_sub_pops):
 
-                assert n_est_js[j] == n_est_js[0]                
+                pars_js[j] = rotate_latent_bases_reach(sub_pops[0], 
+                    sub_pops[j], pars_js[0], pars_js[j],overwrite=True)
 
-                Cij_j = reachability_mat((pars_est_js[j]['A'], pars_est_js[j]['B']),n_est)
-                Cij_i = reachability_mat((pars_est_js[0]['A'], pars_est_js[0]['B']),n_est)
-
-                Mij = Cij_i.dot(np.linalg.pinv(Cij_j))
-
-                pars_est['D'][sub_pops[j],:] = pars_est_js[j]['D']
-                pars_est['C'][sub_pops[j],:] = pars_est_js[j]['C'].dot(np.linalg.inv(Mij))
+                pars_est['D'][sub_pops[j],:] = pars_js[j]['D']
+                pars_est['C'][sub_pops[j],:] = pars_js[j]['C']   
 
     return pars_est, n_est  
+
+def rotate_latent_bases_obs(sub_pop_i,sub_pop_j,pars_i,pars_j,overwrite=False):
+
+    n = pars_i['C'].shape[1]
+    assert n == pars_j['C'].shape[1]
+
+    overlap = np.intersect1d(sub_pop_i, sub_pop_j)
+    ov_i = idx_global2local(overlap,sub_pop_i)
+    ov_j = idx_global2local(overlap,sub_pop_j)
+
+    Oij_i = observability_mat((pars_i['A'], pars_i['C'][ov_i,:]),n)
+    Oij_j = observability_mat((pars_j['A'], pars_j['C'][ov_j,:]),n)
+
+    Mji = np.linalg.pinv(Oij_j).dot(Oij_i)
+    Mij = np.linalg.inv(Mji)
+
+    pars_out = pars_j if overwrite else pars_j.copy()
+
+    pars_out['C'] = pars_out['C'].dot(Mji)
+    pars_out['A'] = Mij.dot(pars_j['A']).dot(Mji) if not pars_j['A'] is None else pars_i['A'].copy()
+    pars_out['B'] = Mij.dot(pars_j['B']) if not pars_j['B'] is None else pars_i['B'].copy()
+
+    return pars_out    
+
+def rotate_latent_bases_reach(sub_pop_i,sub_pop_j,pars_i,pars_j,overwrite=False):
+
+    n = pars_i['C'].shape[1]
+    assert n == pars_j['C'].shape[1]
+
+    Cij_j = reachability_mat((pars_j['A'], pars_j['B']), n)
+    Cij_i = reachability_mat((pars_i['A'], pars_i['B']), n)
+
+    Mji = Cij_j.dot(np.linalg.pinv(Cij_i))
+    Mij = np.linalg.inv(Mji)
+
+    pars_out = pars_j if overwrite else pars_j.copy()
+
+    pars_out['C'] = pars_out['C'].dot(Mji)
+    pars_out['A'] = Mij.dot(pars_j['A']).dot(Mji) if not pars_j['A'] is None else pars_i['A'].copy()
+    pars_out['B'] = Mij.dot(pars_j['B']) if not pars_j['B'] is None else pars_i['B'].copy()
+
+    return pars_out
+
 
 def traverse_subpops(sub_pops, idx_overlap, i_start=0):
 
