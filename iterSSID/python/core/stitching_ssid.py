@@ -424,6 +424,9 @@ def observability_mat(pars, k):
         A, C = pars['A'], pars['C']
     elif isinstance(pars, tuple) and len(pars) == 2:
         A, C = pars[0], pars[1]
+
+    if len(C.shape)<2:
+        C = C.reshape(1,C.size).copy()
     
     return blockarray([[C.dot(np.linalg.matrix_power(A,i))] for i in range(k)])
 
@@ -433,6 +436,8 @@ def reachability_mat(pars, l):
         A, B = pars['A'], pars['B']
     elif isinstance(pars, tuple) and len(pars) == 2:
         A, B = pars[0], pars[1]  
+
+    assert len(B.shape)>1
 
     return blockarray([np.linalg.matrix_power(A,i).dot(B) for i in range(l)])
 
@@ -702,7 +707,7 @@ def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
         # identify overlaps
         _, idx_grp = get_obs_index_groups({'sub_pops':sub_pops,
             'obs_pops':np.arange(num_sub_pops)}, p)
-        overlap_grp, idx_overlap = get_obs_index_overlaps(idx_grp, sub_pops)
+        overlap_grp, _, idx_overlap = get_obs_index_overlaps(idx_grp, sub_pops)
 
         if method[10:14]=='_obs':
 
@@ -880,7 +885,11 @@ def get_obs_index_groups(obs_scheme,p):
 
 
 def get_obs_index_overlaps(idx_grp, sub_pops):
+    """ returns
+        overlap_grp - list of index groups found in more than one subpopulation
+        idx_overlap - list of subpopulations in which the corresponding index group is found
 
+    """
     num_sub_pops = len(sub_pops) if isinstance(sub_pops, (list,tuple)) else subs_pops.size
     num_idx_grps = len(idx_grp)
 
@@ -894,7 +903,8 @@ def get_obs_index_overlaps(idx_grp, sub_pops):
                 idx_overlap[j].append(i)
         idx_overlap[j] = np.array(idx_overlap[j])
 
-    overlap_grp = [idx_grp[i] for i in np.where(idx>1)[0]]
+    overlaps = [idx_grp[i] for i in np.where(idx>1)[0]]
+    overlap_grp = [i for i in np.where(idx>1)[0]]
     idx_overlap = [idx_overlap[i] for i in np.where(idx>1)[0]]
 
-    return overlap_grp, idx_overlap
+    return overlaps, overlap_grp, idx_overlap
