@@ -490,6 +490,129 @@ def soft_impute(X, n, eps = 0, max_iter = 500, P_sig=None):
 
     return Z
 
+def xx_Hankel_cov_mat(A,Pi,k,l):
+    
+    n = A.shape[0]
+    assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
+    
+    H = np.zeros((k*n, l*n))
+    print(H.shape)
+    
+    for kl_ in range(k+l-1):        
+        lamK = np.linalg.matrix_power(A,kl_+1).dot(Pi)
+        if kl_ < k-0.5:     
+            for l_ in range(0, min(kl_ + 1,l)):
+                offset0, offset1 = (kl_-l_)*n, l_*n
+                H[offset0:offset0+n, offset1:offset1+n] = lamK
+                
+        else:
+            for l_ in range(0, min(k+l - kl_ -1, l, k)):
+                offset0, offset1 = (k - l_ - 1)*n, ( l_ + kl_ + 1 - k)*n
+                H[offset0:offset0+n,offset1:offset1+n] = lamK
+            
+    return H
+
+def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None):
+    
+    p,n = C.shape
+    assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
+    
+    assert (Om is None) or (Om.shape == (p,p))
+    
+    H = np.zeros((k*p, l*p))
+    
+    for kl_ in range(k+l-1):        
+        lamK = (C.dot(np.linalg.matrix_power(A,kl_+1).dot(Pi))).dot(C.T)
+        
+        lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
+        if kl_ < k-0.5:     
+            for l_ in range(0, min(kl_ + 1,l)):
+                offset0, offset1 = (kl_-l_)*p, l_*p
+                H[offset0:offset0+p, offset1:offset1+p] = lamK
+                
+        else:
+            for l_ in range(0, min(k+l - kl_ -1, l, k)):
+                offset0, offset1 = (k - l_ - 1)*p, ( l_ + kl_ + 1 - k)*p
+                H[offset0:offset0+p,offset1:offset1+p] = lamK
+            
+    return H
+
+def f_l2_Hankel(C,A,Pi,k,l,Qs,Om):
+
+    if len(C.shape) < 2:
+        C  = C.reshape(Qs[0].shape[0], A.shape[0])        
+
+    err = 0.
+    for k_ in range(k):
+        for l_ in range(l):
+            APi = np.linalg.matrix_power(A, k_+l_ + 1).dot(Pi)  
+            err += f_l2_block(C,APi,Qs[k_+l_],Om)
+            
+    return err/(k*l)
+    
+def f_l2_block(C,A,Q,Om):
+
+    v = (C.dot(A.dot(C.T)))[Om] - Q[Om]
+    
+    return v.dot(v.T)/np.sum(Om)
+
+def g_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
+    
+    is_vec = True if (len(C.shape) < 2 or np.min(C.shape)==1) else False
+    if is_vec:
+        C  = C.reshape(Qs[0].shape[0], A.shape[0])   
+
+    p,n = C.shape
+        
+    grad = np.zeros((p,n))
+    for i in range(len(idx_grp)):
+        
+        def co_observed(x):
+            for idx in obs_idx:
+                if x in idx and i in idx:
+                    return True
+            return False
+                
+        co_obs_i = [idx_grp[item] for item in np.arange(len(idx_grp)) if co_observed(item)]
+        co_obs_i = np.sort(np.hstack(co_obs_i))
+        
+        for k_ in range(k):
+            for l_ in range(l):
+                APi = np.linalg.matrix_power(A, k_+l_+1).dot(Pi)                
+                grad[idx_grp[i],:] += g_l2_idxgrp(C,APi,Qs[k_+l_],idx_grp[i],co_obs_i)
+      
+    return grad.reshape(p*n,) if is_vec else grad
+
+def g_l2_idxgrp(C,A,Q,idx_grp_i,co_obs_i):
+
+    Cc, CcT = C[co_obs_i,:].dot(A), C[co_obs_i,:].dot(A.T) 
+    Ci, Qic = C[idx_grp_i,:], Q[np.ix_(idx_grp_i, co_obs_i)]
+     
+    return (Ci.dot(Cc.T) - Qic).dot(Cc) + (Ci.dot(CcT.T) - Qic).dot(CcT)
+
+def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
+
+    p = np.max([np.max(sub_pops[i]) for i in range(len(sub_pops))]) + 1
+    
+    Om = np.zeros((p,p), dtype=bool)
+    for i in range(len(sub_pops)):
+        Om[np.ix_(sub_pops[i],sub_pops[i])] = True
+
+    Ovw = np.zeros((p,p), dtype=int)
+    for i in range(len(sub_pops)):
+        Ovw[np.ix_(sub_pops[i],sub_pops[i])] += 1
+    Ovw = np.minimum(np.maximum(Ovw-1, 0),1)
+    Ovw = np.asarray(Ovw, dtype=bool)
+
+    Ovc = np.zeros((p,p), dtype=bool)
+    for i in range(len(overlap_grp)):
+        for j in range(len(idx_overlap[i])):
+            Ovc[np.ix_(idx_grp[overlap_grp[i]],sub_pops[idx_overlap[i][j]])] = True
+            Ovc[np.ix_(sub_pops[idx_overlap[i][j]],idx_grp[overlap_grp[i]])] = True
+            Ovc[np.ix_(idx_grp[overlap_grp[i]],idx_grp[overlap_grp[i]])] = False
+    
+    return Om, Ovw, Ovc
+
 
 ###############################################################################
 # deterministic MIMO LTI subspace identification
@@ -908,3 +1031,5 @@ def get_obs_index_overlaps(idx_grp, sub_pops):
     idx_overlap = [idx_overlap[i] for i in np.where(idx>1)[0]]
 
     return overlaps, overlap_grp, idx_overlap
+
+
