@@ -537,6 +537,7 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None):
             
     return H
 
+
 def f_l2_Hankel(C,A,Pi,k,l,Qs,Om):
 
     if len(C.shape) < 2:
