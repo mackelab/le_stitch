@@ -555,7 +555,7 @@ def f_l2_block(C,A,Q,Om):
 
     v = (C.dot(A.dot(C.T)))[Om] - Q[Om]
     
-    return v.dot(v.T)/np.sum(Om)
+    return v.dot(v.T)/(2*np.sum(Om))
 
 def g_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
     
@@ -586,10 +586,10 @@ def g_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
 
 def g_l2_idxgrp(C,A,Q,idx_grp_i,co_obs_i):
 
-    Cc, CcT = C[co_obs_i,:].dot(A), C[co_obs_i,:].dot(A.T) 
-    Ci, Qic = C[idx_grp_i,:], Q[np.ix_(idx_grp_i, co_obs_i)]
-     
-    return (Ci.dot(Cc.T) - Qic).dot(Cc) + (Ci.dot(CcT.T) - Qic).dot(CcT)
+    Ci, CcA, CcAT = C[idx_grp_i,:], C[co_obs_i,:].dot(A), C[co_obs_i,:].dot(A.T)
+    Qic, QicT = Q[np.ix_(idx_grp_i, co_obs_i)], Q[np.ix_(co_obs_i, idx_grp_i)].T
+
+    return (Ci.dot(CcAT.T) - Qic).dot(CcAT) + (Ci.dot(CcA.T) - QicT).dot(CcA)
 
 def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
 
