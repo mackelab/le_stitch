@@ -561,20 +561,28 @@ def f_l2_block(C,A,Q,Om):
     return v.dot(v.T)/(2*np.sum(Om))
 
 
-def g_A_l2_Hankel(C,A,Pi,k,l,Q,Om):
-
-    pass
-
-def g_A_l2_block(C,A,m,Pi,Q,Om):
+def g_A_l2_Hankel(C,A,Pi,k,l,Qs,Om):
 
     is_vec = True if (len(A.shape) < 2 or np.min(A.shape)==1) else False
     if is_vec:
         A  = A.reshape(Pi.shape[0], Pi.shape[0])       
+    n = A.shape[0]
+
+    (is_, js_) = np.where(Om)
+    grad, ddAs = np.zeros((n,n)), np.zeros((n,n,n,n))
+    
+    grad = np.zeros((n,n))
+    for k_ in range(k):
+        for l_ in range(l):    
+            grad += g_A_l2_block(C,A,k_+l_+1,Pi,Qs[k_+l_],is_,js_)
+
+    return grad.reshape(n*n,) if is_vec else grad
+
+def g_A_l2_block(C,A,m,Pi,Q,is_,js_):
     
     n = A.shape[0]
     CAPiC_L = C.dot(np.linalg.matrix_power(A,m).dot(Pi)).dot(C.T) - Q
     
-    (is_, js_) = np.where(Om)
     grad, ddAs = np.zeros((n,n)), np.zeros((n,n,n,n))
     for r in range(n):
         for s in range(n):
@@ -592,7 +600,7 @@ def g_A_l2_block(C,A,m,Pi,Q,Om):
         
             grad[r,s] = M_ij
 
-    return grad.reshape(n*n,) if is_vec else grad
+    return grad
 
 def matrix_power_derivative(A,m,i,j):
     
@@ -606,53 +614,34 @@ def matrix_power_derivative(A,m,i,j):
         ddA += np.linalg.matrix_power(A,r).dot(J_ij).dot(np.linalg.matrix_power(A,m-r-1))
     return ddA    
 
-def g_B_l2_Hankel(C,A,B,k,l,Qs,idx_grp, obs_idx):
+def g_B_l2_Hankel(C,A,B,k,l,Qs,Om):
     
     is_vec = True if (len(B.shape) < 2 or np.min(B.shape)==1) else False
     if is_vec:
         B  = B.reshape(A.shape[0], A.shape[0])   
 
     p,n = C.shape
-        
-    grad = np.zeros((n,n))
-    for i in range(len(idx_grp)):
-        
-        def co_observed(x):
-            for idx in obs_idx:
-                if x in idx and i in idx:
-                    return True
-            return False
-                
-        co_obs_i = [idx_grp[item] for item in np.arange(len(idx_grp)) if co_observed(item)]
-        co_obs_i = np.sort(np.hstack(co_obs_i))
-        
-        for k_ in range(k):
-            for l_ in range(l):
-                Am = np.linalg.matrix_power(A, k_+l_+1)                
-                grad += g_B_l2_idxgrp(C,Am,B,Qs[k_+l_],Om)
-
-    return grad.reshape(p*n,) if is_vec else grad
-
-
-def g_B_l2_block(C,A,B,Q,Om):
-
-    is_vec = True if (len(B.shape) < 2 or np.min(B.shape)==1) else False
-    if is_vec:
-        B  = B.reshape(A.shape[0], A.shape[0])       
-    
-    n, Pi = B.shape[0], B.dot(B.T)
-    CAPiC_L = C.dot(A.dot(Pi)).dot(C.T) - Q
+    Pi, grad = B.dot(B.T), np.zeros((n,n))
     (is_, js_) = np.where(Om)
-    grad = np.zeros((n,n))
+    for k_ in range(k):
+        for l_ in range(l):
+            Am = np.linalg.matrix_power(A, k_+l_+1)                
+            grad += g_B_l2_block(C,Am,Pi,B,Qs[k_+l_],is_,js_)
+
+    return grad.reshape(n*n,) if is_vec else grad
+
+def g_B_l2_block(C,Am,Pi,B,Q,is_,js_):
+    
+    CAPiC_L = C.dot(Am.dot(Pi)).dot(C.T) - Q
+    grad = np.zeros(B.shape)
     for idx_ij in range(len(is_)):
         # this for-loop could probably be replaced for sparsity patterns Om
         # as they arise in stitching in space!
-        i,j = is_[idx_ij], js_[idx_ij]
-        
-        CCA = np.outer(C[j,:],C[i,:]).dot(A) # better C[i,:].dot(A) first and loop over j !
+        i,j = is_[idx_ij], js_[idx_ij]        
+        CCA = np.outer(C[j,:],C[i,:]).dot(Am) # better C[i,:].dot(A) first and loop over j !
         grad +=  CAPiC_L[i,j] *  (CCA + CCA.T).dot(B)
         
-    return grad.reshape(n*n,) if is_vec else grad
+    return grad
 
 def g_C_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
     
@@ -662,16 +651,16 @@ def g_C_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
 
     p,n = C.shape
         
+    def co_observed(x, i):
+        for idx in obs_idx:
+            if x in idx and i in idx:
+                return True
+        return False        
+
     grad = np.zeros((p,n))
     for i in range(len(idx_grp)):
-        
-        def co_observed(x):
-            for idx in obs_idx:
-                if x in idx and i in idx:
-                    return True
-            return False
                 
-        co_obs_i = [idx_grp[item] for item in np.arange(len(idx_grp)) if co_observed(item)]
+        co_obs_i = [idx_grp[x] for x in np.arange(len(idx_grp)) if co_observed(x,i)]
         co_obs_i = np.sort(np.hstack(co_obs_i))
         
         for k_ in range(k):
@@ -681,9 +670,9 @@ def g_C_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
       
     return grad.reshape(p*n,) if is_vec else grad
 
-def g_C_l2_idxgrp(C,A,Q,idx_grp_i,co_obs_i):
+def g_C_l2_idxgrp(C,APi,Q,idx_grp_i,co_obs_i):
 
-    Ci, CcA, CcAT = C[idx_grp_i,:], C[co_obs_i,:].dot(A), C[co_obs_i,:].dot(A.T)
+    Ci, CcA, CcAT = C[idx_grp_i,:], C[co_obs_i,:].dot(APi), C[co_obs_i,:].dot(APi.T)
     Qic, QicT = Q[np.ix_(idx_grp_i, co_obs_i)], Q[np.ix_(co_obs_i, idx_grp_i)].T
 
     return (Ci.dot(CcAT.T) - Qic).dot(CcAT) + (Ci.dot(CcA.T) - QicT).dot(CcA)
