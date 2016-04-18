@@ -537,6 +537,18 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None):
             
     return H
 
+def comp_model_covariances(pars, m, Om=None):
+    
+    if Om is None:
+        p = pars['C'].shape[0]
+        Om = np.ones((p,p), dtype=int)
+        
+    Qs = []
+    for kl_ in range(m):
+        Akl = np.linalg.matrix_power(pars['A'], kl_)
+        Qs.append(pars['C'].dot(Akl.dot(pars['Pi'])).dot(pars['C'].T) *np.asarray( Om,dtype=int) )
+    return Qs
+
 
 def f_l2_Hankel(C,A,Pi,k,l,Qs,Om):
 
@@ -547,18 +559,17 @@ def f_l2_Hankel(C,A,Pi,k,l,Qs,Om):
         A  = A.reshape(C.shape[1], C.shape[1])     
 
     err = 0.
-    for k_ in range(k):
-        for l_ in range(l):
-            APi = np.linalg.matrix_power(A, k_+l_ + 1).dot(Pi)  
-            err += f_l2_block(C,APi,Qs[k_+l_],Om)
+    for m in range(1,k+l-1):
+        APi = np.linalg.matrix_power(A, m).dot(Pi)  
+        err += f_l2_block(C,APi,Qs[m],Om)
             
     return err/(k*l)
     
 def f_l2_block(C,A,Q,Om):
 
     v = (C.dot(A.dot(C.T)))[Om] - Q[Om]
-    
-    return v.dot(v.T)/(2*np.sum(Om))
+
+    return v.dot(v)/(2*np.sum(Om))
 
 def g_l2_Hankel(C,A,B,k,l,Qs,Om,idx_grp, obs_idx):
 
@@ -573,7 +584,7 @@ def g_l2_Hankel(C,A,B,k,l,Qs,Om,idx_grp, obs_idx):
                         g_C_l2_Hankel(C,Ar,Pi,k,l,Qs,idx_grp, obs_idx) ))
     return grad
 
-def g_A_l2_Hankel(C,A,Pi,k,l,Qs,Om):
+def old_g_A_l2_Hankel(C,A,Pi,k,l,Qs,Om):
 
     is_vec = True if (len(A.shape) < 2 or np.min(A.shape)==1) else False
     if is_vec:
@@ -584,13 +595,12 @@ def g_A_l2_Hankel(C,A,Pi,k,l,Qs,Om):
     grad, ddAs = np.zeros((n,n)), np.zeros((n,n,n,n))
     
     grad = np.zeros((n,n))
-    for k_ in range(k):
-        for l_ in range(l):    
-            grad += g_A_l2_block(C,A,k_+l_+1,Pi,Qs[k_+l_],is_,js_)
+    for m in range(1,k+l-1):
+        grad += old_g_A_l2_block(C,A,m,Pi,Qs[m],is_,js_)
 
     return grad.reshape(n*n,) if is_vec else grad
 
-def g_A_l2_block(C,A,m,Pi,Q,is_,js_):
+def old_g_A_l2_block(C,A,m,Pi,Q,is_,js_):
     
     n = A.shape[0]
     CAPiC_L = C.dot(np.linalg.matrix_power(A,m).dot(Pi)).dot(C.T) - Q
@@ -626,6 +636,46 @@ def matrix_power_derivative(A,m,i,j):
         ddA += np.linalg.matrix_power(A,r).dot(J_ij).dot(np.linalg.matrix_power(A,m-r-1))
     return ddA    
 
+
+def g_A_l2_Hankel(C,A,Pi,k,l,Qs,Om):
+
+    is_vec = True if (len(A.shape) < 2 or np.min(A.shape)==1) else False
+    if is_vec:
+        A  = A.reshape(Pi.shape[0], Pi.shape[0])       
+    n = A.shape[0]
+
+    (is_, js_) = np.where(Om)
+    CPi = C.dot(Pi)
+
+    grad, Aexpm = np.zeros((n,n)), np.zeros((n,n,k+l))
+
+    Aexpm[:,:,0]= np.eye(n)
+    for m in range(1,k+l):
+        Aexpm[:,:,m] = A.dot(Aexpm[:,:,m-1])
+    
+    grad = np.zeros((n,n))
+    for m in range(1,k+l-1):
+        grad += g_A_l2_block(C,Aexpm,m,CPi,Qs[m],is_,js_)
+
+    return grad.reshape(n*n,) if is_vec else grad
+
+def g_A_l2_block(C,Aexpm,m,CPi,Q,is_,js_):
+    
+    n = C.shape[1]    
+    grad, CTC = np.zeros((n,n)), np.zeros((n,n))
+
+    # this is the most general way of writing it down. Can be vectorised
+    # if we assume that the observed entries come in blocks (=subpops):
+    CAPiC_L = C.dot(Aexpm[:,:,m].dot(CPi.T)) - Q
+    for idx_ij in range(len(is_)):
+        i,j = is_[idx_ij], js_[idx_ij]
+        CTC += CAPiC_L[i,j] * np.outer(C[i,:],CPi[j,:])
+
+    for q in range(m):
+        grad += Aexpm[:,:,q].T.dot(CTC.dot(Aexpm[:,:,m-1-q].T))
+
+    return grad
+
 def g_B_l2_Hankel(C,A,B,k,l,Qs,Om):
     
     is_vec = True if (len(B.shape) < 2 or np.min(B.shape)==1) else False
@@ -635,10 +685,9 @@ def g_B_l2_Hankel(C,A,B,k,l,Qs,Om):
     p,n = C.shape
     Pi, grad = B.dot(B.T), np.zeros((n,n))
     (is_, js_) = np.where(Om)
-    for k_ in range(k):
-        for l_ in range(l):
-            Am = np.linalg.matrix_power(A, k_+l_+1)                
-            grad += g_B_l2_block(C,Am,Pi,B,Qs[k_+l_],is_,js_)
+    for m in range(1,k+l-1):
+        Am = np.linalg.matrix_power(A, m)                
+        grad += g_B_l2_block(C,Am,Pi,B,Qs[m],is_,js_)
 
     return grad.reshape(n*n,) if is_vec else grad
 
@@ -675,10 +724,9 @@ def g_C_l2_Hankel(C,A,Pi,k,l,Qs,idx_grp, obs_idx):
         co_obs_i = [idx_grp[x] for x in np.arange(len(idx_grp)) if co_observed(x,i)]
         co_obs_i = np.sort(np.hstack(co_obs_i))
         
-        for k_ in range(k):
-            for l_ in range(l):
-                APi = np.linalg.matrix_power(A, k_+l_+1).dot(Pi)                
-                grad[idx_grp[i],:] += g_C_l2_idxgrp(C,APi,Qs[k_+l_],idx_grp[i],co_obs_i)
+        for m in range(1,k+l-1):
+            APi = np.linalg.matrix_power(A, m).dot(Pi)                
+            grad[idx_grp[i],:] += g_C_l2_idxgrp(C,APi,Qs[m],idx_grp[i],co_obs_i)
       
     return grad.reshape(p*n,) if is_vec else grad
 
@@ -1132,4 +1180,99 @@ def get_obs_index_overlaps(idx_grp, sub_pops):
 
     return overlaps, overlap_grp, idx_overlap
 
+def get_subpop_stats(sub_pops, p, obs_pops=None, verbose=False):
 
+    if obs_pops is None:
+        obs_pops = tuple(range(len(sub_pops)))
+    obs_idx, idx_grp = get_obs_index_groups(obs_scheme={'sub_pops': sub_pops,
+        'obs_pops': obs_pops},p=p)
+    overlaps, overlap_grp, idx_overlap = get_obs_index_overlaps(idx_grp, sub_pops)
+    
+    if verbose:
+        print('idx_grp:', idx_grp)
+        print('obs_idx:', obs_idx)
+        
+    Om, Ovw, Ovc = comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap)    
+    
+    if verbose:
+        plt.figure(figsize=(20,10))
+        plt.subplot(1,3,1)
+        plt.imshow(Om,interpolation='none')
+        plt.title('Observation pattern')
+        plt.subplot(1,3,2)
+        plt.imshow(Ovw,interpolation='none')
+        plt.title('Overlap pattern')
+        plt.subplot(1,3,3)
+        plt.imshow(Ovc,interpolation='none')
+        plt.title('Cross-overlap pattern')
+        plt.show()
+        
+    return obs_idx, idx_grp, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc
+
+def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
+                                       Qs_full, Om, Ovc, Ovw, f_i, g_i,
+                                       if_flip = False):
+    
+    print('final squared error on observed parts:', 
+          f_l2_Hankel(pars_est['C'],pars_est['A'],pars_est['Pi'],k,l,Qs, Om))
+    print('final squared error on overlapping parts:', 
+          f_l2_Hankel(pars_est['C'],pars_est['A'],pars_est['Pi'],k,l,Qs,Ovw))
+    print('final squared error on cross-overlapping parts:',
+          f_l2_Hankel(pars_est['C'],pars_est['A'],pars_est['Pi'],k,l,Qs,Ovc))
+    print('final squared error on stitched parts:',
+          f_l2_Hankel(pars_est['C'],pars_est['A'],pars_est['Pi'],k,l,Qs_full,~Om))
+    # this currently is a bit dirty:
+    if if_flip:
+        C_flip = pars_est['C'].copy()
+        C_flip[Om[:,0],:] *= -1
+        H_flip = yy_Hankel_cov_mat(C_flip,pars_est['A'],pars_est['Pi'],k,l)
+        print('final squared error on stitched parts (C over first subpop sign-flipped):',
+          f_l2_Hankel(C_flip,pars_est['A'],pars_est['Pi'],k,l,Qs_full,~Om))
+
+    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],pars_true['Pi'],k,l)
+    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
+
+    H_obs = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],pars_true['Pi'],k,l, Om)
+    H_obs[np.where(H_obs==0)] = np.nan
+    H_sti = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],pars_true['Pi'],k,l,~Om)
+    H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],k,l)
+
+
+    if if_flip:
+        plt.figure(figsize=(16,18))
+    else:
+        plt.figure(figsize=(16,12))
+
+    n_rows = 2
+    #n_rows = 3 if if_flip else 2 
+    plt.subplot(n_rows,2,1)
+    plt.imshow(H_obs,interpolation='none')
+    plt.title('Given data matrix (A_true, masked)')
+    plt.subplot(n_rows,2,2)
+    plt.imshow(H_true,interpolation='none')
+    plt.title('True  matrix (A_true)')    
+    plt.subplot(n_rows,2,3)
+    plt.imshow(H_0,interpolation='none')
+    plt.title('Initial matrix (A_0)')
+    plt.subplot(n_rows,2,4)
+    plt.imshow(H_est,interpolation='none')
+    plt.title('Estimated matrix (A_est)')
+    #if if_flip:
+    #    plt.subplot(n_rows,2,6)
+    #    plt.imshow(H_est,interpolation='none')
+    #    plt.title('Estimated matrix (A_est, C[\rho_2] sign-flipped)')
+
+    plt.show()
+    
+    plt.figure(figsize=(16,12))
+    plt.subplot(1,3,1)
+    plt.imshow(pars_init['A'],interpolation='none')
+    plt.title('A init')
+    plt.subplot(1,3,2)
+    plt.imshow(pars_est['A'],interpolation='none')
+    plt.title('A est')
+    plt.subplot(1,3,3)
+    plt.imshow(pars_true['A'],interpolation='none')
+    plt.title('A true')
+    plt.show()
+    
