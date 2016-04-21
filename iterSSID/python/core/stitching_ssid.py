@@ -630,15 +630,18 @@ def g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs):
     for m in range(1,k+l-1):
 
         AmPi = Aexpm[:,:,m].dot(Pi)
+
+        # the expensive part: handling p x p ovserved-space matrices 
         CAPiC_L, CTC = C.dot(AmPi).dot(C.T) - Qs[m], np.zeros((n,n))
-        for idx_ij in range(len(is_)):
-            i,j = idx_grp[is_[idx_ij]], idx_grp[js_[idx_ij]]
-            CTC  += C[i,:].T.dot(CAPiC_L[np.ix_(i,j)]).dot(C[j,:])
+        for i in range(len(idx_grp)):
+            Ci = CAPiC_L[np.ix_(idx_grp[i],co_obs[i])].dot(C[co_obs[i],:])
+            CiT =  CAPiC_L[np.ix_(co_obs[i],idx_grp[i])].T.dot(C[co_obs[i],:])
+            grad_C[idx_grp[i],:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
+            CTC += C[idx_grp[i],:].T.dot(Ci)
+
         grad_A += g_A_l2_block(CTC,Aexpm,m,Pi)
         grad_B += g_B_l2_block(CTC,Aexpm[:,:,m],B)
         
-        for i in range(len(idx_grp)):
-            grad_C[idx_grp[i],:] += g_C_l2_idxgrp(C,AmPi,Qs[m],idx_grp[i],co_obs[i])
 
     return l2_system_mats_to_vec(grad_A,grad_B,grad_C)
 
@@ -655,12 +658,18 @@ def g_B_l2_block(CTC,Am,B):
             
     return (CTC.T.dot(Am) + Am.T.dot(CTC)).dot(B)
 
-def g_C_l2_idxgrp(C,APi,Q,idx_grp_i,co_obs_i):
+def g_C_l2_idxgrp(Ci,CiT,AmPi):
 
-    Ci, CcA, CcAT = C[idx_grp_i,:], C[co_obs_i,:].dot(APi), C[co_obs_i,:].dot(APi.T)
-    Qic, QicT = Q[np.ix_(idx_grp_i, co_obs_i)], Q[np.ix_(co_obs_i, idx_grp_i)].T
+    return Ci.dot(AmPi.T) + CiT.dot(AmPi)
 
-    return (Ci.dot(CcAT.T) - Qic).dot(CcAT) + (Ci.dot(CcA.T) - QicT).dot(CcA)
+#def g_C_l2_idxgrp(C,AmPi,Q,idx_grp_i,co_obs_i):
+#
+#    Ci, CcA, CcAT = C[idx_grp_i,:], C[co_obs_i,:].dot(AmPi), C[co_obs_i,:].dot(AmPi.T)
+#    Qic, QicT = Q[np.ix_(idx_grp_i, co_obs_i)], Q[np.ix_(co_obs_i, idx_grp_i)].T
+#
+#    CAPiC_L[np.ix_(idx_grp_i, co_obs_i)]
+#
+#    return (Ci.dot(CcAT.T) - Qic).dot(CcAT) + (Ci.dot(CcA.T) - QicT).dot(CcA)
 
 
 def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
