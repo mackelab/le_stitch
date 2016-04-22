@@ -5,418 +5,49 @@ import control
 from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
 
-def FitLDSParamsSSID(seq, n):
-
-    T, p      = seq['y'].shape
-
-    SIGfp, SIGyy = generateCovariancesFP(seq=seq, hS=n)
-            
-    params = post_process(ssidSVD(SIGfp=SIGfp,SIGyy=SIGyy,n=n));
-    params = add_d(data=seq['y'], params=params)
-
-    return params
-
-def run_exp_iterSSID(seq, seq_f, n, num_iter=100,pi_method='proper', plot_flag=True):
-
-    T,p = seq['y'].shape
-
-    # use observation scheme informatoin to mask data
-    for i in range(len(seq['obs_time'])):
-        idx_t = np.arange(seq['obs_time'][0]) if i == 0 \
-            else np.arange(seq['obs_time'][i-1], seq['obs_time'][i])
-        idx_y = np.setdiff1d(np.arange(p), seq['sub_pops'][i])
-        seq['y'][np.ix_(idx_t, idx_y)] = np.NaN
-    
-    # generate covs from full ground truth data for comparison
-    SIGfp_f, SIGyy_f = generateCovariancesFP(seq=seq_f,hS=n)
-
-    # fit model with iterative SSID
-    params, SIGfp_new, SIGyy_new, lPSIGfp, lPSIGyy, broken = \
-        iterSSID(seq=seq, n=n, num_iter=num_iter, 
-            pi_method=pi_method, init=None, alpha=1)
-
-    # reconstruct covs from final estimate 
-    SIGfp, SIGyy = construct_hankel_cov(params=params[-1])
-
-    # visualize results
-    if plot_flag:
-        idx_stitched = np.invert(lPSIGyy)
-        m = np.min([SIGyy.min(), SIGyy_f.min()])
-        M = np.max([SIGyy.max(), SIGyy_f.max()])
-        plt.figure(figsize=(12,8))
-        plt.subplot(2,3,1)
-        plt.imshow(SIGyy_f, interpolation='none')
-        plt.clim(m,M)
-        plt.title('SIGyy true')
-        plt.subplot(2,3,2)
-        plt.imshow(SIGyy, interpolation='none')
-        plt.clim(m,M)
-        plt.title('SIGyy est.')
-        plt.subplot(2,3,3)
-        if np.any(idx_stitched):
-            m = np.min([SIGyy[idx_stitched].min(), SIGyy_f[idx_stitched].min()])
-            M = np.max([SIGyy[idx_stitched].max(), SIGyy_f[idx_stitched].max()])
-            plt.plot([m,M], [m,M], 'k')
-            plt.axis([m,M,m,M])
-        plt.hold(True)
-        plt.plot(SIGyy[np.invert(idx_stitched)], 
-                 SIGyy_f[np.invert(idx_stitched)], 'b.')
-        plt.plot(SIGyy[idx_stitched], SIGyy_f[idx_stitched], 'r.')
-        plt.xlabel('est.')
-        plt.ylabel('true')
-
-        if n*p <= 2000:
-            idx_stitched = np.invert(lPSIGfp)
-            m = np.min([SIGfp.min(), SIGfp_f.min()])
-            M = np.max([SIGfp.max(), SIGfp_f.max()])
-            plt.subplot(2,3,4)
-            plt.imshow(SIGfp_f, interpolation='none')
-            plt.clim(m,M)
-            plt.title('SIGfp true')
-            plt.subplot(2,3,5)
-            plt.imshow(SIGfp, interpolation='none')
-            plt.clim(m,M)
-            plt.title('SIGfp est.')
-            plt.subplot(2,3,6)
-            if np.any(idx_stitched):
-                m = np.min([SIGfp[idx_stitched].min(), SIGfp_f[idx_stitched].min()])
-                M = np.max([SIGfp[idx_stitched].max(), SIGfp_f[idx_stitched].max()])
-                plt.plot([m,M], [m,M], 'k')
-                plt.axis([m,M,m,M])
-            plt.hold(True)
-            plt.plot(SIGfp[np.invert(idx_stitched)], 
-                     SIGfp_f[np.invert(idx_stitched)], 'b.')
-            plt.plot(SIGfp[idx_stitched], SIGfp_f[idx_stitched], 'r.')
-            plt.xlabel('est.')
-            plt.ylabel('true')
-
-        plt.show()    
-
-    return params, SIGfp, SIGyy, lPSIGfp, lPSIGyy, SIGfp_f, SIGyy_f
-
-
-def iterSSID(seq, n, num_iter=100, init=None, alpha=1.,pi_method='proper'):
-
-    T,p = seq['y'].shape
-
-    print(seq['y'].shape)
-
-    params = []
-    broken = False
-
-    if p > 200:
-        print('p = ', p)
-        print('very high-dimensional data! Will take a while. Switching to verbose...')
-        verbose=True
-    else:
-        verbose=False
-
-    if verbose:
-        print('generating data cov. mat')
-
-    SIGfp_new, SIGyy_new = generateCovariancesFP(seq=seq, hS=n)
-
-    lnPSIGfp, lnPSIGyy = np.isnan(SIGfp_new),np.isnan(SIGyy_new) # for indexing
-    lPSIGfp, lPSIGyy = np.invert(lnPSIGfp), np.invert(lnPSIGyy) 
-    PSIGfp, PSIGyy = SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy]  # observed parts
-
-
-    if verbose:
-        print('computing naive iterSSID')
-    # 'zero'-th iteration: used ssidSVD on Hankel cov matrix with NaN set to 0:
-    SIGfp_new[lnPSIGfp] = 0
-    SIGyy_new[lnPSIGyy] = 0
-    params.append(post_process(ssidSVD(SIGfp=SIGfp_new,
-                                       SIGyy=SIGyy_new,
-                                       n=n,
-                                       pi_method=pi_method)))
-    params[-1] = add_d(seq['y'], params[-1])
-
-    # main iterations: fill in NAN's iteratively using missing-value SVD:
-    SIGfp_old = SIGfp_new.copy() if init is None else init
-    SIGyy_old = SIGyy_new.copy()
-
-    if verbose:
-        print('computing iterative SSID')
-    for t in range(1,num_iter+1):
-
-        if verbose:
-            print(t)
-        params.append(post_process(ssidSVD(SIGfp=SIGfp_old,
-                                           SIGyy=SIGyy_old,
-                                           n=n,
-                                           pi_method=pi_method,
-                                           params_old=params[-1])))
-
-        params[-1] = add_d(seq['y'], params[-1])
-
-        SIGfp_new, SIGyy_new = construct_hankel_cov(params[-1])
-
-        if np.any(np.isnan(SIGfp_new)) or not np.all(np.isfinite(SIGfp_new)):
-            print('reconstructed Hankel cov matrix contains NaNs or Infs!')
-            print('cancelling iteration')
-
-            broken = True
-
-            break
-
-        # make sure we keep the observed part right
-        SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy] = PSIGfp, PSIGyy
-        SIGfp_new[lnPSIGfp] = alpha*SIGfp_new[lnPSIGfp] \
-                            +(1-alpha)*SIGfp_old[lnPSIGfp]
-        SIGyy_new[lnPSIGyy] = alpha*SIGyy_new[lnPSIGyy] \
-                            +(1-alpha)*SIGyy_old[lnPSIGyy]
-        SIGyy_new = symmetrize(SIGyy_new)
-
-        # hack: change halves of C if helpful
-        params[-1] = flip_emission_signs(SIGyy_new, seq['sub_pops'], params[-1])
-
-
-        SIGfp_old, SIGyy_old = SIGfp_new, SIGyy_new # shallow copies!
-
-
-    if broken:
-        broken = params[-1]
-        params.pop()
-        SIGfp_new, SIGyy_new = construct_hankel_cov(params[-1])
-        SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy] = PSIGfp, PSIGyy
-        SIGyy_new = symmetrize(SIGyy_new)
-
-    return params, SIGfp_new, SIGyy_new, lPSIGfp, lPSIGyy, broken
-
-
-def flip_emission_signs(SIGyy, sub_pops, params):
-
-    # we drop this for now, as it hardly ever flips anything
-    """
-    if len(sub_pops) == 1:
-        idx_overlap = sub_pops[0]
-    elif len(sub_pops) == 2:
-        idx_overlap = np.intersect1d(sub_pops[0], sub_pops[1])
-    else:
-        raise Exception('more than two subpopulations not yet implemented')
-
-    cov_h = params['C'][idx_overlap,:].dot(params['Pi']).dot(params['C'].T) + \
-        params['R'][idx_overlap,:]
-
-
-    for i in range(len(sub_pops)):
-        idx_sub = rem_overlap(sub_pops[i], idx_overlap)
-        SIGp_est, SIGp_true = cov_parts(cov_h,SIGyy,idx_sub,idx_overlap)
-
-        if check_flip(SIGp_est, SIGp_true):
-            params['C'][idx_sub,:] *= -1
-    """    
-    return params
-
-def check_flip(x_est, x_true, thresh=0.5):
-    return np.mean( np.sum(x_est * x_true, 1) < 0 ) > thresh
-
-def rem_overlap(idx_sub_pop, idx_overlap):
-    return np.setdiff1d(idx_sub_pop, idx_overlap)
-
-def cov_parts(SIG_est, SIG_true, idx_sub, idx_overlap):
-    return SIG_est[:,idx_sub],SIG_true[np.ix_(idx_overlap,idx_sub)]
-
-
-def construct_hankel_cov(params):
-
-    p, hS = params['C'].shape
-    SIGfp  = np.zeros((p*hS,p*hS))
-
-    SIGyy = params['C'].dot(params['Pi'].dot(params['C'].T)) + params['R']
-
-    covxx = params['Pi']
-    for k in range(2*hS-1):
-        
-        covxx =  params['A'].dot(covxx)
-        lamK = params['C'].dot(covxx.dot(params['C'].T))
-
-        if k < hS-0.5:
-            
-            for kk in range(k + 1):
-                offset0, offset1 = (k-kk)*p, kk*p
-                SIGfp[offset0:offset0+p, offset1:offset1+p] = lamK
-                
-        else:
-
-            for kk in range(2*hS - k -1):
-                offset0, offset1 = (hS-kk-1)*p, (kk+k+1-hS)*p
-                SIGfp[offset0:offset0+p,offset1:offset1+p] = lamK
-
-    return SIGfp, SIGyy
-
-
-def generateCovariancesFP(seq,hS):
-    
-    T, p = seq['y'].shape
-    
-    SIGfp  = np.zeros((p*hS,p*hS),dtype=np.float64)
-    SIGyy  = np.zeros((p,p),dtype=np.float64)
-    
-    
-    idxObs = np.invert(np.isnan(seq['y'])).astype(np.int)
-
-    sYYobs = idxObs.T.dot(idxObs)
-    nPSIG  = (sYYobs==0)
-    sYYobs = np.maximum(sYYobs, 1)
-    
-    Ytot   = seq['y'] - np.nanmean(seq['y'],0)
-    Ytot[np.isnan(Ytot)] = 0
-
-    Yshift = Ytot        
-    lamK   = Ytot.T.dot(Yshift)
-    SIGyy  = lamK;            
-
-    for k in range(2*hS-1):
-        
-        Yshift  = np.roll(Yshift, 1, axis = 0)
-        lamK    = Ytot.T.dot(Yshift) / sYYobs
-        lamK[nPSIG] = np.NaN
-
-        if k < hS-0.5:
-            
-            for kk in range(k + 1):
-                offset0, offset1 = (k-kk)*p, kk*p
-                SIGfp[offset0:offset0+p, offset1:offset1+p] = lamK
-                
-        else:
-
-            for kk in range(2*hS - k -1):
-                offset0, offset1 = (hS-kk-1)*p, (kk+k+1-hS)*p
-                SIGfp[offset0:offset0+p,offset1:offset1+p] = lamK
-             
-    SIGyy = symmetrize(SIGyy)/sYYobs  
-    SIGyy[nPSIG] = np.NaN      
-             
-    return SIGfp, SIGyy
-
-def ssidSVD(SIGfp,SIGyy,n, pi_method='proper', params_old = None):
-    
-    minVar    = 1e-5
-    minVarPi  = 1e-5   
-
-    p = np.size(SIGyy,0)
-
-    if p > 200:
-        print('p = ', p)
-        print('very high-dimensional data! Will take a while. Switching to verbose...')
-        verbose=True
-    else:
-        verbose=False
-       
-    
-    if verbose:
-        print('computing SVD:')
-    UU,SS,VV = np.linalg.svd(SIGfp) # SIGfp = UU.dot(diag(SS).dot(VV)
-
-    VV = VV.T
-    SS = np.diag(SS[:n])
-    UU = UU[:,:n]
-    VV = VV[:,:n]
-   
-    Obs = np.dot(UU,SS)
-
-    if verbose:
-        print('computing A, C:')
-
-    A = np.linalg.lstsq(Obs[:-p,:],Obs[p:,:])[0]
-    C = Obs[:p,:]
-    Chat = VV[:p,:n]
-    
-    if verbose:
-        print('computing Pi:')
-
-    # hack: abolish constant flipping of mathematical signs of latent states...
-    if not params_old is None:
-        flips = np.diag(2*(np.sum(C * params_old['C'],0) > 0).astype(np.float) - 1)
-        A = flips.dot(A.dot(flips))
-        C = C.dot(flips)
-        Chat = Chat.dot(flips)
-
-
-    if pi_method=='proper':
-        Pi,_,_ = control.matlab.dare(A=A.T,B=-C.T,Q=np.zeros((n,n)),R=-SIGyy,
-            S=Chat.T, E=np.eye(n))    
-
-    else:
-        #warnings.warn(('Will not solve DARE, using heuristics; this might '
-        #    'lead to poor estimates of Q and V0'))  
-        Pi = np.linalg.lstsq(A,np.dot(Chat.T,np.linalg.pinv(C.T)))[0]
-
-
-    if verbose:
-        print('computing Q, R:')
-                   
-    D, V = np.linalg.eig(Pi)
-    D[D < minVarPi] = minVarPi
-    Pi = V.dot(np.diag(D)).dot(V.T)
-    Pi = np.real(symmetrize(Pi))
-    Q = Pi - np.dot(np.dot(A,Pi),A.T)
-    D, V = np.linalg.eig(Q); 
-    D[D<minVar] = minVar
-
-    Q = np.dot(np.dot(V,np.diag(D)),V.T)
-    Q = symmetrize(Q)
-    
-    R = np.diag(SIGyy-np.dot(np.dot(C,Pi),C.T))
-    R.flags.writeable = True
-    R[R<minVar] = minVar
-    R = np.diag(R)   
-    
-    return {'A':A, 'Q': Q, 'C': C, 'R': R, 'Pi': Pi}
-
-def post_process(params):
-
-    p, n = params['C'].shape
-
-    #params = stabilize_A(params)
-
-    if isinstance(params['Q'], complex):
-        params['Q'] = np.real(params['Q'])
-        
-    params['Q'] = (params['Q'] + params['Q'].T)/2
-    
-    if np.min(np.linalg.eig(params['Q'])[0]) < 0:
-        
-        a,b = np.linalg.eig(params['Q'])
-        params['Q'] = a*np.max(b,10**-10)*a.T
-    
-    if 'V0' not in params:
-        params['V0'] = np.real(dlyap(params['A'],params['Q']))
-    
-    params.update({'mu0':np.zeros(n)}) 
-    params['R']  = np.diag(np.diag(params['R']))
-
-
-    return params
-
-def stabilize_A(params):
-
-    D, V = np.linalg.eig(params['A'])
-    if np.any(np.abs(D) > 1):
-        print(np.abs(D))
-        warnings.warn(('Produced instable dynamics matrix A. Bluntly pushing '
-                       'eigenvalues into the unit circle'))  
-        D /= np.maximum(np.abs(D), 1)
-        print(np.abs(D))
-        params['A'] = np.real(V.dot(np.diag(D).dot(np.linalg.inv(V))))
-
-    return params
-
-def add_d(data, params):
-
-    params['d'] = np.nanmean(data,axis = 0)
-
-    return params
+###########################################################################
+# Utility (general)
+###########################################################################
 
 def symmetrize(A):
-	
+    
     return (A + A.T)/2
 
 def blockarray(*args,**kwargs):
     "Taken from Matthew J. Johnson's 'pybasicbayes' code package"
     return np.array(np.bmat(*args,**kwargs),copy=False)
+
+def soft_impute(X, n, eps = 0, max_iter = 500, P_sig=None):
+
+    nan_m = np.asarray(np.isnan(X),dtype=float)
+    P_sig_X = X.copy()
+    P_sig_X[np.isnan(P_sig_X)] = 0
+
+    Z = np.zeros(X.shape)
+    for i in range(max_iter):
+        U,s,V = np.linalg.svd(P_sig_X + (Z * nan_m))
+        Z = U[:,:n].dot(np.diag(s[:n])).dot(V[:n,:])
+
+    return Z
+
+def matrix_power_derivative(A,m,i,j):
+    
+    n = A.shape[0]
+    J_ij = np.zeros((n,n))
+    J_ij[i,j] = 1
+                    
+    ddA = np.zeros((n,n))
+    
+    for r in range(m):
+        ddA += np.linalg.matrix_power(A,r).dot(J_ij).dot( \
+            np.linalg.matrix_power(A,m-r-1))
+    return ddA    
+
+
+
+###########################################################################
+# Utility (SSID-specific)
+###########################################################################
 
 def observability_mat(pars, k):
 
@@ -477,19 +108,6 @@ def input_output_Hankel_mat(data, inputs, k, l=None, N=None):
 
     return W
 
-def soft_impute(X, n, eps = 0, max_iter = 500, P_sig=None):
-
-    nan_m = np.asarray(np.isnan(X),dtype=float)
-    P_sig_X = X.copy()
-    P_sig_X[np.isnan(P_sig_X)] = 0
-
-    Z = np.zeros(X.shape)
-    for i in range(max_iter):
-        U,s,V = np.linalg.svd(P_sig_X + (Z * nan_m))
-        Z = U[:,:n].dot(np.diag(s[:n])).dot(V[:n,:])
-
-    return Z
-
 def xx_Hankel_cov_mat(A,Pi,k,l):
     
     n = A.shape[0]
@@ -546,131 +164,117 @@ def comp_model_covariances(pars, m, Om=None):
     Qs = []
     for kl_ in range(m):
         Akl = np.linalg.matrix_power(pars['A'], kl_)
-        Qs.append(pars['C'].dot(Akl.dot(pars['Pi'])).dot(pars['C'].T) *np.asarray( Om,dtype=int) )
+        Qs.append(pars['C'].dot(Akl.dot(pars['Pi'])).dot(pars['C'].T) * \
+            np.asarray( Om,dtype=int) )
     return Qs
 
 
 
+###########################################################################
+# Utility (stitching-specific)
+###########################################################################
+
+def get_obs_index_groups(obs_scheme,p):
+    """ INPUT:
+        obs_scheme: observation scheme for given data, stored in dictionary
+                    with keys 'sub_pops', 'obs_time', 'obs_pops'
+        p:          dimensionality of observed variables y
+    Computes index groups for given observation scheme. 
+
+    """
+    try:
+        sub_pops = obs_scheme['sub_pops'];
+        obs_pops = obs_scheme['obs_pops'];
+    except:
+        raise Exception(('provided obs_scheme dictionary does not have '
+                         'the required fields sub_pops and obs_pops.'))        
+
+    J = np.zeros((p, len(sub_pops))) # binary matrix, each row gives which 
+    for i in range(len(sub_pops)):      # subpopulations the observed variable
+        if sub_pops[i].size > 0:        # y_i is part of
+            J[sub_pops[i],i] = 1   
+
+    twoexp = np.power(2,np.arange(len(sub_pops))) # we encode the binary rows 
+    hsh = np.sum(J*twoexp,1)                     # of J using binary numbers
+
+    lbls = np.unique(hsh)         # each row of J gets a unique label 
+                                     
+    idx_grp = [] # list of arrays that define the index groups
+    for i in range(lbls.size):
+        idx_grp.append(np.where(hsh==lbls[i])[0])
+
+    obs_idx = [] # list of arrays giving the index groups observed at each
+                 # given time interval
+    for i in range(len(obs_pops)):
+        obs_idx.append([])
+        for j in np.unique(hsh[np.where(J[:,obs_pops[i]]==1)]):
+            obs_idx[i].append(np.where(lbls==j)[0][0])            
+    # note that we only store *where* the entry was found, i.e. its 
+    # position in labels, not the actual label itself - hence we re-defined
+    # the labels to range from 0 to len(idx_grp)
+
+    return obs_idx, idx_grp
 
 
+def get_obs_index_overlaps(idx_grp, sub_pops):
+    """ returns
+        overlap_grp - list of index groups found in more than one subpopulation
+        idx_overlap - list of subpopulations in which the corresponding index 
+                      group is found
 
-def l2_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
-
-    def co_observed(x, i):
-        for idx in obs_idx:
-            if x in idx and i in idx:
-                return True
-        return False        
-
+    """
+    if isinstance(sub_pops, (list,tuple)):
+        num_sub_pops = len(sub_pops) 
+    else: 
+        num_sub_pops = subs_pops.size
     num_idx_grps = len(idx_grp)
-    co_obs, mat_obs = [], np.zeros((num_idx_grps,num_idx_grps))
-    for i in range(num_idx_grps):    
-        for j in range(num_idx_grps):
-            if co_observed(i,j):
-                mat_obs[i,j] = True             
-        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) if co_observed(x,i)])
-        co_obs[i] = np.sort(np.hstack(co_obs[i]))
-    (is_, js_) = np.where(mat_obs)
 
-    def g(parsv):
-        return g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs)
+    idx_overlap = []
+    idx = np.zeros(num_idx_grps, dtype=int)
+    for j in range(num_idx_grps):
+        idx_overlap.append([])
+        for i in range(num_sub_pops):
+            if np.any(np.intersect1d(sub_pops[i], idx_grp[j])):
+                idx[j] += 1
+                idx_overlap[j].append(i)
+        idx_overlap[j] = np.array(idx_overlap[j])
 
-    def f(parsv):                        
-        return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
+    overlaps = [idx_grp[i] for i in np.where(idx>1)[0]]
+    overlap_grp = [i for i in np.where(idx>1)[0]]
+    idx_overlap = [idx_overlap[i] for i in np.where(idx>1)[0]]
 
-    return f,g
+    return overlaps, overlap_grp, idx_overlap
 
-def l2_vec_to_system_mats(parsv,p,n):
+def get_subpop_stats(sub_pops, p, obs_pops=None, verbose=False):
 
-    A = parsv[:n*n].reshape(n, n)
-    B = parsv[(n*n):(2*n*n)].reshape(n, n)
-    C = parsv[-p*n:].reshape(p, n)
-
-    return A,B,C
-
-def l2_system_mats_to_vec(A,B,C):
-
-    p,n = C.shape
-    parsv = np.hstack((A.reshape(n*n,),B.reshape(n*n,),C.reshape(p*n,)))
-
-    return parsv
-
-def f_l2_Hankel(parsv,k,l,n,Qs,Om):
-
-    p = Qs[0].shape[0]
-    A,B,C = l2_vec_to_system_mats(parsv,p,n)
-    Pi = B.dot(B.T)
-
-    err = 0.
-    for m in range(1,k+l-1):
-        APi = np.linalg.matrix_power(A, m).dot(Pi)  
-        err += f_l2_block(C,APi,Qs[m],Om)
-            
-    return err/(k*l)
+    if obs_pops is None:
+        obs_pops = tuple(range(len(sub_pops)))
+    obs_idx, idx_grp = get_obs_index_groups(obs_scheme={'sub_pops': sub_pops,
+        'obs_pops': obs_pops},p=p)
+    overlaps, overlap_grp, idx_overlap = get_obs_index_overlaps(idx_grp, \
+        sub_pops)
     
-def f_l2_block(C,A,Q,Om):
-
-    v = (C.dot(A.dot(C.T)))[Om] - Q[Om]
-
-    return v.dot(v)/(2*np.sum(Om))
-
-
-def g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs):
-
-    p = Qs[0].shape[0]
-    A,B,C = l2_vec_to_system_mats(parsv,p,n)
-    Pi = B.dot(B.T)
-
-    Aexpm = np.zeros((n,n,k+l))
-    Aexpm[:,:,0]= np.eye(n)
-    for m in range(1,k+l):
-        Aexpm[:,:,m] = A.dot(Aexpm[:,:,m-1])
-
-    grad_A, grad_B, grad_C = np.zeros((n,n)), np.zeros((n,n)), np.zeros((p,n))
-    for m in range(1,k+l-1):
-
-        AmPi = Aexpm[:,:,m].dot(Pi)
-
-        # the expensive part: handling p x p ovserved-space matrices 
-        CAPiC_L, CTC = C.dot(AmPi).dot(C.T) - Qs[m], np.zeros((n,n))
-        for i in range(len(idx_grp)):
-            Ci = CAPiC_L[np.ix_(idx_grp[i],co_obs[i])].dot(C[co_obs[i],:])
-            CiT =  CAPiC_L[np.ix_(co_obs[i],idx_grp[i])].T.dot(C[co_obs[i],:])
-            grad_C[idx_grp[i],:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
-            CTC += C[idx_grp[i],:].T.dot(Ci)
-
-        grad_A += g_A_l2_block(CTC,Aexpm,m,Pi)
-        grad_B += g_B_l2_block(CTC,Aexpm[:,:,m],B)
+    if verbose:
+        print('idx_grp:', idx_grp)
+        print('obs_idx:', obs_idx)
         
-
-    return l2_system_mats_to_vec(grad_A,grad_B,grad_C)
-
-def g_A_l2_block(CTC,Aexpm,m,Pi):
+    Om, Ovw, Ovc = comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,\
+        idx_overlap)    
     
-    CTCPi = CTC.dot(Pi)
-    grad = np.zeros(Aexpm.shape[:2])
-    for q in range(m):
-        grad += Aexpm[:,:,q].T.dot(CTCPi.dot(Aexpm[:,:,m-1-q].T))
-
-    return grad
-
-def g_B_l2_block(CTC,Am,B):
-            
-    return (CTC.T.dot(Am) + Am.T.dot(CTC)).dot(B)
-
-def g_C_l2_idxgrp(Ci,CiT,AmPi):
-
-    return Ci.dot(AmPi.T) + CiT.dot(AmPi)
-
-#def g_C_l2_idxgrp(C,AmPi,Q,idx_grp_i,co_obs_i):
-#
-#    Ci, CcA, CcAT = C[idx_grp_i,:], C[co_obs_i,:].dot(AmPi), C[co_obs_i,:].dot(AmPi.T)
-#    Qic, QicT = Q[np.ix_(idx_grp_i, co_obs_i)], Q[np.ix_(co_obs_i, idx_grp_i)].T
-#
-#    CAPiC_L[np.ix_(idx_grp_i, co_obs_i)]
-#
-#    return (Ci.dot(CcAT.T) - Qic).dot(CcAT) + (Ci.dot(CcA.T) - QicT).dot(CcA)
-
+    if verbose:
+        plt.figure(figsize=(20,10))
+        plt.subplot(1,3,1)
+        plt.imshow(Om,interpolation='none')
+        plt.title('Observation pattern')
+        plt.subplot(1,3,2)
+        plt.imshow(Ovw,interpolation='none')
+        plt.title('Overlap pattern')
+        plt.subplot(1,3,3)
+        plt.imshow(Ovc,interpolation='none')
+        plt.title('Cross-overlap pattern')
+        plt.show()
+        
+    return obs_idx, idx_grp, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc
 
 def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
 
@@ -689,11 +293,67 @@ def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
     Ovc = np.zeros((p,p), dtype=bool)
     for i in range(len(overlap_grp)):
         for j in range(len(idx_overlap[i])):
-            Ovc[np.ix_(idx_grp[overlap_grp[i]],sub_pops[idx_overlap[i][j]])] = True
-            Ovc[np.ix_(sub_pops[idx_overlap[i][j]],idx_grp[overlap_grp[i]])] = True
-            Ovc[np.ix_(idx_grp[overlap_grp[i]],idx_grp[overlap_grp[i]])] = False
+            Ovc[np.ix_(idx_grp[overlap_grp[i]], \
+                sub_pops[idx_overlap[i][j]])] = True
+            Ovc[np.ix_(sub_pops[idx_overlap[i][j]], \
+                idx_grp[overlap_grp[i]])] = True
+            Ovc[np.ix_(idx_grp[overlap_grp[i]], \
+                idx_grp[overlap_grp[i]])] = False
     
     return Om, Ovw, Ovc
+
+
+def traverse_subpops(sub_pops, idx_overlap, i_start=0):
+
+    num_sub_pops = len(sub_pops)
+    sub_pops_todo = np.ones(num_sub_pops,dtype=bool)
+
+    return collect_children(sub_pops_todo, idx_overlap, i_start)
+
+def collect_children(sub_pops_todo, idx_overlap, i):
+
+    sub_pops_todo[i] = False
+    js = find_overlaps(i, idx_overlap, sub_pops_todo)
+
+    if js.size > 0:
+        js = js[np.in1d(js,np.where(sub_pops_todo)[0])]
+        sub_pops_todo[js] = False
+        idx = np.hstack((i * np.ones(js.shape,dtype=int), js))
+        for j in js:
+            idx = np.vstack((idx,collect_children(sub_pops_todo,idx_overlap,j)))
+    else:
+        idx = np.array([],dtype=int).reshape(0,2)
+
+
+    return idx
+
+
+def find_first_overlap(i, idx_overlap, sub_pops_todo):
+
+    for j in np.where(sub_pops_todo)[0]:                
+        for idx in range(len(idx_overlap)):
+            if i in idx_overlap[idx] and j in idx_overlap[idx]:
+                return j, idx_overlap[idx]
+
+    raise Exception('found no overlap with any other subpopulation')
+
+def find_overlaps(i, idx_overlap, sub_pops_todo):
+
+    overlaps = []
+    for j in np.where(sub_pops_todo)[0]:                
+        for idx in range(len(idx_overlap)):
+            if i in idx_overlap[idx] and j in idx_overlap[idx]:
+                overlaps.append(j)
+                break
+    return np.array(overlaps,dtype=int)[:,np.newaxis]
+
+def idx_global2local(overlap, sub_pop):
+
+    idxi = range(overlap.size) 
+    return np.array([np.where(overlap[i] == sub_pop)[0][0] for i in idxi])
+
+
+
 
 
 ###############################################################################
@@ -872,7 +532,8 @@ def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
     p,m = pars_true['D'].shape
 
     num_sub_pops = len(sub_pops)
-    pars_js, X0_est_js, M_js, n_est_js, = [],[],[], np.zeros(num_sub_pops,dtype=int)
+    pars_js, X0_est_js, M_js = [],[],[] 
+    n_est_js = np.zeros(num_sub_pops,dtype=int)
     Gs = [np.zeros((p,m)) for i in range(k+l+1)]
 
     for j in range(num_sub_pops):
@@ -947,6 +608,7 @@ def stitching_Ho_Kalman(pars_true, sub_pops, k, l=None, method='impulses'):
 
     return pars_est, n_est  
 
+
 def rotate_latent_bases_obs(sub_pop_i,sub_pop_j,pars_i,pars_j,overwrite=False):
 
     n = pars_i['C'].shape[1]
@@ -965,12 +627,19 @@ def rotate_latent_bases_obs(sub_pop_i,sub_pop_j,pars_i,pars_j,overwrite=False):
     pars_out = pars_j if overwrite else pars_j.copy()
 
     pars_out['C'] = pars_out['C'].dot(Mji)
-    pars_out['A'] = Mij.dot(pars_j['A']).dot(Mji) if not pars_j['A'] is None else pars_i['A'].copy()
-    pars_out['B'] = Mij.dot(pars_j['B']) if not pars_j['B'] is None else pars_i['B'].copy()
+    if pars_j['A'] is None:
+        pars_out['A'] = pars_i['A'].copy()
+    else:
+        pars_out['A'] = Mij.dot(pars_j['A']).dot(Mji) 
+    if pars_j['B'] is None: 
+        pars_out['B'] = pars_i['B'].copy()
+    else:
+        pars_out['B'] = Mij.dot(pars_j['B']) 
 
     return pars_out    
 
-def rotate_latent_bases_reach(sub_pop_i,sub_pop_j,pars_i,pars_j,overwrite=False):
+def rotate_latent_bases_reach(sub_pop_i,sub_pop_j,pars_i,pars_j,
+        overwrite=False):
 
     n = pars_i['C'].shape[1]
     assert n == pars_j['C'].shape[1]
@@ -984,62 +653,16 @@ def rotate_latent_bases_reach(sub_pop_i,sub_pop_j,pars_i,pars_j,overwrite=False)
     pars_out = pars_j if overwrite else pars_j.copy()
 
     pars_out['C'] = pars_out['C'].dot(Mji)
-    pars_out['A'] = Mij.dot(pars_j['A']).dot(Mji) if not pars_j['A'] is None else pars_i['A'].copy()
-    pars_out['B'] = Mij.dot(pars_j['B']) if not pars_j['B'] is None else pars_i['B'].copy()
+    if pars_j['A'] is None:
+        pars_out['A'] = pars_i['A'].copy()
+    else:
+        pars_out['A'] = Mij.dot(pars_j['A']).dot(Mji) 
+    if pars_j['B'] is None: 
+        pars_out['B'] = pars_i['B'].copy()
+    else:
+        pars_out['B'] = Mij.dot(pars_j['B'])
 
     return pars_out
-
-
-def traverse_subpops(sub_pops, idx_overlap, i_start=0):
-
-    num_sub_pops = len(sub_pops)
-    sub_pops_todo = np.ones(num_sub_pops,dtype=bool)
-
-    return collect_children(sub_pops_todo, idx_overlap, i_start)
-
-def collect_children(sub_pops_todo, idx_overlap, i):
-
-    sub_pops_todo[i] = False
-    js = find_overlaps(i, idx_overlap, sub_pops_todo)
-
-    if js.size > 0:
-        js = js[np.in1d(js,np.where(sub_pops_todo)[0])]
-        sub_pops_todo[js] = False
-        idx = np.hstack((i * np.ones(js.shape,dtype=int), js))
-        for j in js:
-            idx = np.vstack((idx,collect_children(sub_pops_todo,idx_overlap,j)))
-    else:
-        idx = np.array([],dtype=int).reshape(0,2)
-
-
-    return idx
-
-
-def find_first_overlap(i, idx_overlap, sub_pops_todo):
-
-    for j in np.where(sub_pops_todo)[0]:                
-        for idx in range(len(idx_overlap)):
-            if i in idx_overlap[idx] and j in idx_overlap[idx]:
-                return j, idx_overlap[idx]
-
-    raise Exception('found no overlap with any other subpopulation')
-
-def find_overlaps(i, idx_overlap, sub_pops_todo):
-
-    overlaps = []
-    for j in np.where(sub_pops_todo)[0]:                
-        for idx in range(len(idx_overlap)):
-            if i in idx_overlap[idx] and j in idx_overlap[idx]:
-                overlaps.append(j)
-                break
-    return np.array(overlaps,dtype=int)[:,np.newaxis]
-
-
-
-def idx_global2local(overlap, sub_pop):
-
-    idxi = range(overlap.size) 
-    return np.array([np.where(overlap[i] == sub_pop)[0][0] for i in idxi])
 
 
 def data_reconstruction_MSE(data, data_est):
@@ -1047,123 +670,132 @@ def data_reconstruction_MSE(data, data_est):
     return np.mean( (data-data_est)**2, axis=0 )
 
 
-def matrix_power_derivative(A,m,i,j):
     
-    n = A.shape[0]
-    J_ij = np.zeros((n,n))
-    J_ij[i,j] = 1
-                    
-    ddA = np.zeros((n,n))
-    
-    for r in range(m):
-        ddA += np.linalg.matrix_power(A,r).dot(J_ij).dot(np.linalg.matrix_power(A,m-r-1))
-    return ddA    
 
+###########################################################################
+# iterative SSID for stitching via L2 loss on Hankel covariance matrix
+###########################################################################
 
-def get_obs_index_groups(obs_scheme,p):
-    """ INPUT:
-        obs_scheme: observation scheme for given data, stored in dictionary
-                    with keys 'sub_pops', 'obs_time', 'obs_pops'
-        p:          dimensionality of observed variables y
-    Computes index groups for given observation scheme. 
+def l2_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
 
-    """
-    try:
-        sub_pops = obs_scheme['sub_pops'];
-        obs_pops = obs_scheme['obs_pops'];
-    except:
-        raise Exception(('provided obs_scheme dictionary does not have '
-                         'the required fields sub_pops and obs_pops.'))        
+    def co_observed(x, i):
+        for idx in obs_idx:
+            if x in idx and i in idx:
+                return True
+        return False        
 
-    J = np.zeros((p, len(sub_pops))) # binary matrix, each row gives which 
-    for i in range(len(sub_pops)):      # subpopulations the observed variable
-        if sub_pops[i].size > 0:        # y_i is part of
-            J[sub_pops[i],i] = 1   
-
-    twoexp = np.power(2,np.arange(len(sub_pops))) # we encode the binary rows 
-    hsh = np.sum(J*twoexp,1)                     # of J using binary numbers
-
-    lbls = np.unique(hsh)         # each row of J gets a unique label 
-                                     
-    idx_grp = [] # list of arrays that define the index groups
-    for i in range(lbls.size):
-        idx_grp.append(np.where(hsh==lbls[i])[0])
-
-    obs_idx = [] # list of arrays giving the index groups observed at each
-                 # given time interval
-    for i in range(len(obs_pops)):
-        obs_idx.append([])
-        for j in np.unique(hsh[np.where(J[:,obs_pops[i]]==1)]):
-            obs_idx[i].append(np.where(lbls==j)[0][0])            
-    # note that we only store *where* the entry was found, i.e. its 
-    # position in labels, not the actual label itself - hence we re-defined
-    # the labels to range from 0 to len(idx_grp)
-
-    return obs_idx, idx_grp
-
-
-def get_obs_index_overlaps(idx_grp, sub_pops):
-    """ returns
-        overlap_grp - list of index groups found in more than one subpopulation
-        idx_overlap - list of subpopulations in which the corresponding index group is found
-
-    """
-    num_sub_pops = len(sub_pops) if isinstance(sub_pops, (list,tuple)) else subs_pops.size
     num_idx_grps = len(idx_grp)
+    co_obs, mat_obs = [], np.zeros((num_idx_grps,num_idx_grps))
+    for i in range(num_idx_grps):    
+        for j in range(num_idx_grps):
+            if co_observed(i,j):
+                mat_obs[i,j] = True             
+        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
+            if co_observed(x,i)])
+        co_obs[i] = np.sort(np.hstack(co_obs[i]))
+    (is_, js_) = np.where(mat_obs)
 
-    idx_overlap = []
-    idx = np.zeros(num_idx_grps, dtype=int)
-    for j in range(num_idx_grps):
-        idx_overlap.append([])
-        for i in range(num_sub_pops):
-            if np.any(np.intersect1d(sub_pops[i], idx_grp[j])):
-                idx[j] += 1
-                idx_overlap[j].append(i)
-        idx_overlap[j] = np.array(idx_overlap[j])
+    def g(parsv):
+        return g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs)
 
-    overlaps = [idx_grp[i] for i in np.where(idx>1)[0]]
-    overlap_grp = [i for i in np.where(idx>1)[0]]
-    idx_overlap = [idx_overlap[i] for i in np.where(idx>1)[0]]
+    def f(parsv):                        
+        return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
 
-    return overlaps, overlap_grp, idx_overlap
+    return f,g
 
-def get_subpop_stats(sub_pops, p, obs_pops=None, verbose=False):
+def l2_vec_to_system_mats(parsv,p,n):
 
-    if obs_pops is None:
-        obs_pops = tuple(range(len(sub_pops)))
-    obs_idx, idx_grp = get_obs_index_groups(obs_scheme={'sub_pops': sub_pops,
-        'obs_pops': obs_pops},p=p)
-    overlaps, overlap_grp, idx_overlap = get_obs_index_overlaps(idx_grp, sub_pops)
+    A = parsv[:n*n].reshape(n, n)
+    B = parsv[(n*n):(2*n*n)].reshape(n, n)
+    C = parsv[-p*n:].reshape(p, n)
+
+    return A,B,C
+
+def l2_system_mats_to_vec(A,B,C):
+
+    p,n = C.shape
+    parsv = np.hstack((A.reshape(n*n,),B.reshape(n*n,),C.reshape(p*n,)))
+
+    return parsv
+
+def f_l2_Hankel(parsv,k,l,n,Qs,Om):
+
+    p = Qs[0].shape[0]
+    A,B,C = l2_vec_to_system_mats(parsv,p,n)
+    Pi = B.dot(B.T)
+
+    err = 0.
+    for m in range(1,k+l-1):
+        APi = np.linalg.matrix_power(A, m).dot(Pi)  
+        err += f_l2_block(C,APi,Qs[m],Om)
+            
+    return err/(k*l)
     
-    if verbose:
-        print('idx_grp:', idx_grp)
-        print('obs_idx:', obs_idx)
+def f_l2_block(C,A,Q,Om):
+
+    v = (C.dot(A.dot(C.T)))[Om] - Q[Om]
+
+    return v.dot(v)/(2*np.sum(Om))
+
+
+def g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs):
+
+    p = Qs[0].shape[0]
+    A,B,C = l2_vec_to_system_mats(parsv,p,n)
+    Pi = B.dot(B.T)
+
+    Aexpm = np.zeros((n,n,k+l))
+    Aexpm[:,:,0]= np.eye(n)
+    for m in range(1,k+l):
+        Aexpm[:,:,m] = A.dot(Aexpm[:,:,m-1])
+
+    grad_A, grad_B, grad_C = np.zeros((n,n)), np.zeros((n,n)), np.zeros((p,n))
+    for m in range(1,k+l-1):
+
+        AmPi = Aexpm[:,:,m].dot(Pi)
+
+        # the expensive part: handling p x p ovserved-space matrices 
+        CAPiC_L, CTC = C.dot(AmPi).dot(C.T) - Qs[m], np.zeros((n,n))
+        for i in range(len(idx_grp)):
+            Ci = CAPiC_L[np.ix_(idx_grp[i],co_obs[i])].dot(C[co_obs[i],:])
+            CiT =  CAPiC_L[np.ix_(co_obs[i],idx_grp[i])].T.dot(C[co_obs[i],:])
+            grad_C[idx_grp[i],:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
+            CTC += C[idx_grp[i],:].T.dot(Ci)
+
+        grad_A += g_A_l2_block(CTC,Aexpm,m,Pi)
+        grad_B += g_B_l2_block(CTC,Aexpm[:,:,m],B)
         
-    Om, Ovw, Ovc = comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap)    
+
+    return l2_system_mats_to_vec(grad_A,grad_B,grad_C)
+
+def g_A_l2_block(CTC,Aexpm,m,Pi):
     
-    if verbose:
-        plt.figure(figsize=(20,10))
-        plt.subplot(1,3,1)
-        plt.imshow(Om,interpolation='none')
-        plt.title('Observation pattern')
-        plt.subplot(1,3,2)
-        plt.imshow(Ovw,interpolation='none')
-        plt.title('Overlap pattern')
-        plt.subplot(1,3,3)
-        plt.imshow(Ovc,interpolation='none')
-        plt.title('Cross-overlap pattern')
-        plt.show()
-        
-    return obs_idx, idx_grp, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc
+    CTCPi = CTC.dot(Pi)
+    grad = np.zeros(Aexpm.shape[:2])
+    for q in range(m):
+        grad += Aexpm[:,:,q].T.dot(CTCPi.dot(Aexpm[:,:,m-1-q].T))
+
+    return grad
+
+def g_B_l2_block(CTC,Am,B):
+            
+    return (CTC.T.dot(Am) + Am.T.dot(CTC)).dot(B)
+
+def g_C_l2_idxgrp(Ci,CiT,AmPi):
+
+    return Ci.dot(AmPi.T) + CiT.dot(AmPi)
 
 def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
                                        Qs_full, Om, Ovc, Ovw, f_i, g_i,
                                        if_flip = False):
 
     n = pars_true['A'].shape[0]
-    parsv_true = l2_system_mats_to_vec(pars_true['A'],pars_true['B'],pars_true['C'])
-    parsv_est  = l2_system_mats_to_vec(pars_est['A'], pars_est['B'], pars_est['C'])
-    parsv_init = l2_system_mats_to_vec(pars_init['A'],pars_init['B'],pars_init['C'])
+    parsv_true = l2_system_mats_to_vec(pars_true['A'],
+        pars_true['B'],pars_true['C'])
+    parsv_est  = l2_system_mats_to_vec(pars_est['A'], 
+        pars_est['B'], pars_est['C'])
+    parsv_init = l2_system_mats_to_vec(pars_init['A'],
+        pars_init['B'],pars_init['C'])
     print('final squared error on observed parts:', 
           f_l2_Hankel(parsv_est,k,l,n,Qs, Om))
     print('final squared error on overlapping parts:', 
@@ -1176,18 +808,23 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     if if_flip:
         C_flip = pars_est['C'].copy()
         C_flip[Om[:,0],:] *= -1
-        parsv_fest  = l2_system_mats_to_vec(pars_est['A'], pars_est['B'], C_flip)
+        parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['B'],C_flip)
         H_flip = yy_Hankel_cov_mat(C_flip,pars_est['A'],pars_est['Pi'],k,l)
         print('final squared error on stitched parts (C over first subpop sign-flipped):',
           f_l2_Hankel(parsv_fest,k,l,n,Qs_full,~Om))
 
-    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],pars_true['Pi'],k,l)
-    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
+    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],
+        pars_true['Pi'],k,l)
+    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],
+        pars_init['Pi'],k,l)
 
-    H_obs = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],pars_true['Pi'],k,l, Om)
+    H_obs = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
+        pars_true['Pi'],k,l, Om)
     H_obs[np.where(H_obs==0)] = np.nan
-    H_sti = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],pars_true['Pi'],k,l,~Om)
-    H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],k,l)
+    H_sti = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
+        pars_true['Pi'],k,l,~Om)
+    H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
+        pars_est['Pi'],k,l)
 
 
     if if_flip:
@@ -1227,4 +864,420 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     plt.imshow(pars_true['A'],interpolation='none')
     plt.title('A true')
     plt.show()
+
+
+
+###########################################################################
+# iterative SSID for stitching via structured soft-imputing
+###########################################################################
+
+# The following code was mostly written pre-Cosyne 2016
+
+def construct_hankel_cov(params):
+
+    p, hS = params['C'].shape
+    SIGfp  = np.zeros((p*hS,p*hS))
+
+    SIGyy = params['C'].dot(params['Pi'].dot(params['C'].T)) + params['R']
+
+    covxx = params['Pi']
+    for k in range(2*hS-1):
+        
+        covxx =  params['A'].dot(covxx)
+        lamK = params['C'].dot(covxx.dot(params['C'].T))
+
+        if k < hS-0.5:
+            
+            for kk in range(k + 1):
+                offset0, offset1 = (k-kk)*p, kk*p
+                SIGfp[offset0:offset0+p, offset1:offset1+p] = lamK
+                
+        else:
+
+            for kk in range(2*hS - k -1):
+                offset0, offset1 = (hS-kk-1)*p, (kk+k+1-hS)*p
+                SIGfp[offset0:offset0+p,offset1:offset1+p] = lamK
+
+    return SIGfp, SIGyy
+
+
+def generateCovariancesFP(seq,hS):
     
+    T, p = seq['y'].shape
+    
+    SIGfp  = np.zeros((p*hS,p*hS),dtype=np.float64)
+    SIGyy  = np.zeros((p,p),dtype=np.float64)
+    
+    
+    idxObs = np.invert(np.isnan(seq['y'])).astype(np.int)
+
+    sYYobs = idxObs.T.dot(idxObs)
+    nPSIG  = (sYYobs==0)
+    sYYobs = np.maximum(sYYobs, 1)
+    
+    Ytot   = seq['y'] - np.nanmean(seq['y'],0)
+    Ytot[np.isnan(Ytot)] = 0
+
+    Yshift = Ytot        
+    lamK   = Ytot.T.dot(Yshift)
+    SIGyy  = lamK;            
+
+    for k in range(2*hS-1):
+        
+        Yshift  = np.roll(Yshift, 1, axis = 0)
+        lamK    = Ytot.T.dot(Yshift) / sYYobs
+        lamK[nPSIG] = np.NaN
+
+        if k < hS-0.5:
+            
+            for kk in range(k + 1):
+                offset0, offset1 = (k-kk)*p, kk*p
+                SIGfp[offset0:offset0+p, offset1:offset1+p] = lamK
+                
+        else:
+
+            for kk in range(2*hS - k -1):
+                offset0, offset1 = (hS-kk-1)*p, (kk+k+1-hS)*p
+                SIGfp[offset0:offset0+p,offset1:offset1+p] = lamK
+             
+    SIGyy = symmetrize(SIGyy)/sYYobs  
+    SIGyy[nPSIG] = np.NaN      
+             
+    return SIGfp, SIGyy
+
+def ssidSVD(SIGfp,SIGyy,n, pi_method='proper', params_old = None):
+    
+    minVar    = 1e-5
+    minVarPi  = 1e-5   
+
+    p = np.size(SIGyy,0)
+
+    if p > 200:
+        print('p = ', p)
+        print('very high-dimensional data! Will take a while. Switching to verbose...')
+        verbose=True
+    else:
+        verbose=False
+       
+    
+    if verbose:
+        print('computing SVD:')
+    UU,SS,VV = np.linalg.svd(SIGfp) # SIGfp = UU.dot(diag(SS).dot(VV)
+
+    VV = VV.T
+    SS = np.diag(SS[:n])
+    UU = UU[:,:n]
+    VV = VV[:,:n]
+   
+    Obs = np.dot(UU,SS)
+
+    if verbose:
+        print('computing A, C:')
+
+    A = np.linalg.lstsq(Obs[:-p,:],Obs[p:,:])[0]
+    C = Obs[:p,:]
+    Chat = VV[:p,:n]
+    
+    if verbose:
+        print('computing Pi:')
+
+    # hack: abolish constant flipping of mathematical signs of latent states...
+    if not params_old is None:
+        flips = np.diag(2*(np.sum(C*params_old['C'],0) > 0).astype(np.float)-1)
+        A = flips.dot(A.dot(flips))
+        C = C.dot(flips)
+        Chat = Chat.dot(flips)
+
+
+    if pi_method=='proper':
+        Pi,_,_ = control.matlab.dare(A=A.T,B=-C.T,Q=np.zeros((n,n)),R=-SIGyy,
+            S=Chat.T, E=np.eye(n))    
+
+    else:
+        #warnings.warn(('Will not solve DARE, using heuristics; this might '
+        #    'lead to poor estimates of Q and V0'))  
+        Pi = np.linalg.lstsq(A,np.dot(Chat.T,np.linalg.pinv(C.T)))[0]
+
+
+    if verbose:
+        print('computing Q, R:')
+                   
+    D, V = np.linalg.eig(Pi)
+    D[D < minVarPi] = minVarPi
+    Pi = V.dot(np.diag(D)).dot(V.T)
+    Pi = np.real(symmetrize(Pi))
+    Q = Pi - np.dot(np.dot(A,Pi),A.T)
+    D, V = np.linalg.eig(Q); 
+    D[D<minVar] = minVar
+
+    Q = np.dot(np.dot(V,np.diag(D)),V.T)
+    Q = symmetrize(Q)
+    
+    R = np.diag(SIGyy-np.dot(np.dot(C,Pi),C.T))
+    R.flags.writeable = True
+    R[R<minVar] = minVar
+    R = np.diag(R)   
+    
+    return {'A':A, 'Q': Q, 'C': C, 'R': R, 'Pi': Pi}
+
+def post_process(params):
+
+    p, n = params['C'].shape
+
+    #params = stabilize_A(params)
+
+    if isinstance(params['Q'], complex):
+        params['Q'] = np.real(params['Q'])
+        
+    params['Q'] = (params['Q'] + params['Q'].T)/2
+    
+    if np.min(np.linalg.eig(params['Q'])[0]) < 0:
+        
+        a,b = np.linalg.eig(params['Q'])
+        params['Q'] = a*np.max(b,10**-10)*a.T
+    
+    if 'V0' not in params:
+        params['V0'] = np.real(dlyap(params['A'],params['Q']))
+    
+    params.update({'mu0':np.zeros(n)}) 
+    params['R']  = np.diag(np.diag(params['R']))
+
+
+    return params
+
+def stabilize_A(params):
+
+    D, V = np.linalg.eig(params['A'])
+    if np.any(np.abs(D) > 1):
+        print(np.abs(D))
+        warnings.warn(('Produced instable dynamics matrix A. Bluntly pushing '
+                       'eigenvalues into the unit circle'))  
+        D /= np.maximum(np.abs(D), 1)
+        print(np.abs(D))
+        params['A'] = np.real(V.dot(np.diag(D).dot(np.linalg.inv(V))))
+
+    return params
+
+def add_d(data, params):
+
+    params['d'] = np.nanmean(data,axis = 0)
+
+    return params
+
+def FitLDSParamsSSID(seq, n):
+
+    T, p      = seq['y'].shape
+
+    SIGfp, SIGyy = generateCovariancesFP(seq=seq, hS=n)
+            
+    params = post_process(ssidSVD(SIGfp=SIGfp,SIGyy=SIGyy,n=n));
+    params = add_d(data=seq['y'], params=params)
+
+    return params
+
+def run_exp_iterSSID(seq, seq_f, n, num_iter=100,pi_method='proper',
+    plot_flag=True):
+
+    T,p = seq['y'].shape
+
+    # use observation scheme informatoin to mask data
+    for i in range(len(seq['obs_time'])):
+        idx_t = np.arange(seq['obs_time'][0]) if i == 0 \
+            else np.arange(seq['obs_time'][i-1], seq['obs_time'][i])
+        idx_y = np.setdiff1d(np.arange(p), seq['sub_pops'][i])
+        seq['y'][np.ix_(idx_t, idx_y)] = np.NaN
+    
+    # generate covs from full ground truth data for comparison
+    SIGfp_f, SIGyy_f = generateCovariancesFP(seq=seq_f,hS=n)
+
+    # fit model with iterative SSID
+    params, SIGfp_new, SIGyy_new, lPSIGfp, lPSIGyy, broken = \
+        iterSSID(seq=seq, n=n, num_iter=num_iter, 
+            pi_method=pi_method, init=None, alpha=1)
+
+    # reconstruct covs from final estimate 
+    SIGfp, SIGyy = construct_hankel_cov(params=params[-1])
+
+    # visualize results
+    if plot_flag:
+        idx_stitched = np.invert(lPSIGyy)
+        m = np.min([SIGyy.min(), SIGyy_f.min()])
+        M = np.max([SIGyy.max(), SIGyy_f.max()])
+        plt.figure(figsize=(12,8))
+        plt.subplot(2,3,1)
+        plt.imshow(SIGyy_f, interpolation='none')
+        plt.clim(m,M)
+        plt.title('SIGyy true')
+        plt.subplot(2,3,2)
+        plt.imshow(SIGyy, interpolation='none')
+        plt.clim(m,M)
+        plt.title('SIGyy est.')
+        plt.subplot(2,3,3)
+        if np.any(idx_stitched):
+            m = np.min([SIGyy[idx_stitched].min(), 
+                SIGyy_f[idx_stitched].min()])
+            M = np.max([SIGyy[idx_stitched].max(), 
+                SIGyy_f[idx_stitched].max()])
+            plt.plot([m,M], [m,M], 'k')
+            plt.axis([m,M,m,M])
+        plt.hold(True)
+        plt.plot(SIGyy[np.invert(idx_stitched)], 
+                 SIGyy_f[np.invert(idx_stitched)], 'b.')
+        plt.plot(SIGyy[idx_stitched], SIGyy_f[idx_stitched], 'r.')
+        plt.xlabel('est.')
+        plt.ylabel('true')
+
+        if n*p <= 2000:
+            idx_stitched = np.invert(lPSIGfp)
+            m = np.min([SIGfp.min(), SIGfp_f.min()])
+            M = np.max([SIGfp.max(), SIGfp_f.max()])
+            plt.subplot(2,3,4)
+            plt.imshow(SIGfp_f, interpolation='none')
+            plt.clim(m,M)
+            plt.title('SIGfp true')
+            plt.subplot(2,3,5)
+            plt.imshow(SIGfp, interpolation='none')
+            plt.clim(m,M)
+            plt.title('SIGfp est.')
+            plt.subplot(2,3,6)
+            if np.any(idx_stitched):
+                m = np.min([SIGfp[idx_stitched].min(), 
+                    SIGfp_f[idx_stitched].min()])
+                M = np.max([SIGfp[idx_stitched].max(), 
+                    SIGfp_f[idx_stitched].max()])
+                plt.plot([m,M], [m,M], 'k')
+                plt.axis([m,M,m,M])
+            plt.hold(True)
+            plt.plot(SIGfp[np.invert(idx_stitched)], 
+                     SIGfp_f[np.invert(idx_stitched)], 'b.')
+            plt.plot(SIGfp[idx_stitched], SIGfp_f[idx_stitched], 'r.')
+            plt.xlabel('est.')
+            plt.ylabel('true')
+
+        plt.show()    
+
+    return params, SIGfp, SIGyy, lPSIGfp, lPSIGyy, SIGfp_f, SIGyy_f
+
+
+def iterSSID(seq, n, num_iter=100, init=None, alpha=1.,pi_method='proper'):
+
+    T,p = seq['y'].shape
+
+    print(seq['y'].shape)
+
+    params = []
+    broken = False
+
+    if p > 200:
+        print('p = ', p)
+        print('very high-dimensional data! Will take a while. Switching to verbose...')
+        verbose=True
+    else:
+        verbose=False
+
+    if verbose:
+        print('generating data cov. mat')
+
+    SIGfp_new, SIGyy_new = generateCovariancesFP(seq=seq, hS=n)
+
+    lnPSIGfp, lnPSIGyy = np.isnan(SIGfp_new),np.isnan(SIGyy_new) # for indexing
+    lPSIGfp, lPSIGyy = np.invert(lnPSIGfp), np.invert(lnPSIGyy) 
+    PSIGfp, PSIGyy = SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy]  # observed parts
+
+
+    if verbose:
+        print('computing naive iterSSID')
+    # 'zero'-th iteration: used ssidSVD on Hankel cov matrix with NaN set to 0:
+    SIGfp_new[lnPSIGfp] = 0
+    SIGyy_new[lnPSIGyy] = 0
+    params.append(post_process(ssidSVD(SIGfp=SIGfp_new,
+                                       SIGyy=SIGyy_new,
+                                       n=n,
+                                       pi_method=pi_method)))
+    params[-1] = add_d(seq['y'], params[-1])
+
+    # main iterations: fill in NAN's iteratively using missing-value SVD:
+    SIGfp_old = SIGfp_new.copy() if init is None else init
+    SIGyy_old = SIGyy_new.copy()
+
+    if verbose:
+        print('computing iterative SSID')
+    for t in range(1,num_iter+1):
+
+        if verbose:
+            print(t)
+        params.append(post_process(ssidSVD(SIGfp=SIGfp_old,
+                                           SIGyy=SIGyy_old,
+                                           n=n,
+                                           pi_method=pi_method,
+                                           params_old=params[-1])))
+
+        params[-1] = add_d(seq['y'], params[-1])
+
+        SIGfp_new, SIGyy_new = construct_hankel_cov(params[-1])
+
+        if np.any(np.isnan(SIGfp_new)) or not np.all(np.isfinite(SIGfp_new)):
+            print('reconstructed Hankel cov matrix contains NaNs or Infs!')
+            print('cancelling iteration')
+
+            broken = True
+
+            break
+
+        # make sure we keep the observed part right
+        SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy] = PSIGfp, PSIGyy
+        SIGfp_new[lnPSIGfp] = alpha*SIGfp_new[lnPSIGfp] \
+                            +(1-alpha)*SIGfp_old[lnPSIGfp]
+        SIGyy_new[lnPSIGyy] = alpha*SIGyy_new[lnPSIGyy] \
+                            +(1-alpha)*SIGyy_old[lnPSIGyy]
+        SIGyy_new = symmetrize(SIGyy_new)
+
+        # hack: change halves of C if helpful
+        params[-1] = flip_emission_signs(SIGyy_new,seq['sub_pops'],params[-1])
+
+
+        SIGfp_old, SIGyy_old = SIGfp_new, SIGyy_new # shallow copies!
+
+
+    if broken:
+        broken = params[-1]
+        params.pop()
+        SIGfp_new, SIGyy_new = construct_hankel_cov(params[-1])
+        SIGfp_new[lPSIGfp], SIGyy_new[lPSIGyy] = PSIGfp, PSIGyy
+        SIGyy_new = symmetrize(SIGyy_new)
+
+    return params, SIGfp_new, SIGyy_new, lPSIGfp, lPSIGyy, broken
+
+
+def flip_emission_signs(SIGyy, sub_pops, params):
+
+    # we drop this for now, as it hardly ever flips anything
+    """
+    if len(sub_pops) == 1:
+        idx_overlap = sub_pops[0]
+    elif len(sub_pops) == 2:
+        idx_overlap = np.intersect1d(sub_pops[0], sub_pops[1])
+    else:
+        raise Exception('more than two subpopulations not yet implemented')
+
+    cov_h = params['C'][idx_overlap,:].dot(params['Pi']).dot(params['C'].T) + \
+        params['R'][idx_overlap,:]
+
+
+    for i in range(len(sub_pops)):
+        idx_sub = rem_overlap(sub_pops[i], idx_overlap)
+        SIGp_est, SIGp_true = cov_parts(cov_h,SIGyy,idx_sub,idx_overlap)
+
+        if check_flip(SIGp_est, SIGp_true):
+            params['C'][idx_sub,:] *= -1
+    """    
+    return params
+
+def check_flip(x_est, x_true, thresh=0.5):
+    return np.mean( np.sum(x_est * x_true, 1) < 0 ) > thresh
+
+def rem_overlap(idx_sub_pop, idx_overlap):
+    return np.setdiff1d(idx_sub_pop, idx_overlap)
+
+def cov_parts(SIG_est, SIG_true, idx_sub, idx_overlap):
+    return SIG_est[:,idx_sub],SIG_true[np.ix_(idx_overlap,idx_sub)]
