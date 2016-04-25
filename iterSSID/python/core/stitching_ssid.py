@@ -866,6 +866,9 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     plt.show()
 
 
+# might as well only update C and get A,Pi analytically
+
+# fill in code here
 
 ###########################################################################
 # iterative SSID for stitching via structured soft-imputing
