@@ -870,6 +870,52 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
 
 # fill in code here
 
+def iter_X_m(Q, C, not_Om, Cd = None, X_m = None):
+    
+    if not_Om[0,0]:
+        print(('First neuron apparently not observed with itself!'
+               ' Argument not_Om has to contain all non-observed'
+               ' entries. Check the input again if unsure.'))
+        
+    p,n = C.shape
+    Cd = np.linalg.pinv(C) if Cd is None else Cd
+    X_m = np.eye(n) if X_m is None else X_m
+    Q[not_Om] = (C.dot(X_m).dot(C.T))[not_Om] # lazy & slow
+    
+    return Cd.dot(Q).dot(Cd.T)
+
+def yy_Hankel_cov_mat_AmPi_analytic(C,k,l,Qs,Om=None,num_iter=50):
+    
+    p,n = C.shape
+    Cd = np.linalg.pinv(C)
+
+    assert (Om is None) or (Om.shape == (p,p))
+
+    not_Om = np.zeros((p,p),dtype=bool) if Om is None else np.invert(Om)
+
+    H = np.zeros((k*p, l*p))
+    
+    for kl_ in range(k+l-1):        
+        AmPi= np.eye(n)
+        Q = Qs[kl_+1].copy()
+        for i in range(num_iter):
+            AmPi = iter_X_m(Q,C,not_Om,Cd,AmPi)
+
+        lamK = (C.dot(AmPi).dot(C.T))
+        
+        lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
+        if kl_ < k-0.5:     
+            for l_ in range(0, min(kl_ + 1,l)):
+                offset0, offset1 = (kl_-l_)*p, l_*p
+                H[offset0:offset0+p, offset1:offset1+p] = lamK
+                
+        else:
+            for l_ in range(0, min(k+l - kl_ -1, l, k)):
+                offset0, offset1 = (k - l_ - 1)*p, ( l_ + kl_ + 1 - k)*p
+                H[offset0:offset0+p,offset1:offset1+p] = lamK
+            
+    return H
+
 ###########################################################################
 # iterative SSID for stitching via structured soft-imputing
 ###########################################################################
