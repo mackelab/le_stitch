@@ -866,9 +866,52 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     plt.show()
 
 
-# might as well only update C and get A,Pi analytically
+# Coordinate Ascent
+# (might as well only update C and get A^m*Pi analytically)
 
-# fill in code here
+def f_l2_Hankel_coord_asc(C, k, l, n, Qs, Om, not_Om = None, max_iter=50):
+
+    not_Om = np.invert(Om) if not_Om is None else not_Om
+    p = Qs[0].shape[0]
+    C = C.reshape(p,n)
+    Cd = np.linalg.pinv(C)
+
+    err = 0.
+    for m in range(1,k+l):
+        err += f_l2_coord_asc_block(C,Cd,n,Qs[m],Om,not_Om,max_iter)
+
+    return err/(k*l)
+
+def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50):
+
+    Q_est, X_m = Q.copy(), np.eye(n)
+    for i in range(max_iter):
+        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
+    Q_est = C.dot(X_m).dot(C.T)
+
+    v = Q_est[Om] - Q[Om]
+    return v.dot(v)/(2*np.sum(Om))
+
+def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50):
+        
+    C = C.reshape(-1, n)
+    p, Cd = C.shape[0], np.linalg.pinv(C)
+
+    grad = np.zeros((p,n))
+    for m in range(1,k+l):
+        grad += g_l2_coord_asc_block(C,Cd,n,Qs[m],not_Om,max_iter)
+        
+    return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
+
+def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50):
+
+    Q_est, X_m = Q.copy(), np.eye(n)
+    for i in range(max_iter):
+        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
+    CdQCdT = Cd.dot(Q_est).dot(Cd.T)
+    QC, QTC = Q_est.dot(C), Q_est.T.dot(C)
+
+    return QC.dot(CdQCdT.T) + QTC.dot(CdQCdT)    
 
 def iter_X_m(Q, C, not_Om, Cd = None, X_m = None):
     
@@ -884,7 +927,7 @@ def iter_X_m(Q, C, not_Om, Cd = None, X_m = None):
     
     return Cd.dot(Q).dot(Cd.T)
 
-def yy_Hankel_cov_mat_AmPi_analytic(C,k,l,Qs,Om=None,num_iter=50):
+def yy_Hankel_cov_mat_coord_asc(C,k,l,Qs,Om=None,num_iter=50):
     
     p,n = C.shape
     Cd = np.linalg.pinv(C)
