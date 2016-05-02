@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import matplotlib.pyplot as plt
 import warnings
 import control
@@ -168,6 +169,55 @@ def comp_model_covariances(pars, m, Om=None):
             np.asarray( Om,dtype=int) )
     return Qs
 
+def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
+
+    # generate dynamics matrix A
+
+    nr = n if nr is None else nr
+    nc, nc_u = n - nr, (n - nr)//2
+    assert nc_u * 2 == nc 
+
+    if not ev_r is None:
+        assert ev_r.size == nr
+
+    if not ev_c is None:
+        assert ev_c.size == nc_u
+
+    Q, D = np.zeros((n,n), dtype=complex), np.zeros(n, dtype=complex)
+
+    # draw real eigenvalues and eigenvectors
+    D[:nr] = np.linspace(0.8, 0.99, nr) if ev_r is None else ev_r 
+    Q[:,:nr] = np.random.normal(size=(n,nr))
+    Q[:,:nr] /= np.sqrt((Q[:,:nr]**2).sum(axis=0)).reshape(1,nr)
+
+    # draw complex eigenvalues and eigenvectors
+    if ev_c is None:
+        circs = np.exp(2 * 1j * np.pi * np.random.uniform(size=nc_u))
+        scales = np.linspace(0.5, 0.9, nc_u)
+        ev_c_r, ev_c_c = scales * np.real(circs), scales * np.imag(circs)
+    else:
+        ev_c_r, ev_c_c = np.real(ev_c), np.imag(ev_c) 
+    V = np.random.normal(size=(n,n))
+    for i in range(nc_u):
+        Vi = V[:,i*2:(i+1)*2] / np.sqrt( np.sum(V[:,i*2:(i+1)*2]**2) )
+        Q[:,nr+i], Q[:,nr+nc_u+i] = Vi[:,0]+1j*Vi[:,1], Vi[:,0]-1j*Vi[:,1] 
+        D[nr+i], D[nr+i+nc_u] = ev_c_r[i]+1j*ev_c_c[i], ev_c_r[i]-1j*ev_c_c[i]
+
+    A = Q.dot(np.diag(D)).dot(np.linalg.inv(Q))
+    assert np.allclose(A, np.real(A))
+    A = np.real(A)
+
+    # generate innovation noise covariance matrix Q
+
+    Q = sp.stats.wishart(n, np.eye(n)).rvs()/n
+    Pi = sp.linalg.solve_discrete_lyapunov(A, Q)
+
+    # generate emission-related matrices C, R
+
+    C = np.random.normal(size=(p,n))
+    R = np.sum(C*C.dot(Pi), axis=1) * (3+2*np.random.uniform(size=[p]))/4
+
+    return { 'A': A, 'B': None, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
 
 ###########################################################################
@@ -893,7 +943,7 @@ def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50):
     return v.dot(v)/(2*np.sum(Om))
 
 def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50):
-        
+
     C = C.reshape(-1, n)
     p, Cd = C.shape[0], np.linalg.pinv(C)
 
