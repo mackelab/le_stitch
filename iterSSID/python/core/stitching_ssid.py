@@ -919,20 +919,24 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
 # Coordinate Ascent
 # (might as well only update C and get A^m*Pi analytically)
 
-def f_l2_Hankel_coord_asc(C, k, l, n, Qs, Om, not_Om = None, max_iter=50):
+def f_l2_Hankel_coord_asc(C, k, l, n, Qs, Om, not_Om = None, max_iter=50,
+        idx_init = None):
 
     not_Om = np.invert(Om) if not_Om is None else not_Om
     p = Qs[0].shape[0]
     C = C.reshape(p,n)
     Cd = np.linalg.pinv(C)
 
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
     err = 0.
     for m in range(1,k+l):
-        err += f_l2_coord_asc_block(C,Cd,n,Qs[m],Om,not_Om,max_iter)
+        err += f_l2_coord_asc_block(C,Cd,n,Qs[m],Om,not_Om,max_iter,
+            Cdi, idx_init)
 
     return err/(k*l)
 
-def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50):
+def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50, Cdi=None,idx_init=None):
 
     Q_est, X_m = Q.copy(), np.eye(n)
     for i in range(max_iter):
@@ -942,20 +946,27 @@ def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50):
     v = Q_est[Om] - Q[Om]
     return v.dot(v)/(2*np.sum(Om))
 
-def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50):
+def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50, idx_init=None):
 
     C = C.reshape(-1, n)
     p, Cd = C.shape[0], np.linalg.pinv(C)
 
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
     grad = np.zeros((p,n))
     for m in range(1,k+l):
-        grad += g_l2_coord_asc_block(C,Cd,n,Qs[m],not_Om,max_iter)
+        grad += g_l2_coord_asc_block(C,Cd,n,Qs[m],not_Om,max_iter,Cdi)
         
     return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
 
-def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50):
+def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50, Cdi=None,idx_init=None):
 
-    Q_est, X_m = Q.copy(), np.eye(n)
+    if Cdi is None or idx_init is None:
+        X_m = np.eye(n)
+    else:
+        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+    Q_est = Q.copy()
     for i in range(max_iter):
         X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
     CdQCdT = Cd.dot(Q_est).dot(Cd.T)
