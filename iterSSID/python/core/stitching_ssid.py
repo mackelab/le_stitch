@@ -915,78 +915,8 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     plt.title('A true')
     plt.show()
 
-
 # Coordinate Ascent
 # (might as well only update C and get A^m*Pi analytically)
-
-def f_l2_Hankel_coord_asc(C, k, l, n, Qs, Om, not_Om = None, max_iter=50,
-        idx_init = None):
-
-    not_Om = np.invert(Om) if not_Om is None else not_Om
-    p = Qs[0].shape[0]
-    C = C.reshape(p,n)
-    Cd = np.linalg.pinv(C)
-
-    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
-
-    err = 0.
-    for m in range(1,k+l):
-        err += f_l2_coord_asc_block(C,Cd,n,Qs[m],Om,not_Om,max_iter,
-            Cdi, idx_init)
-
-    return err/(k*l)
-
-def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50, Cdi=None,idx_init=None):
-
-    Q_est, X_m = Q.copy(), np.eye(n)
-    for i in range(max_iter):
-        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
-    Q_est = C.dot(X_m).dot(C.T)
-
-    v = Q_est[Om] - Q[Om]
-    return v.dot(v)/(2*np.sum(Om))
-
-def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50, idx_init=None):
-
-    C = C.reshape(-1, n)
-    p, Cd = C.shape[0], np.linalg.pinv(C)
-
-    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
-
-    grad = np.zeros((p,n))
-    for m in range(1,k+l):
-        grad += g_l2_coord_asc_block(C,Cd,n,Qs[m],not_Om,max_iter,Cdi)
-        
-    return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
-
-def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50, Cdi=None,idx_init=None):
-
-    if Cdi is None or idx_init is None:
-        X_m = np.eye(n)
-    else:
-        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
-
-    Q_est = Q.copy()
-    for i in range(max_iter):
-        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
-    CdQCdT = Cd.dot(Q_est).dot(Cd.T)
-    QC, QTC = Q_est.dot(C), Q_est.T.dot(C)
-
-    return QC.dot(CdQCdT.T) + QTC.dot(CdQCdT)    
-
-def iter_X_m(Q, C, not_Om, Cd = None, X_m = None):
-    
-    if not_Om[0,0]:
-        print(('First neuron apparently not observed with itself!'
-               ' Argument not_Om has to contain all non-observed'
-               ' entries. Check the input again if unsure.'))
-        
-    p,n = C.shape
-    Cd = np.linalg.pinv(C) if Cd is None else Cd
-    X_m = np.eye(n) if X_m is None else X_m
-    Q[not_Om] = (C.dot(X_m).dot(C.T))[not_Om] # lazy & slow
-    
-    return Cd.dot(Q).dot(Cd.T)
 
 def yy_Hankel_cov_mat_coord_asc(C,k,l,Qs,Om=None,num_iter=50):
     
@@ -1019,6 +949,265 @@ def yy_Hankel_cov_mat_coord_asc(C,k,l,Qs,Om=None,num_iter=50):
                 H[offset0:offset0+p,offset1:offset1+p] = lamK
             
     return H
+
+
+def f_l2_Hankel_coord_asc(C, k, l, n, Qs, Om, not_Om = None, max_iter=50,
+        idx_init = None):
+
+    not_Om = np.invert(Om) if not_Om is None else not_Om
+    p = Qs[0].shape[0]
+    C = C.reshape(p,n)
+    Cd = np.linalg.pinv(C)
+
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    err = 0.
+    for m in range(1,k+l):
+        err += f_l2_coord_asc_block(C,Cd,n,Qs[m],Om,not_Om,max_iter,
+            Cdi, idx_init)
+
+    return err/(k*l)
+
+def f_l2_coord_asc_block(C,Cd,n,Q,Om,not_Om,max_iter=50, Cdi=None,idx_init=None):
+
+    if Cdi is None or idx_init is None:
+        X_m = np.eye(n)
+    else:
+        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+    Q_est = Q.copy()
+    for i in range(max_iter):
+        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
+    Q_est = C.dot(X_m).dot(C.T)
+
+    v = Q_est[Om] - Q[Om]
+    return v.dot(v)/(2*np.sum(Om))
+
+def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50, idx_init=None):
+
+    C = C.reshape(-1, n)
+    p, Cd = C.shape[0], np.linalg.pinv(C)
+
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    grad = np.zeros((p,n))
+    for m in range(1,k+l):
+        grad += g_l2_coord_asc_block(C,Cd,n,Qs[m],not_Om,max_iter,Cdi,idx_init)
+        
+    return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
+
+def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50, Cdi=None,idx_init=None):
+
+    if Cdi is None or idx_init is None:
+        X_m = np.eye(n)
+    else:
+        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+    Q_est = Q.copy()
+    for i in range(max_iter):
+        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
+    CdQCdT = Cd.dot(Q_est).dot(Cd.T)
+    QC, QTC = Q_est.dot(C), Q_est.T.dot(C)
+
+    return QC.dot(CdQCdT.T) + QTC.dot(CdQCdT)    
+
+def iter_X_m(Q, C, not_Om, Cd = None, X_m = None):
+    
+    if not_Om[0,0]:
+        print(('First neuron apparently not observed with itself!'
+               ' Argument not_Om has to contain all non-observed'
+               ' entries. Check the input again if unsure.'))
+        
+    p,n = C.shape
+    Cd = np.linalg.pinv(C) if Cd is None else Cd
+    X_m = np.eye(n) if X_m is None else X_m
+    Q[not_Om] = (C.dot(X_m).dot(C.T))[not_Om] # lazy & slow
+    
+    return Cd.dot(Q).dot(Cd.T)
+
+def g_l2_coord_asc(C,k,l,n,Qs,not_Om, max_iter=50, idx_init=None):
+
+    C = C.reshape(-1, n)
+    p, Cd = C.shape[0], np.linalg.pinv(C)
+
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    grad = np.zeros((p,n))
+    for m in range(1,k+l):
+        grad += g_l2_coord_asc_block(C,Cd,n,Qs[m],not_Om,max_iter,Cdi,idx_init)
+        
+    return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
+
+def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50, Cdi=None,idx_init=None):
+
+    if Cdi is None or idx_init is None:
+        X_m = np.eye(n)
+    else:
+        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+    Q_est = Q.copy()
+    for i in range(max_iter):
+        X_m = iter_X_m(Q_est, C, not_Om, Cd, X_m)
+    Q_est[not_Om] = (C.dot(X_m).dot(C.T))[not_Om]
+    CdQCdT = Cd.dot(Q_est).dot(Cd.T)
+    QC, QTC = Q_est.dot(C), Q_est.T.dot(C)
+
+    return QC.dot(CdQCdT.T) + QTC.dot(CdQCdT)    
+
+# fast implementation (mostly faster iter_X_m, rest needs to adapt)
+
+def iter_X_m_fast(CdQCdT_obs, C, Cd, p, n, idx_grp, not_co_obs, X_m):
+
+    for i in range(len(idx_grp)):
+        X_m = (Cd[:,idx_grp[i]].dot(C[idx_grp[i],:])).dot(X_m)
+        CdQCdT_stitch = Cd[:,not_co_obs[i]].dot(C[not_co_obs[i],:]).T
+        CdQCdT_stitch = X_m.dot(CdQCdT_stitch.T)
+    return CdQCdT_obs + CdQCdT_stitch
+
+def yy_Hankel_cov_mat_coord_asc_fast(C, Qs, k, l, Om, idx_grp, not_co_obs, 
+        max_iter=50, idx_init = None):
+
+    p,n = C.shape
+    Cd = np.linalg.pinv(C)
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    assert (Om is None) or (Om.shape == (p,p))
+
+    not_Om = np.zeros((p,p),dtype=bool) if Om is None else np.invert(Om)
+
+    H = np.zeros((k*p, l*p))
+    
+    for kl_ in range(k+l-1):        
+        Q = Qs[kl_+1]
+
+        if idx_init is None:
+            X_m = np.eye(n)
+        else:
+            X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+        if max_iter > 0:
+            CdQCdT_obs = np.zeros((n,n))
+            for i in range(len(idx_grp)):
+                a, b = idx_grp[i], co_obs[i]
+                CdQCdT_obs += Cd[:,a].dot(Q[np.ix_(a, b)]).dot(Cd[:,b].T)
+
+            for i in range(max_iter):
+                X_m = iter_X_m_fast(CdQCdT_obs,C,Cd,p,n,idx_grp,not_co_obs,X_m)
+
+        Q_est = np.zeros(Q.shape)
+        Q_est[Om] = (C.dot(X_m).dot(C.T))[Om]
+        
+        Q_est = Q_est if Om is None else Q_est * np.asarray( Om, dtype=float) 
+        if kl_ < k-0.5:     
+            for l_ in range(0, min(kl_ + 1,l)):
+                offset0, offset1 = (kl_-l_)*p, l_*p
+                H[offset0:offset0+p, offset1:offset1+p] = Q_est
+                
+        else:
+            for l_ in range(0, min(k+l - kl_ -1, l, k)):
+                offset0, offset1 = (k - l_ - 1)*p, ( l_ + kl_ + 1 - k)*p
+                H[offset0:offset0+p,offset1:offset1+p] = Q_est
+            
+    return H
+
+def l2_coord_asc_fast_setup(p,idx_grp,obs_idx):
+
+    def co_observed(x, i):
+        for idx in obs_idx:
+            if x in idx and i in idx:
+                return True
+        return False        
+
+    co_obs, not_co_obs, full_pop = [], [], np.arange(p)
+    for i in range(len(idx_grp)):    
+        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
+            if co_observed(x,i)])
+        co_obs[i] = np.sort(np.hstack(co_obs[i]))
+        not_co_obs.append( np.setdiff1d(full_pop, co_obs[i]) )
+
+    return co_obs, not_co_obs
+
+def f_l2_Hankel_coord_asc_fast(C, Qs, k, l, n, Om, idx_grp,co_obs,not_co_obs,
+        max_iter=50, idx_init = None):
+
+    p = Qs[0].shape[0]
+    C = C.reshape(p,n)
+    Cd = np.linalg.pinv(C)
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    err = 0.
+    for m in range(1,k+l):
+        err += f_l2_coord_asc_block_fast(C,Cd,Qs[m],p,n,Om,idx_grp,co_obs,not_co_obs,
+            max_iter,Cdi,idx_init)
+
+    return err/(k*l)
+
+def f_l2_coord_asc_block_fast(C,Cd,Q, p,n, Om,idx_grp,co_obs,not_co_obs,
+        max_iter=50,Cdi=None,idx_init=None):
+
+    if Cdi is None or idx_init is None:
+        X_m = np.eye(n)
+    else:
+        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+    if max_iter > 0:
+        CdQCdT_obs = np.zeros((n,n))
+        for i in range(len(idx_grp)):
+            a, b = idx_grp[i], co_obs[i]
+            CdQCdT_obs += Cd[:,a].dot(Q[np.ix_(a, b)]).dot(Cd[:,b].T)
+
+        for i in range(max_iter):
+            X_m = iter_X_m_fast(CdQCdT_obs,C,Cd,p,n,idx_grp,not_co_obs,X_m)
+
+    Q_est = np.zeros(Q.shape) # this could be reduced to only the needed parts
+    for i in range(len(idx_grp)):
+        a, b = idx_grp[i], co_obs[i]
+        Q_est[np.ix_(a,b)] += (C[a,:].dot(X_m).dot(C[b,:].T))
+
+    v = Q_est[Om] - Q[Om]
+
+    return v.dot(v)/(2*np.sum(Om))
+
+def g_l2_coord_asc_fast(C, Qs, k,l,n, idx_grp,co_obs,not_co_obs, 
+        max_iter=50, idx_init=None):
+
+    C = C.reshape(-1, n)
+    p, Cd = C.shape[0], np.linalg.pinv(C)
+
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    grad = np.zeros((p,n))
+    for m in range(1,k+l):
+        grad += g_l2_coord_asc_block_fast(C,Cd,Qs[m],p,n,idx_grp,co_obs,not_co_obs,
+            max_iter,Cdi,idx_init)
+        
+    return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
+
+def g_l2_coord_asc_block_fast(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,
+        max_iter=50,Cdi=None,idx_init=None):
+
+    if Cdi is None or idx_init is None:
+        X_m = np.eye(n)
+    else:
+        X_m = Cdi.dot(Q[np.ix_(idx_init,idx_init)]).dot(Cdi.T)
+
+    if max_iter > 0:
+        CdQCdT_obs = np.zeros((n,n))
+        for i in range(len(idx_grp)):
+            a, b = idx_grp[i], co_obs[i]
+            CdQCdT_obs += Cd[:,a].dot(Q[np.ix_(a, b)]).dot(Cd[:,b].T)
+
+        for i in range(max_iter):
+            X_m = iter_X_m_fast(CdQCdT_obs,C,Cd,p,n,idx_grp,not_co_obs,X_m)
+
+    for i in range(len(idx_grp)):
+        a, b = idx_grp[i], not_co_obs[i]
+        Q[np.ix_(a,b)] += (C[a,:].dot(X_m).dot(C[b,:].T))
+
+    QC, QTC = Q.dot(C), Q.T.dot(C)
+
+    return QC.dot(X_m.T) + QTC.dot(X_m)    
+
 
 ###########################################################################
 # iterative SSID for stitching via structured soft-imputing
