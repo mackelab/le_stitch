@@ -807,10 +807,11 @@ def g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs):
         # the expensive part: handling p x p ovserved-space matrices 
         CAPiC_L, CTC = C.dot(AmPi).dot(C.T) - Qs[m], np.zeros((n,n))
         for i in range(len(idx_grp)):
-            Ci = CAPiC_L[np.ix_(idx_grp[i],co_obs[i])].dot(C[co_obs[i],:])
-            CiT =  CAPiC_L[np.ix_(co_obs[i],idx_grp[i])].T.dot(C[co_obs[i],:])
+            a,b = idx_grp[i],co_obs[i]
+            Ci = CAPiC_L[np.ix_(a,b)].dot(C[b,:])
+            CiT =  CAPiC_L[np.ix_(b,a)].T.dot(C[b,:])
             grad_C[idx_grp[i],:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
-            CTC += C[idx_grp[i],:].T.dot(Ci)
+            CTC += C[a,:].T.dot(Ci)
 
         grad_A += g_A_l2_block(CTC,Aexpm,m,Pi)
         grad_B += g_B_l2_block(CTC,Aexpm[:,:,m],B)
@@ -1058,13 +1059,13 @@ def g_l2_coord_asc_block(C,Cd,n,Q,not_Om, max_iter=50, Cdi=None,idx_init=None):
 
 def iter_X_m_fast(CdQCdT_obs, C, Cd, p, n, idx_grp, not_co_obs, X_m):
 
+    CdQCdT_stitch = np.zeros(X_m.shape)
     for i in range(len(idx_grp)):
-        X_m = (Cd[:,idx_grp[i]].dot(C[idx_grp[i],:])).dot(X_m)
-        CdQCdT_stitch = Cd[:,not_co_obs[i]].dot(C[not_co_obs[i],:]).T
-        CdQCdT_stitch = X_m.dot(CdQCdT_stitch.T)
+        a, b = idx_grp[i], not_co_obs[i]
+        CdQCdT_stitch += (Cd[:,a].dot(C[a,:])).dot(X_m).dot(Cd[:,b].dot(C[b,:]).T)
     return CdQCdT_obs + CdQCdT_stitch
 
-def yy_Hankel_cov_mat_coord_asc_fast(C, Qs, k, l, Om, idx_grp, not_co_obs, 
+def yy_Hankel_cov_mat_coord_asc_fast(C, Qs, k, l, Om, idx_grp, co_obs, not_co_obs, 
         max_iter=50, idx_init = None):
 
     p,n = C.shape
@@ -1072,8 +1073,8 @@ def yy_Hankel_cov_mat_coord_asc_fast(C, Qs, k, l, Om, idx_grp, not_co_obs,
     Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
 
     assert (Om is None) or (Om.shape == (p,p))
-
     not_Om = np.zeros((p,p),dtype=bool) if Om is None else np.invert(Om)
+    Om = np.ones((p,p), dtype=bool) if Om is None else Om
 
     H = np.zeros((k*p, l*p))
     
@@ -1097,7 +1098,6 @@ def yy_Hankel_cov_mat_coord_asc_fast(C, Qs, k, l, Om, idx_grp, not_co_obs,
         Q_est = np.zeros(Q.shape)
         Q_est[Om] = (C.dot(X_m).dot(C.T))[Om]
         
-        Q_est = Q_est if Om is None else Q_est * np.asarray( Om, dtype=float) 
         if kl_ < k-0.5:     
             for l_ in range(0, min(kl_ + 1,l)):
                 offset0, offset1 = (kl_-l_)*p, l_*p
@@ -1178,7 +1178,7 @@ def g_l2_coord_asc_fast(C, Qs, k,l,n, idx_grp,co_obs,not_co_obs,
 
     grad = np.zeros((p,n))
     for m in range(1,k+l):
-        grad += g_l2_coord_asc_block_fast(C,Cd,Qs[m],p,n,idx_grp,co_obs,not_co_obs,
+        grad += g_l2_coord_asc_block_fast(C,Cd,Qs[m].copy(),p,n,idx_grp,co_obs,not_co_obs,
             max_iter,Cdi,idx_init)
         
     return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
