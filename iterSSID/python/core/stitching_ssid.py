@@ -303,7 +303,19 @@ def get_subpop_stats(sub_pops, p, obs_pops=None, verbose=False):
         'obs_pops': obs_pops},p=p)
     overlaps, overlap_grp, idx_overlap = get_obs_index_overlaps(idx_grp, \
         sub_pops)
-    
+
+    def co_observed(x, i):
+        for idx in obs_idx:
+            if x in idx and i in idx:
+                return True
+        return False        
+
+    num_idx_grps, co_obs = len(idx_grp), []
+    for i in range(num_idx_grps):    
+        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
+            if co_observed(x,i)])
+        co_obs[i] = np.sort(np.hstack(co_obs[i]))
+
     if verbose:
         print('idx_grp:', idx_grp)
         print('obs_idx:', obs_idx)
@@ -324,7 +336,7 @@ def get_subpop_stats(sub_pops, p, obs_pops=None, verbose=False):
         plt.title('Cross-overlap pattern')
         plt.show()
         
-    return obs_idx, idx_grp, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc
+    return obs_idx, idx_grp, co_obs, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc
 
 def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
 
@@ -743,10 +755,9 @@ def l2_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
         co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
-    (is_, js_) = np.where(mat_obs)
 
     def g(parsv):
-        return g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs)
+        return g_l2_Hankel(parsv,k,l,n,Qs,idx_grp,co_obs)
 
     def f(parsv):                        
         return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
@@ -788,7 +799,7 @@ def f_l2_block(C,A,Q,Om):
     return v.dot(v)/(2*np.sum(Om))
 
 
-def g_l2_Hankel(parsv,k,l,n,Qs,is_,js_,idx_grp,co_obs):
+def g_l2_Hankel(parsv,k,l,n,Qs,idx_grp,co_obs):
 
     p = Qs[0].shape[0]
     A,B,C = l2_vec_to_system_mats(parsv,p,n)
@@ -915,6 +926,89 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     plt.imshow(pars_true['A'],interpolation='none')
     plt.title('A true')
     plt.show()
+
+
+# Stochastic gradient ascent
+#   subsampling in space
+
+
+def l2_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
+
+    def co_observed(x, i):
+        for idx in obs_idx:
+            if x in idx and i in idx:
+                return True
+        return False        
+
+    num_idx_grps = len(idx_grp)
+    co_obs, mat_obs = [], np.zeros((num_idx_grps,num_idx_grps))
+    for i in range(num_idx_grps):    
+        for j in range(num_idx_grps):
+            if co_observed(i,j):
+                mat_obs[i,j] = True             
+        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
+            if co_observed(x,i)])
+        co_obs[i] = np.sort(np.hstack(co_obs[i]))
+    (is_, js_) = np.where(Om)
+    def g(parsv):
+        return g_l2_Hankel_sis(parsv,k,l,n,Qs,is_,js_)
+
+    def f(parsv):                        
+        return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
+
+    return f,g
+
+
+
+def l2_sis_draw(batch_size, idx_grp, co_obs, is_,js_):
+
+    if batch_size > 1:
+        
+        pi_ab = np.zeros(len(idx_grp), len(idx_grp))
+        # ...
+        raise Exception('not yet implemented')
+        
+    else:
+        
+        idx = np.random.permutation(len(is_))
+        is_a, js_b = is_[idx], js_[idx]        
+    
+    return is_a, js_b
+
+
+def g_l2_Hankel_sis(parsv,k,l,n,Qs,idx_grp,co_obs):
+
+    # sis: subsampled/sparse in space
+    
+    p = Qs[0].shape[0]
+    A,B,C = l2_vec_to_system_mats(parsv,p,n)
+    Pi = B.dot(B.T)
+
+    Aexpm = np.zeros((n,n,k+l))
+    Aexpm[:,:,0]= np.eye(n)
+    for m in range(1,k+l):
+        Aexpm[:,:,m] = A.dot(Aexpm[:,:,m-1])
+
+    grad_A, grad_B, grad_C = np.zeros((n,n)), np.zeros((n,n)), np.zeros((p,n))
+    for m in range(1,k+l-1):
+
+        AmPi = Aexpm[:,:,m].dot(Pi)            
+
+        CTC = np.zeros((n,n))
+        for i in range(len(idx_grp)):
+            a,b = idx_grp[i],co_obs[i]
+            C_a, C_b  = C[a,:], C[b,:]
+            Ci  = C_a.dot(AmPi.dot(  C_b.T.dot(C_b))) - Qs[m][a,b].dot(C_b)
+            CiT = C_a.dot(AmPi.T.dot(C_b.T.dot(C_b))) - Qs[m].T[a,b].dot(C_b)
+            grad_C[a,:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
+            CTC += C_a.T.dot(Ci)
+            
+        grad_A += g_A_l2_block(CTC,Aexpm,m,Pi)
+        grad_B += g_B_l2_block(CTC,Aexpm[:,:,m],B)
+        
+
+    return l2_system_mats_to_vec(grad_A,grad_B,grad_C)
+
 
 # Coordinate Ascent
 # (might as well only update C and get A^m*Pi analytically)
