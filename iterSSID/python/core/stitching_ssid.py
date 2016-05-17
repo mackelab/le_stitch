@@ -962,6 +962,10 @@ def l2_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
 
 def l2_sis_draw(batch_size, idx_grp, co_obs, is_,js_):
 
+    if batch_size is None:
+
+        return  idx_grp, co_obs
+
     if batch_size > 1:
         
         pi_ab = np.zeros(len(idx_grp), len(idx_grp))
@@ -971,9 +975,8 @@ def l2_sis_draw(batch_size, idx_grp, co_obs, is_,js_):
     else:
         
         idx = np.random.permutation(len(is_))
-        is_a, js_b = is_[idx], js_[idx]        
+        return is_[idx], js_[idx]        
     
-    return is_a, js_b
 
 
 def g_l2_Hankel_sis(parsv,k,l,n,Qs,idx_grp,co_obs):
@@ -998,8 +1001,16 @@ def g_l2_Hankel_sis(parsv,k,l,n,Qs,idx_grp,co_obs):
         for i in range(len(idx_grp)):
             a,b = idx_grp[i],co_obs[i]
             C_a, C_b  = C[a,:], C[b,:]
-            Ci  = C_a.dot(AmPi.dot(  C_b.T.dot(C_b))) - Qs[m][a,b].dot(C_b)
-            CiT = C_a.dot(AmPi.T.dot(C_b.T.dot(C_b))) - Qs[m].T[a,b].dot(C_b)
+
+            # multi-neuron case
+            ix_ab = np.ix_(a,b)
+            Ci  = C_a.dot(AmPi.dot(  C_b.T.dot(C_b))) - Qs[m][ix_ab].dot(C_b)
+            CiT = C_a.dot(AmPi.T.dot(C_b.T.dot(C_b))) - Qs[m].T[ix_ab].dot(C_b)
+
+            # single-neuron-pair case:
+            #Ci  = C_a.dot(AmPi.dot(  C_b.T.dot(C_b))) - Qs[m][a,b].dot(C_b)
+            #CiT = C_a.dot(AmPi.T.dot(C_b.T.dot(C_b))) - Qs[m].T[a,b].dot(C_b)
+
             grad_C[a,:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
             CTC += C_a.T.dot(Ci)
             
@@ -1300,7 +1311,21 @@ def g_l2_coord_asc_block_fast(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,
 
     QC, QTC = Q.dot(C), Q.T.dot(C)
 
-    return QC.dot(X_m.T) + QTC.dot(X_m)    
+    return QC.dot(X_m.T) + QTC.dot(X_m)
+
+def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
+
+    C = C.reshape(-1, n)
+    p, Cd = C.shape[0], np.linalg.pinv(C)
+
+    Cdi = None if idx_init is None else np.linalg.pinv(C[idx_init,:])
+
+    grad = np.zeros((p,n))
+    for m in range(1,k+l):
+        grad += g_l2_coord_asc_block_fast(C,Cd,Qs[m].copy(),p,n,idx_grp,co_obs,not_co_obs,X_ms[m])
+        
+    return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
+
 
 
 ###########################################################################
