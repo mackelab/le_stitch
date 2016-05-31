@@ -251,13 +251,13 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     p = Om.shape[0]
     
     if batch_size is None:
-        print('doing full gradients')
-        v_0 = np.ones(N)
+        print('doing full gradients - switching to plain gradient descent')
+        b1, b2, e, v_0 = 0, 0, 0, np.ones(N)
     elif batch_size == 1:
         print('using size-1 mini-batches')
         v_0 = np.zeros(N)        
     elif batch_size == p:
-        print('using size-p mini-batches (coviarance columms')
+        print('using size-p mini-batches (coviarance columms)')
         v_0 = np.zeros(N)
     else: 
         raise Exception('cannot handle selected batch size')
@@ -272,7 +272,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     theta, theta_old = theta_0.copy(), np.inf * np.ones(N)
 
     # setting up the stochastic batch selection:
-    batch_draw = l2_sis_draw(batch_size, idx_grp, co_obs, is_,js_)
+    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
 
     def g_i(theta, use, co, i):
         
@@ -323,7 +323,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
         
     return theta, fun
 
-def l2_sis_draw(batch_size, idx_grp, co_obs, is_,js_):
+def l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_):
     "returns sequence of indices for sets of neuron pairs for SGD"
 
     if batch_size is None:
