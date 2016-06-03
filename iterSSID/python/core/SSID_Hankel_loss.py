@@ -276,7 +276,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
 
     def g_i(theta, use, co, i):
         
-        if batch_size is None:
+        if batch_size is None:  # eventually pull if-statements out of function def
             return g(theta,idx_use,idx_co)
         elif batch_size == 1:
             return g(theta,(np.array((use[i],)),),(np.array((co[i],)),))
@@ -302,7 +302,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
             grad = g_i(theta,idx_use,idx_co, idx_zip)
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
-            if b1 != 1.:
+            if b1 != 1.:                    # delete those eventually 
                 mh = m / (1-b1**t)
             else:
                 mh = m
@@ -322,6 +322,108 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     print('total iterations: ', t)
         
     return theta, fun
+
+
+def adam_zip_stable(f,g,s,tau,theta_0,a,b1,b2,e,max_iter,
+                converged,Om,idx_grp,co_obs,batch_size=None):
+    
+    N = theta_0.size
+    p = Om.shape[0]
+    n = np.int(np.round( np.sqrt( p**2/16 + N/2 ) - p/4 ))
+    NnA = p*n + n*n
+    
+    if batch_size is None:
+        print('doing full gradients - switching to plain gradient descent')
+        b1, b2, e, v_0 = 0, 0, 0, np.ones(NnA)
+    elif batch_size == 1:
+        print('using size-1 mini-batches')
+        v_0 = np.zeros(NnA)        
+    elif batch_size == p:
+        print('using size-p mini-batches (coviarance columms)')
+        v_0 = np.zeros(NnA)
+    else: 
+        raise Exception('cannot handle selected batch size')
+
+
+    # setting up the stitching context
+    is_, js_ = np.where(Om)
+    
+    # setting up Adam
+    t_iter, t, t_zip = 0, 0, 0
+    m, v = np.zeros(NnA), v_0.copy()
+    theta, theta_old = theta_0.copy(), np.inf * np.ones(NnA)
+
+    # setting up the stochastic batch selection:
+    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
+
+    def g_i(theta, use, co, i):
+        
+        if batch_size is None:  # eventually pull if-statements out of function def
+            return g(theta,idx_use,idx_co)
+        elif batch_size == 1:
+            return g(theta,(np.array((use[i],)),),(np.array((co[i],)),))
+        elif batch_size == p:
+            a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
+            return g(theta,a, b)
+    
+    # trace function values
+    fun = np.empty(max_iter)    
+    
+    while not converged(theta_old, theta, e, t_iter):
+
+        theta_old = theta.copy()
+
+        t_iter += 1
+        idx_use, idx_co = batch_draw()
+        
+        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)        
+        for idx_zip in range(zip_size):
+            t += 1
+
+            # get data point(s) and corresponding gradients:                    
+            grad = g_i(theta,idx_use,idx_co, idx_zip)
+            grad_nA = grad[n*n:]
+            m = (b1 * m + (1-b1)* grad_nA)     
+            v = (b2 * v + (1-b2)*(grad_nA**2)) 
+            if b1 != 1.:                    # delete those eventually 
+                mh = m / (1-b1**t)
+            else:
+                mh = m
+            if b2 != 1.:
+                vh = v / (1-b2**t)
+            else:
+                vh = v
+
+            theta[n*n:] = theta[n*n:] - a * mh/(np.sqrt(vh) + e)
+
+        A, a_tmp = (theta[:n*n] - a/p * grad[:n*n]).reshape(n,n), a
+        c = 0
+        while not s(A) and c < 10000:
+            c += 1
+            a_tmp = tau * a_tmp
+            A = (theta[:n*n] - a_tmp * grad[:n*n]).reshape(n,n)
+        if c == 10000:
+            print(('Warning: crossed maximum number of stability-ensuring ',
+                   'step-size reductions. Dynamics matrix might be unstable!'))
+            print('maximum singular value:', np.max(np.linalg.svd(A)[1]))
+        #print('\n num alpha-resisings: ', c)
+        #print('eigvals \n: ', np.sort(np.abs(np.linalg.eigvals(A)))[::-1])
+        #print('singular vals \n: ', np.sort(np.linalg.svd(A)[1])[::-1])
+        #print('barrier: ', np.linalg.slogdet(np.eye(n)-A.dot(A.T))[1])
+        #print('log-barrier: ', - np.log( np.linalg.det(np.eye(n)-A.dot(A.T)) ))
+        #print('s(A):', s(A))
+        theta[:n*n] = A.reshape(n*n,).copy()
+
+
+        if t_iter <= max_iter:          # outcomment this eventually - really expensive!
+            fun[t_iter-1] = f(theta)
+            
+        if np.mod(t_iter,max_iter//10) == 2:
+            print('f = ', fun[t_iter-1])
+            
+    print('total iterations: ', t)
+        
+    return theta, fun    
 
 def l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_):
     "returns sequence of indices for sets of neuron pairs for SGD"
