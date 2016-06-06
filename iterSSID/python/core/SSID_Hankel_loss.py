@@ -5,7 +5,10 @@ import warnings
 import control
 from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
+import cvxopt
 
+def mat(X):
+    return cvxopt.matrix(X, tc='d')
 
 ###########################################################################
 # iterative SSID for stitching via L2 loss on Hankel covariance matrix
@@ -691,3 +694,236 @@ def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
         grad += g_l2_coord_asc_block(C,Cd,Qs[m].copy(),p,n,idx_grp,co_obs,not_co_obs,X_ms[m])
         
     return ((C.dot(Cd) - np.eye(p)).dot(grad)).reshape(p*n,)
+
+
+########################
+# Subsampling in space #
+########################
+
+def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
+    "returns error function and gradient for use with gradient descent solvers"
+
+    def co_observed(x, i):
+        for idx in obs_idx:
+            if x in idx and i in idx:
+                return True
+        return False        
+
+    num_idx_grps = len(idx_grp)
+    co_obs, mat_obs = [], np.zeros((num_idx_grps,num_idx_grps))
+    for i in range(num_idx_grps):    
+        for j in range(num_idx_grps):
+            if co_observed(i,j):
+                mat_obs[i,j] = True             
+        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
+            if co_observed(x,i)])
+        co_obs[i] = np.sort(np.hstack(co_obs[i]))
+    (is_, js_) = np.where(Om)
+    def g_C(C,A,Pi,idx_grp,co_obs):
+        return g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs)
+
+    def g_A(C,idx_grp,co_obs):
+        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs)
+
+    def f(parsv):                        
+        return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
+
+    return f,g_C,g_A
+
+def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
+                converged,Om,idx_grp,co_obs,batch_size=None):
+    
+    if isinstance(pars_0, dict):
+        C, Pi, B, A = pars_0['C'], pars_0['Pi'], pars_0['B'], pars_0['A']
+    else:
+        N = pars_0.size
+        p = Om.shape[0]
+        n = np.int(np.round( np.sqrt( p**2/16 + N/2 ) - p/4 ))
+        A = pars_0[:n*n].reshape(n,n)
+        B = pars_0[n*n:2*n*n].reshape(n,n)
+        C = pars_0[-p*n:].reshape(p,n)
+        Pi = B.dot(B.T)
+
+    p, n = C.shape
+
+    if batch_size is None:
+        print('doing full gradients - switching to plain gradient descent')
+        b1, b2, e, v_0 = 0, 0, 0, np.ones((p,n))
+    elif batch_size == 1:
+        print('using size-1 mini-batches')
+        v_0 = np.zeros((p,n))
+    elif batch_size == p:
+        print('using size-p mini-batches (coviarance columms)')
+        v_0 = np.zeros((p,n))
+    else: 
+        raise Exception('cannot handle selected batch size')
+
+
+    # setting up the stitching context
+    is_, js_ = np.where(Om)
+    
+    # setting up Adam
+    t_iter, t, t_zip = 0, 0, 0
+    m, v = np.zeros((p,n)), v_0.copy()
+
+    # setting up the stochastic batch selection:
+    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
+
+    def g_sis(C, A, Pi, use, co, i):
+        
+        if batch_size is None:  # eventually pull if-statements out of function def
+            return g_C(C, A, Pi, idx_use,idx_co)
+        elif batch_size == 1:
+            return g_C(C, A, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
+        elif batch_size == p:
+            a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
+            return g_C(C, A, Pi, a, b)
+    
+    # trace function values
+    fun = np.empty(max_iter)    
+    
+    C_old = np.inf * np.ones((p,n))
+    while not converged(C_old, C, e, t_iter):
+
+        C_old = C.copy()
+
+        t_iter += 1
+        idx_use, idx_co = batch_draw()
+        
+        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)        
+        for idx_zip in range(zip_size):
+            t += 1
+
+            # get data point(s) and corresponding gradients:                    
+            grad = g_sis(C,A,Pi,idx_use,idx_co, idx_zip)
+            m = (b1 * m + (1-b1)* grad)     
+            v = (b2 * v + (1-b2)*(grad**2)) 
+            if b1 != 1.:                    # delete those eventually 
+                mh = m / (1-b1**t)
+            else:
+                mh = m
+            if b2 != 1.:
+                vh = v / (1-b2**t)
+            else:
+                vh = v
+
+            C -= a * mh/(np.sqrt(vh) + e)
+
+        A =  g_A(C,idx_grp,co_obs)
+
+        B  = B.copy()
+        Pi = Pi.copy() #s_Pi_l2_Hankel_sis(C,A,k,l,Qs,idx_grp,co_obs)
+
+        if t_iter <= max_iter:          # outcomment this eventually - really expensive!
+            theta = np.zeros(C.size + A.size + Pi.size)
+            theta[:n*n] = A.reshape(-1,)
+            theta[n*n:2*n*n] = B.reshape(-1,)
+            theta[-p*n:] = C.reshape(-1,)
+            fun[t_iter-1] = f(theta)
+            
+        if np.mod(t_iter,max_iter//10) == 2:
+            print('f = ', fun[t_iter-1])
+            
+    print('total iterations: ', t)
+
+    theta = np.zeros(C.size + A.size + Pi.size)
+    theta[:n*n] = A.reshape(-1,)
+    theta[n*n:2*n*n] = B.reshape(-1,)
+    theta[-p*n:] = C.reshape(-1,)
+        
+    return theta, fun    
+
+def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs):
+    "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
+
+    # sis: subsampled/sparse in space
+    
+    p,n = C.shape
+    AmPi = Pi.copy()
+
+    grad_C = np.zeros((p,n))
+    for m in range(1,k+l-1):
+
+        AmPi = A.dot(AmPi)            
+
+        CTC = np.zeros((n,n))
+        for i in range(len(idx_grp)):
+            a,b = idx_grp[i],co_obs[i]
+            C_a, C_b  = C[a,:], C[b,:]
+
+            ix_ab = np.ix_(a,b)
+            Ci  = C_a.dot(AmPi.dot(  C_b.T.dot(C_b))) - Qs[m][ix_ab].dot(C_b)
+            CiT = C_a.dot(AmPi.T.dot(C_b.T.dot(C_b))) - Qs[m].T[ix_ab].dot(C_b)
+
+            grad_C[a,:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
+            
+    return grad_C
+
+def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs):
+    "returns l2 Hankel reconstr. solution for A given C and the covariances Qs"
+
+    # sis: subsampled/sparse in space
+    
+    p,n = C.shape
+    
+    M = np.zeros((n**2, n**2))
+    c = np.zeros((n**2, k+l-1))
+    for i in range(len(idx_grp)):
+        a,b = idx_grp[i], co_obs[i]
+        M += np.kron(C[a,:].T.dot(C[a,:]), C[b,:].T.dot(C[b,:]))
+        Mab = np.kron(C[a,:], C[b,:])
+        for m_ in range(1,k+l):
+            c[:,m_-1] +=  Mab.T.dot(Qs[m_][np.ix_(a,b)].reshape(-1,))
+    X = np.linalg.solve(M,c)
+
+
+    cvxopt.solvers.options['show_progress'] = False
+    X1,X2 = np.zeros((n, n*(k+l-2))), np.zeros((n, n*(k+l-2)))
+    for m in range(k+l-2):
+        X1[:,(m)*n:(m+1)*n] = X[:,m].reshape(n,n)
+        X2[:,(m)*n:(m+1)*n] = X[:,m+1].reshape(n,n)
+        
+    P = cvxopt.matrix( np.kron(np.eye(n), X1.dot(X1.T)), tc='d')
+    q = cvxopt.matrix( - (X2.dot(X1.T)).reshape(n**2,), tc='d')
+
+
+    sol = cvxopt.solvers.qp(P=P,q=q)
+    assert sol['status'] == 'optimal'
+    A = np.asarray(sol['x']).reshape(n,n)
+
+    # enforcing stability of A
+
+    #thresh = np.inf # no stability enforced as of now! Set to 1.0
+    thresh = 1.
+    lam0 = np.inf
+    G, h = np.zeros((0,n**2)), np.array([]).reshape(0,)
+    while lam0 > thresh and G.shape[0] < 1000:
+
+        initvals = {'x' : sol['x']}
+        
+        #print('GC iteration #', G.shape[0])
+        
+        sol = cvxopt.solvers.qp(P=P,q=q,G=mat(G),h=mat(h),initvals=initvals)
+
+        assert sol['status'] == 'optimal'
+        A = np.asarray(sol['x']).reshape(n,n)
+
+        lam0 = np.max(np.abs(np.linalg.eigvals(A)))    
+        U,s,V = np.linalg.svd(A)
+        g = np.outer( U[:,0], V[0,:] ).reshape(n**2,)
+        G = np.vstack((G,np.atleast_2d(g)))
+        h = np.ones(G.shape[0])
+        #if np.mod(G.shape[0],10) == 0:
+        #    print('largest singular value: ' , s[0])
+        #    print('largest eigenvalue: ' , lam0)
+
+    #print(lam0)
+    if G.shape[0] == 0:
+        print('Didnt do it...')
+    if G.shape[0] > 1000:
+        print('Warning! B.Boots failed to guarantee stable A within iteration max')
+    return A
+
+    def s_Pi_l2_Hankel_bad_sis(C,A,k,l,Qs,idx_grp,co_obs):
+
+        return Pi
