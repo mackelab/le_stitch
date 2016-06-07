@@ -40,6 +40,51 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None):
             
     return H
 
+def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
+    
+    minVar    = 1e-5
+    minVarPi  = 1e-5   
+
+    p = np.size(SIGyy,0)
+    UU,SS,VV = np.linalg.svd(SIGfp) # SIGfp = UU.dot(diag(SS).dot(VV)
+
+    UU,SS,VV = UU[:,:n], np.diag(SS[:n]), VV.T[:,:n]   
+    Obs = np.dot(UU,SS)
+
+    A = np.linalg.lstsq(Obs[:-p,:],Obs[p:,:])[0]
+    C = Obs[:p,:]
+    Chat = VV[:p,:n]
+    if pi_method=='proper':
+        Pi,_,_ = control.matlab.dare(A=A.T,B=-C.T,Q=np.zeros((n,n)),R=-SIGyy,
+            S=Chat.T, E=np.eye(n))    
+    else:
+        #warnings.warn(('Will not solve DARE, using heuristics; this might '
+        #    'lead to poor estimates of Q and V0'))  
+        Pi = np.linalg.lstsq(A,np.dot(Chat.T,np.linalg.pinv(C.T)))[0]
+
+    D, V = np.linalg.eig(Pi)
+    if np.any(D < minVarPi):
+        D[D < minVarPi] = minVarPi
+        Pi = V.dot(np.diag(D)).dot(V.T)
+    Pi = np.real( (Pi + Pi.T) / 2 )
+
+    Q = Pi - np.dot(np.dot(A,Pi),A.T)
+    D, V = np.linalg.eig(Q); 
+    D[D<minVar] = minVar
+
+    Q = np.dot(np.dot(V,np.diag(D)),V.T)
+    Q = (Q + Q.T) / 2
+    
+    # Getting R is too expensive for now
+    #R = np.diag(SIGyy-np.dot(np.dot(C,Pi),C.T))
+    #R.flags.writeable = True
+    #R[R<minVar] = minVar
+    #R = np.diag(R)   
+    
+    return {'A':A, 'Q': Q, 'C': C, 'R': None, 'Pi': Pi}
+
+
+
 ###########################################################################
 # basic variant: following gradients w.r.t. C, A, B = sqrt(Pi)
 ###########################################################################
@@ -327,7 +372,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     return theta, fun
 
 
-def adam_zip_stable(f,g,s,tau,theta_0,a,b1,b2,e,max_iter,
+def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
                 converged,Om,idx_grp,co_obs,batch_size=None):
     
     N = theta_0.size
@@ -396,10 +441,14 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,b1,b2,e,max_iter,
                 vh = v / (1-b2**t)
             else:
                 vh = v
+            mh /= (np.sqrt(vh) + e)
 
-            theta[n*n:] = theta[n*n:] - a * mh/(np.sqrt(vh) + e)
+            theta[n*n:2*n*n] -= a_A * mh[:n*n] # updating Pi
+            theta[-p*n:]     -= a   * mh[n*n:] # updating C
 
-        A, a_tmp = (theta[:n*n] - a/p * grad[:n*n]).reshape(n,n), a
+
+        # shift-cutting for A
+        A, a_tmp = (theta[:n*n] - a_A/p * grad[:n*n]).reshape(n,n), a_A
         c = 0
         while not s(A) and c < 10000:
             c += 1
@@ -700,7 +749,7 @@ def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
 # Subsampling in space #
 ########################
 
-def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
+def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,stable):
     "returns error function and gradient for use with gradient descent solvers"
 
     def co_observed(x, i):
@@ -722,8 +771,8 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx):
     def g_C(C,A,Pi,idx_grp,co_obs):
         return g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs)
 
-    def g_A(C,idx_grp,co_obs):
-        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs)
+    def g_A(C,idx_grp,co_obs,A=None):
+        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,stable,A)
 
     def f(parsv):                        
         return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
@@ -734,21 +783,23 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
                 converged,Om,idx_grp,co_obs,batch_size=None):
     
     if isinstance(pars_0, dict):
-        C, Pi, B, A = pars_0['C'], pars_0['Pi'], pars_0['B'], pars_0['A']
+        C, Pi, B, A = pars_0['C'].copy(), pars_0['Pi'].copy(), pars_0['B'].copy(), pars_0['A'].copy()
     else:
         N = pars_0.size
         p = Om.shape[0]
         n = np.int(np.round( np.sqrt( p**2/16 + N/2 ) - p/4 ))
-        A = pars_0[:n*n].reshape(n,n)
-        B = pars_0[n*n:2*n*n].reshape(n,n)
-        C = pars_0[-p*n:].reshape(p,n)
+        A = pars_0[:n*n].reshape(n,n).copy()
+        B = pars_0[n*n:2*n*n].reshape(n,n).copy()
+        C = pars_0[-p*n:].reshape(p,n).copy()
         Pi = B.dot(B.T)
 
     p, n = C.shape
 
+    #print('A init:' , A)
+
     if batch_size is None:
         print('doing full gradients - switching to plain gradient descent')
-        b1, b2, e, v_0 = 0, 0, 0, np.ones((p,n))
+        b1, b2, e, v_0 = 0, 1., 0, np.ones((p,n))
     elif batch_size == 1:
         print('using size-1 mini-batches')
         v_0 = np.zeros((p,n))
@@ -790,7 +841,9 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
         t_iter += 1
         idx_use, idx_co = batch_draw()
         
-        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)        
+        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)    
+        e_frac = 0.1 
+        #Cm = np.zeros((p,n)) 
         for idx_zip in range(zip_size):
             t += 1
 
@@ -809,7 +862,10 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
 
             C -= a * mh/(np.sqrt(vh) + e)
 
-        A =  g_A(C,idx_grp,co_obs)
+            #if idx_zip > (zip_size * (1 -e_frac)):
+            #    Cm += C/(zip_size * e_frac)
+
+        A =  g_A(C,idx_grp,co_obs,A)
 
         B  = B.copy()
         Pi = Pi.copy() #s_Pi_l2_Hankel_sis(C,A,k,l,Qs,idx_grp,co_obs)
@@ -830,7 +886,9 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
     theta[:n*n] = A.reshape(-1,)
     theta[n*n:2*n*n] = B.reshape(-1,)
     theta[-p*n:] = C.reshape(-1,)
-        
+
+    #print('A final:' , A)
+
     return theta, fun    
 
 def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs):
@@ -859,7 +917,7 @@ def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs):
             
     return grad_C
 
-def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs):
+def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, stable=False,A_old=None):
     "returns l2 Hankel reconstr. solution for A given C and the covariances Qs"
 
     # sis: subsampled/sparse in space
@@ -892,9 +950,11 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs):
     A = np.asarray(sol['x']).reshape(n,n)
 
     # enforcing stability of A
+    if stable:
+        thresh = 1.
+    else:
+        thresh = np.inf # no stability enforced 
 
-    #thresh = np.inf # no stability enforced as of now! Set to 1.0
-    thresh = 1.
     lam0 = np.inf
     G, h = np.zeros((0,n**2)), np.array([]).reshape(0,)
     while lam0 > thresh and G.shape[0] < 1000:
@@ -918,12 +978,14 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs):
         #    print('largest eigenvalue: ' , lam0)
 
     #print(lam0)
-    if G.shape[0] == 0:
-        print('Didnt do it...')
-    if G.shape[0] > 1000:
+    if G.shape[0] >= 1000:
         print('Warning! B.Boots failed to guarantee stable A within iteration max')
     return A
 
-    def s_Pi_l2_Hankel_bad_sis(C,A,k,l,Qs,idx_grp,co_obs):
+def id_A(C,idx_grp,co_obs,A):
 
-        return Pi
+    return A
+
+def s_Pi_l2_Hankel_bad_sis(C,A,k,l,Qs,idx_grp,co_obs):
+
+    return Pi
