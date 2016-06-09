@@ -14,18 +14,22 @@ def mat(X):
 # iterative SSID for stitching via L2 loss on Hankel covariance matrix
 ###########################################################################
 
-def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None):
+def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
     "matrix with blocks cov(y_t+m, y_t) m = 1, ..., k+l-1 on the anti-diagonal"
     
     p,n = C.shape
-    assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
-    
+    if linear:
+        assert n == X.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
+    else:
+        assert n*n == X.shape[0] and k+l-1 <= X.shape[1]
+        
     assert (Om is None) or (Om.shape == (p,p))
     
     H = np.zeros((k*p, l*p))
     
     for kl_ in range(k+l-1):        
-        lamK = (C.dot(np.linalg.matrix_power(A,kl_+1).dot(Pi))).dot(C.T)
+        AmPi = np.linalg.matrix_power(X,kl_+1).dot(Pi) if linear else X[:,kl_-1].reshape(n,n)
+        lamK = C.dot(AmPi).dot(C.T)
         
         lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
         if kl_ < k-0.5:     
@@ -83,6 +87,98 @@ def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
     
     return {'A':A, 'Q': Q, 'C': C, 'R': None, 'Pi': Pi}
 
+def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
+                                       Qs_full, Om, Ovc, Ovw, f_i, g_i,
+                                       linear = True, idx_grp = None, co_obs = None, 
+                                       if_flip = False):
+
+    n = pars_true['A'].shape[0]
+    parsv_true = l2_system_mats_to_vec(pars_true['A'],
+        pars_true['B'],pars_true['C'])
+    parsv_est  = l2_system_mats_to_vec(pars_est['A'], 
+        pars_est['B'], pars_est['C'])
+    parsv_init = l2_system_mats_to_vec(pars_init['A'],
+        pars_init['B'],pars_init['C'])
+
+    if not linear: 
+        X=s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=linear)
+
+
+    def f(Om):
+        if linear:
+            return f_l2_Hankel(parsv_est,k,l,n,Qs, Om)
+        else:
+            return f_l2_Hankel_nl(pars_est['C'],X,k,l,n,Qs,Om)
+
+    print('final squared error on observed parts:', f(Om)) 
+    print('final squared error on overlapping parts:', f(Ovw))
+    print('final squared error on cross-overlapping parts:', f(Ovc))
+    print('final squared error on stitched parts:', f(~Om))
+    # this currently is a bit dirty:
+    if if_flip:
+        C_flip = pars_est['C'].copy()
+        C_flip[Om[:,0],:] *= -1
+        parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['B'],C_flip)
+        H_flip = yy_Hankel_cov_mat(C_flip,pars_est['A'],pars_est['Pi'],k,l)
+        f_flip = f_l2_Hankel(parsv_fest,k,l,n,Qs,Om) if linear else f_l2_Hankel_nl(C_flip,X,k,l,n,Qs,Om)
+        print('final squared error on stitched parts (C over first subpop sign-flipped):',
+          f_l2_Hankel(parsv_fest,k,l,n,Qs_full,~Om))
+
+    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],
+        pars_true['Pi'],k,l)
+    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],
+        pars_init['Pi'],k,l)
+
+    H_obs = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
+        pars_true['Pi'],k,l, Om)
+    H_obs[np.where(H_obs==0)] = np.nan
+    H_sti = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
+        pars_true['Pi'],k,l,~Om)
+
+    if linear:
+        H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
+            pars_est['Pi'],k,l)
+    else:
+        H_est = yy_Hankel_cov_mat(pars_est['C'],X,
+            pars_est['Pi'],k,l,linear=linear)
+
+    if if_flip:
+        plt.figure(figsize=(16,18))
+    else:
+        plt.figure(figsize=(16,12))
+
+    n_rows = 2
+    #n_rows = 3 if if_flip else 2 
+    plt.subplot(n_rows,2,1)
+    plt.imshow(H_obs,interpolation='none')
+    plt.title('Given data matrix (A_true, masked)')
+    plt.subplot(n_rows,2,2)
+    plt.imshow(H_true,interpolation='none')
+    plt.title('True  matrix (A_true)')    
+    plt.subplot(n_rows,2,3)
+    plt.imshow(H_0,interpolation='none')
+    plt.title('Initial matrix (A_0)')
+    plt.subplot(n_rows,2,4)
+    plt.imshow(H_est,interpolation='none')
+    plt.title('Estimated matrix (A_est)')
+    #if if_flip:
+    #    plt.subplot(n_rows,2,6)
+    #    plt.imshow(H_est,interpolation='none')
+    #    plt.title('Estimated matrix (A_est, C[\rho_2] sign-flipped)')
+
+    plt.show()
+    
+    plt.figure(figsize=(16,12))
+    plt.subplot(1,3,1)
+    plt.imshow(pars_init['A'],interpolation='none')
+    plt.title('A init')
+    plt.subplot(1,3,2)
+    plt.imshow(pars_est['A'],interpolation='none')
+    plt.title('A est')
+    plt.subplot(1,3,3)
+    plt.imshow(pars_true['A'],interpolation='none')
+    plt.title('A true')
+    plt.show()
 
 
 ###########################################################################
@@ -147,10 +243,10 @@ def f_l2_Hankel(parsv,k,l,n,Qs,Om):
             
     return err/(k*l)
     
-def f_l2_block(C,A,Q,Om):
+def f_l2_block(C,AmPi,Q,Om):
     "Hankel reconstruction error on an individual Hankel block"
 
-    v = (C.dot(A.dot(C.T)))[Om] - Q[Om] # this is not efficient for spars Om
+    v = (C.dot(AmPi.dot(C.T)))[Om] - Q[Om] # this is not efficient for spars Om
 
     return v.dot(v)/(2*np.sum(Om))
 
@@ -207,87 +303,6 @@ def g_C_l2_idxgrp(Ci,CiT,AmPi):
 
     return Ci.dot(AmPi.T) + CiT.dot(AmPi)
 
-def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
-                                       Qs_full, Om, Ovc, Ovw, f_i, g_i,
-                                       if_flip = False):
-
-    n = pars_true['A'].shape[0]
-    parsv_true = l2_system_mats_to_vec(pars_true['A'],
-        pars_true['B'],pars_true['C'])
-    parsv_est  = l2_system_mats_to_vec(pars_est['A'], 
-        pars_est['B'], pars_est['C'])
-    parsv_init = l2_system_mats_to_vec(pars_init['A'],
-        pars_init['B'],pars_init['C'])
-    print('final squared error on observed parts:', 
-          f_l2_Hankel(parsv_est,k,l,n,Qs, Om))
-    print('final squared error on overlapping parts:', 
-          f_l2_Hankel(parsv_est,k,l,n,Qs,Ovw))
-    print('final squared error on cross-overlapping parts:',
-          f_l2_Hankel(parsv_est,k,l,n,Qs,Ovc))
-    print('final squared error on stitched parts:',
-          f_l2_Hankel(parsv_est,k,l,n,Qs_full,~Om))
-    # this currently is a bit dirty:
-    if if_flip:
-        C_flip = pars_est['C'].copy()
-        C_flip[Om[:,0],:] *= -1
-        parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['B'],C_flip)
-        H_flip = yy_Hankel_cov_mat(C_flip,pars_est['A'],pars_est['Pi'],k,l)
-        print('final squared error on stitched parts (C over first subpop sign-flipped):',
-          f_l2_Hankel(parsv_fest,k,l,n,Qs_full,~Om))
-
-    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],
-        pars_true['Pi'],k,l)
-    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],
-        pars_init['Pi'],k,l)
-
-    H_obs = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
-        pars_true['Pi'],k,l, Om)
-    H_obs[np.where(H_obs==0)] = np.nan
-    H_sti = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
-        pars_true['Pi'],k,l,~Om)
-    H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
-        pars_est['Pi'],k,l)
-
-
-    if if_flip:
-        plt.figure(figsize=(16,18))
-    else:
-        plt.figure(figsize=(16,12))
-
-    n_rows = 2
-    #n_rows = 3 if if_flip else 2 
-    plt.subplot(n_rows,2,1)
-    plt.imshow(H_obs,interpolation='none')
-    plt.title('Given data matrix (A_true, masked)')
-    plt.subplot(n_rows,2,2)
-    plt.imshow(H_true,interpolation='none')
-    plt.title('True  matrix (A_true)')    
-    plt.subplot(n_rows,2,3)
-    plt.imshow(H_0,interpolation='none')
-    plt.title('Initial matrix (A_0)')
-    plt.subplot(n_rows,2,4)
-    plt.imshow(H_est,interpolation='none')
-    plt.title('Estimated matrix (A_est)')
-    #if if_flip:
-    #    plt.subplot(n_rows,2,6)
-    #    plt.imshow(H_est,interpolation='none')
-    #    plt.title('Estimated matrix (A_est, C[\rho_2] sign-flipped)')
-
-    plt.show()
-    
-    plt.figure(figsize=(16,12))
-    plt.subplot(1,3,1)
-    plt.imshow(pars_init['A'],interpolation='none')
-    plt.title('A init')
-    plt.subplot(1,3,2)
-    plt.imshow(pars_est['A'],interpolation='none')
-    plt.title('A est')
-    plt.subplot(1,3,3)
-    plt.imshow(pars_true['A'],interpolation='none')
-    plt.title('A true')
-    plt.show()
-
-
 ###########################################################################
 # Stochastic gradient descent: following gradients w.r.t. C, A, B = sqrt(Pi)
 ###########################################################################
@@ -300,7 +315,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     
     if batch_size is None:
         print('doing full gradients - switching to plain gradient descent')
-        b1, b2, e, v_0 = 0, 0, 0, np.ones(N)
+        b1, b2, e, v_0 = 0, 1.0, 0, np.ones(N)
     elif batch_size == 1:
         print('using size-1 mini-batches')
         v_0 = np.zeros(N)        
@@ -382,7 +397,7 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
     
     if batch_size is None:
         print('doing full gradients - switching to plain gradient descent')
-        b1, b2, e, v_0 = 0, 0, 0, np.ones(NnA)
+        b1, b2, e, v_0 = 0, 1.0, 0, np.ones(NnA)
     elif batch_size == 1:
         print('using size-1 mini-batches')
         v_0 = np.zeros(NnA)        
@@ -749,7 +764,7 @@ def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
 # Subsampling in space #
 ########################
 
-def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,stable):
+def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linear=True,stable=False):
     "returns error function and gradient for use with gradient descent solvers"
 
     def co_observed(x, i):
@@ -769,18 +784,35 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,stable):
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
     (is_, js_) = np.where(Om)
     def g_C(C,A,Pi,idx_grp,co_obs):
-        return g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs)
+        return g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear)
 
     def g_A(C,idx_grp,co_obs,A=None):
-        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,stable,A)
+        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,linear,stable,A)
 
-    def f(parsv):                        
-        return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
+    if linear:
+        def f(parsv):                        
+            return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
+    else:
+        def f(C,X):
+            return f_l2_Hankel_nl(C,X,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
 
     return f,g_C,g_A
 
+def f_l2_Hankel_nl(C,X,k,l,n,Qs,Om):
+    "returns overall l2 Hankel reconstruction error"
+
+    p,n = C.shape
+
+    err = 0.
+    for m in range(1,k+l-1):
+        err += f_l2_block(C,X[:,m-1].reshape(n,n),Qs[m],Om)
+            
+    return err/(k*l)
+    
+
+
 def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
-                converged,Om,idx_grp,co_obs,batch_size=None):
+                converged,Om,idx_grp,co_obs,batch_size=None,linear=True):
     
     if isinstance(pars_0, dict):
         C, Pi, B, A = pars_0['C'].copy(), pars_0['Pi'].copy(), pars_0['B'].copy(), pars_0['A'].copy()
@@ -793,13 +825,15 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
         C = pars_0[-p*n:].reshape(p,n).copy()
         Pi = B.dot(B.T)
 
+    X = A if linear else g_A(C,idx_grp,co_obs)
+
     p, n = C.shape
 
     #print('A init:' , A)
 
     if batch_size is None:
         print('doing full gradients - switching to plain gradient descent')
-        b1, b2, e, v_0 = 0, 1., 0, np.ones((p,n))
+        b1, b2, e, v_0 = 0, 1.0, 0, np.ones((p,n))
     elif batch_size == 1:
         print('using size-1 mini-batches')
         v_0 = np.zeros((p,n))
@@ -820,15 +854,15 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
     # setting up the stochastic batch selection:
     batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
 
-    def g_sis(C, A, Pi, use, co, i):
+    def g_sis(C, X, Pi, use, co, i):
         
         if batch_size is None:  # eventually pull if-statements out of function def
-            return g_C(C, A, Pi, idx_use,idx_co)
+            return g_C(C, X, Pi, idx_use,idx_co)
         elif batch_size == 1:
-            return g_C(C, A, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
+            return g_C(C, X, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
         elif batch_size == p:
             a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
-            return g_C(C, A, Pi, a, b)
+            return g_C(C, X, Pi, a, b)
     
     # trace function values
     fun = np.empty(max_iter)    
@@ -848,7 +882,7 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
             t += 1
 
             # get data point(s) and corresponding gradients:                    
-            grad = g_sis(C,A,Pi,idx_use,idx_co, idx_zip)
+            grad = g_sis(C,X,Pi,idx_use,idx_co, idx_zip)
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
             if b1 != 1.:                    # delete those eventually 
@@ -865,17 +899,19 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
             #if idx_zip > (zip_size * (1 -e_frac)):
             #    Cm += C/(zip_size * e_frac)
 
-        A =  g_A(C,idx_grp,co_obs,A)
+        X =  g_A(C,idx_grp,co_obs,X) # X is A or stacked latent covs
 
-        B  = B.copy()
-        Pi = Pi.copy() #s_Pi_l2_Hankel_sis(C,A,k,l,Qs,idx_grp,co_obs)
+        B  = B
+        Pi = Pi #s_Pi_l2_Hankel_sis(C,A,k,l,Qs,idx_grp,co_obs)
 
         if t_iter <= max_iter:          # outcomment this eventually - really expensive!
-            theta = np.zeros(C.size + A.size + Pi.size)
-            theta[:n*n] = A.reshape(-1,)
+            theta = np.zeros( (p + 2*n)*n)
+            if X.size == n*n:
+                theta[:n*n] = X.reshape(-1,)
             theta[n*n:2*n*n] = B.reshape(-1,)
             theta[-p*n:] = C.reshape(-1,)
-            fun[t_iter-1] = f(theta)
+
+            fun[t_iter-1] = f(theta) if linear else f(C,X)
             
         if np.mod(t_iter,max_iter//10) == 2:
             print('f = ', fun[t_iter-1])
@@ -883,7 +919,8 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
     print('total iterations: ', t)
 
     theta = np.zeros(C.size + A.size + Pi.size)
-    theta[:n*n] = A.reshape(-1,)
+    if X.size == n*n:
+        theta[:n*n] = X.reshape(-1,)
     theta[n*n:2*n*n] = B.reshape(-1,)
     theta[-p*n:] = C.reshape(-1,)
 
@@ -891,18 +928,18 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
 
     return theta, fun    
 
-def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs):
+def g_C_l2_Hankel_bad_sis(C,X,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
     # sis: subsampled/sparse in space
     
     p,n = C.shape
-    AmPi = Pi.copy()
+    AmPi = Pi.copy() if linear else None
 
     grad_C = np.zeros((p,n))
     for m in range(1,k+l-1):
 
-        AmPi = A.dot(AmPi)            
+        AmPi = X.dot(AmPi) if linear else X[:,m-1].reshape(n,n)      
 
         CTC = np.zeros((n,n))
         for i in range(len(idx_grp)):
@@ -917,7 +954,7 @@ def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs):
             
     return grad_C
 
-def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, stable=False,A_old=None):
+def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,A_old=None):
     "returns l2 Hankel reconstr. solution for A given C and the covariances Qs"
 
     # sis: subsampled/sparse in space
@@ -935,57 +972,63 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, stable=False,A_old=None):
     X = np.linalg.solve(M,c)
 
 
-    cvxopt.solvers.options['show_progress'] = False
-    X1,X2 = np.zeros((n, n*(k+l-2))), np.zeros((n, n*(k+l-2)))
-    for m in range(k+l-2):
-        X1[:,(m)*n:(m+1)*n] = X[:,m].reshape(n,n)
-        X2[:,(m)*n:(m+1)*n] = X[:,m+1].reshape(n,n)
-        
-    P = cvxopt.matrix( np.kron(np.eye(n), X1.dot(X1.T)), tc='d')
-    q = cvxopt.matrix( - (X2.dot(X1.T)).reshape(n**2,), tc='d')
+    if linear:
+        cvxopt.solvers.options['show_progress'] = False
+        X1,X2 = np.zeros((n, n*(k+l-2))), np.zeros((n, n*(k+l-2)))
+        for m in range(k+l-2):
+            X1[:,m*n:(m+1)*n] = X[:,m].reshape(n,n)
+            X2[:,m*n:(m+1)*n] = X[:,m+1].reshape(n,n)
+            
+        P = cvxopt.matrix( np.kron(np.eye(n), X1.dot(X1.T)), tc='d')
+        q = cvxopt.matrix( - (X2.dot(X1.T)).reshape(n**2,), tc='d')
 
 
-    sol = cvxopt.solvers.qp(P=P,q=q)
-    assert sol['status'] == 'optimal'
-    A = np.asarray(sol['x']).reshape(n,n)
-
-    # enforcing stability of A
-    if stable:
-        thresh = 1.
-    else:
-        thresh = np.inf # no stability enforced 
-
-    lam0 = np.inf
-    G, h = np.zeros((0,n**2)), np.array([]).reshape(0,)
-    while lam0 > thresh and G.shape[0] < 1000:
-
-        initvals = {'x' : sol['x']}
-        
-        #print('GC iteration #', G.shape[0])
-        
-        sol = cvxopt.solvers.qp(P=P,q=q,G=mat(G),h=mat(h),initvals=initvals)
-
+        sol = cvxopt.solvers.qp(P=P,q=q)
         assert sol['status'] == 'optimal'
         A = np.asarray(sol['x']).reshape(n,n)
 
-        lam0 = np.max(np.abs(np.linalg.eigvals(A)))    
-        U,s,V = np.linalg.svd(A)
-        g = np.outer( U[:,0], V[0,:] ).reshape(n**2,)
-        G = np.vstack((G,np.atleast_2d(g)))
-        h = np.ones(G.shape[0])
-        #if np.mod(G.shape[0],10) == 0:
-        #    print('largest singular value: ' , s[0])
-        #    print('largest eigenvalue: ' , lam0)
+        # enforcing stability of A
+        if stable:
+            thresh = 1.
+        else:
+            thresh = np.inf # no stability enforced 
 
-    #print(lam0)
-    if G.shape[0] >= 1000:
-        print('Warning! B.Boots failed to guarantee stable A within iteration max')
-    return A
+        lam0 = np.inf
+        G, h = np.zeros((0,n**2)), np.array([]).reshape(0,)
+        while lam0 > thresh and G.shape[0] < 1000:
+
+            initvals = {'x' : sol['x']}
+            
+            #print('GC iteration #', G.shape[0])
+            
+            sol = cvxopt.solvers.qp(P=P,q=q,G=mat(G),h=mat(h),initvals=initvals)
+
+            assert sol['status'] == 'optimal'
+            A = np.asarray(sol['x']).reshape(n,n)
+
+            lam0 = np.max(np.abs(np.linalg.eigvals(A)))    
+            U,s,V = np.linalg.svd(A)
+            g = np.outer( U[:,0], V[0,:] ).reshape(n**2,)
+            G = np.vstack((G,np.atleast_2d(g)))
+            h = np.ones(G.shape[0])
+            #if np.mod(G.shape[0],10) == 0:
+            #    print('largest singular value: ' , s[0])
+            #    print('largest eigenvalue: ' , lam0)
+
+        #print(lam0)
+        if G.shape[0] >= 1000:
+            print('Warning! CG failed to guarantee stable A within iteration max')
+
+    return A if linear else X
 
 def id_A(C,idx_grp,co_obs,A):
 
     return A
 
-def s_Pi_l2_Hankel_bad_sis(C,A,k,l,Qs,idx_grp,co_obs):
+def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs):
+
+    # requires solution of semidefinite least-squares problem (no solver known for Python):
+    # minimize || [A;A^2;A^3] * Pi - [X1; X2; X3] ||
+    # subt. to   Pi is symmetric and psd.
 
     return Pi

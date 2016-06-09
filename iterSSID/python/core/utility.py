@@ -132,18 +132,22 @@ def xx_Hankel_cov_mat(A,Pi,k,l):
             
     return H
 
-def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None):
+def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
     "matrix with blocks cov(y_t+m, y_t) m = 1, ..., k+l-1 on the anti-diagonal"
     
     p,n = C.shape
-    assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
-    
+    if linear:
+        assert n == X.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
+    else:
+        assert n*n == X.shape[0] and k+l-1 <= X.shape[1]
+        
     assert (Om is None) or (Om.shape == (p,p))
     
     H = np.zeros((k*p, l*p))
     
     for kl_ in range(k+l-1):        
-        lamK = (C.dot(np.linalg.matrix_power(A,kl_+1).dot(Pi))).dot(C.T)
+        AmPi = np.linalg.matrix_power(X,kl_+1).dot(Pi) if linear else X[kl_-1,:].reshape(n,n)
+        lamK = C.dot(Ampi).dot(C.T)
         
         lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
         if kl_ < k-0.5:     
