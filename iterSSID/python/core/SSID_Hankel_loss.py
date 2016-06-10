@@ -14,21 +14,21 @@ def mat(X):
 # iterative SSID for stitching via L2 loss on Hankel covariance matrix
 ###########################################################################
 
-def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
+def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None,linear=True):
     "matrix with blocks cov(y_t+m, y_t) m = 1, ..., k+l-1 on the anti-diagonal"
     
     p,n = C.shape
     if linear:
-        assert n == X.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
+        assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
     else:
-        assert n*n == X.shape[0] and k+l-1 <= X.shape[1]
+        assert n*n == A.shape[0] and k+l-1 <= A.shape[1]
         
     assert (Om is None) or (Om.shape == (p,p))
     
     H = np.zeros((k*p, l*p))
     
     for kl_ in range(k+l-1):        
-        AmPi = np.linalg.matrix_power(X,kl_+1).dot(Pi) if linear else X[:,kl_-1].reshape(n,n)
+        AmPi = np.linalg.matrix_power(A,kl_+1).dot(Pi) if linear else A[:,kl_].reshape(n,n)
         lamK = C.dot(AmPi).dot(C.T)
         
         lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
@@ -101,14 +101,14 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         pars_init['B'],pars_init['C'])
 
     if not linear: 
-        X=s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=linear)
+        X=s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=linear)[1]
 
 
     def f(Om):
         if linear:
-            return f_l2_Hankel(parsv_est,k,l,n,Qs, Om)
+            return f_l2_Hankel(parsv_est,k,l,n,Qs_full, Om)
         else:
-            return f_l2_Hankel_nl(pars_est['C'],X,k,l,n,Qs,Om)
+            return f_l2_Hankel_nl(pars_est['C'],X,k,l,n,Qs_full,Om)
 
     print('final squared error on observed parts:', f(Om)) 
     print('final squared error on overlapping parts:', f(Ovw))
@@ -825,7 +825,7 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
         C = pars_0[-p*n:].reshape(p,n).copy()
         Pi = B.dot(B.T)
 
-    X = A if linear else g_A(C,idx_grp,co_obs)
+    A = A if linear else g_A(C,idx_grp,co_obs)[0] # A is either A or X
 
     p, n = C.shape
 
@@ -854,15 +854,15 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
     # setting up the stochastic batch selection:
     batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
 
-    def g_sis(C, X, Pi, use, co, i):
-        
+    def g_sis(C, A, Pi, use, co, i):
+
         if batch_size is None:  # eventually pull if-statements out of function def
-            return g_C(C, X, Pi, idx_use,idx_co)
+            return g_C(C, A, Pi, idx_use,idx_co)
         elif batch_size == 1:
-            return g_C(C, X, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
+            return g_C(C, A, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
         elif batch_size == p:
             a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
-            return g_C(C, X, Pi, a, b)
+            return g_C(C, A, Pi, a, b)
     
     # trace function values
     fun = np.empty(max_iter)    
@@ -881,8 +881,8 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
         for idx_zip in range(zip_size):
             t += 1
 
-            # get data point(s) and corresponding gradients:                    
-            grad = g_sis(C,X,Pi,idx_use,idx_co, idx_zip)
+            # get data point(s) and corresponding gradients: 
+            grad = g_sis(C,A,Pi,idx_use,idx_co, idx_zip)
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
             if b1 != 1.:                    # delete those eventually 
@@ -899,16 +899,15 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
             #if idx_zip > (zip_size * (1 -e_frac)):
             #    Cm += C/(zip_size * e_frac)
 
-        X =  g_A(C,idx_grp,co_obs,X) # X is A or stacked latent covs
+        A,X =  g_A(C,idx_grp,co_obs,A)
 
-        B  = B
-        Pi = Pi #s_Pi_l2_Hankel_sis(C,A,k,l,Qs,idx_grp,co_obs)
+        Pi = s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs) if linear else Pi
 
         if t_iter <= max_iter:          # outcomment this eventually - really expensive!
-            theta = np.zeros( (p + 2*n)*n)
-            if X.size == n*n:
-                theta[:n*n] = X.reshape(-1,)
-            theta[n*n:2*n*n] = B.reshape(-1,)
+            theta = np.zeros( (p + 2*n)*n )
+            if linear:
+                theta[:n*n] = A.reshape(-1,)
+                theta[n*n:2*n*n] = Pi.reshape(-1,)
             theta[-p*n:] = C.reshape(-1,)
 
             fun[t_iter-1] = f(theta) if linear else f(C,X)
@@ -918,17 +917,17 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
             
     print('total iterations: ', t)
 
-    theta = np.zeros(C.size + A.size + Pi.size)
-    if X.size == n*n:
-        theta[:n*n] = X.reshape(-1,)
-    theta[n*n:2*n*n] = B.reshape(-1,)
+    theta = np.zeros( (p + 2*n)*n )
+    if linear:
+        theta[:n*n] = A.reshape(-1,) 
+        theta[n*n:2*n*n] = Pi.reshape(-1,)
     theta[-p*n:] = C.reshape(-1,)
 
     #print('A final:' , A)
 
     return theta, fun    
 
-def g_C_l2_Hankel_bad_sis(C,X,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
+def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
     # sis: subsampled/sparse in space
@@ -939,7 +938,7 @@ def g_C_l2_Hankel_bad_sis(C,X,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
     grad_C = np.zeros((p,n))
     for m in range(1,k+l-1):
 
-        AmPi = X.dot(AmPi) if linear else X[:,m-1].reshape(n,n)      
+        AmPi = A.dot(AmPi) if linear else A[:,m-1].reshape(n,n)      
 
         CTC = np.zeros((n,n))
         for i in range(len(idx_grp)):
@@ -970,6 +969,7 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,A_ol
         for m_ in range(1,k+l):
             c[:,m_-1] +=  Mab.T.dot(Qs[m_][np.ix_(a,b)].reshape(-1,))
     X = np.linalg.solve(M,c)
+    A = X
 
 
     if linear:
@@ -1019,16 +1019,27 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,A_ol
         if G.shape[0] >= 1000:
             print('Warning! CG failed to guarantee stable A within iteration max')
 
-    return A if linear else X
+    return A, X
 
 def id_A(C,idx_grp,co_obs,A):
 
     return A
 
-def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs):
+def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs):    
 
     # requires solution of semidefinite least-squares problem (no solver known for Python):
     # minimize || [A;A^2;A^3] * Pi - [X1; X2; X3] ||
     # subt. to   Pi is symmetric and psd.
+
+
+    As = np.zeros((n*(k+l-2),n))
+    XT = np.zeros((n*(k+l-2),n))
+    for m in range(k+l-2):
+        X1[m*n:(m+1)*n,:] = X[:,m].reshape(n,n)
+        As[m*n:(m+1)*n,:] = np.linalg.matrix_power(A,m+1)
+        
+    Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=None,Y0=None,tol=1e-10,verbose=False)
+
+    assert not fail
 
     return Pi
