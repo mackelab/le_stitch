@@ -6,6 +6,7 @@ import control
 from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
 import cvxopt
+import SDLS
 
 def mat(X):
     return cvxopt.matrix(X, tc='d')
@@ -93,20 +94,29 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
                                        if_flip = False):
 
     n = pars_true['A'].shape[0]
-    parsv_true = l2_system_mats_to_vec(pars_true['A'],
-        pars_true['B'],pars_true['C'])
-    parsv_est  = l2_system_mats_to_vec(pars_est['A'], 
-        pars_est['B'], pars_est['C'])
-    parsv_init = l2_system_mats_to_vec(pars_init['A'],
-        pars_init['B'],pars_init['C'])
-
+    try: 
+        parsv_true = l2_system_mats_to_vec(pars_true['A'],
+            pars_true['B'],pars_true['C'])
+        parsv_est  = l2_system_mats_to_vec(pars_est['A'], 
+            pars_est['B'], pars_est['C'])
+        parsv_init = l2_system_mats_to_vec(pars_init['A'],
+            pars_init['B'],pars_init['C'])
+        f_l2_Hankel_lin = f_l2_Hankel
+    except:
+        parsv_true = l2_system_mats_to_vec(pars_true['A'],
+            pars_true['Pi'],pars_true['C'])
+        parsv_est  = l2_system_mats_to_vec(pars_est['A'], 
+            pars_est['Pi'], pars_est['C'])
+        parsv_init = l2_system_mats_to_vec(pars_init['A'],
+            pars_init['Pi'],pars_init['C'])
+        f_l2_Hankel_lin = f_l2_Hankel_Pi
     if not linear: 
         X=s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=linear)[1]
 
 
     def f(Om):
         if linear:
-            return f_l2_Hankel(parsv_est,k,l,n,Qs_full, Om)
+            return f_l2_Hankel_lin(parsv_est,k,l,n,Qs_full, Om)
         else:
             return f_l2_Hankel_nl(pars_est['C'],X,k,l,n,Qs_full,Om)
 
@@ -118,11 +128,14 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     if if_flip:
         C_flip = pars_est['C'].copy()
         C_flip[Om[:,0],:] *= -1
-        parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['B'],C_flip)
+        try:
+            parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['B'],C_flip)
+        except:
+            parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['Pi'],C_flip)
         H_flip = yy_Hankel_cov_mat(C_flip,pars_est['A'],pars_est['Pi'],k,l)
-        f_flip = f_l2_Hankel(parsv_fest,k,l,n,Qs,Om) if linear else f_l2_Hankel_nl(C_flip,X,k,l,n,Qs,Om)
+        f_flip = f_l2_Hankel_lin(parsv_fest,k,l,n,Qs,Om) if linear else f_l2_Hankel_nl(C_flip,X,k,l,n,Qs,Om)
         print('final squared error on stitched parts (C over first subpop sign-flipped):',
-          f_l2_Hankel(parsv_fest,k,l,n,Qs_full,~Om))
+          f_l2_Hankel_lin(parsv_fest,k,l,n,Qs_full,~Om))
 
     H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],
         pars_true['Pi'],k,l)
@@ -789,14 +802,17 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linear=True,stable=False):
     def g_A(C,idx_grp,co_obs,A=None):
         return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,linear,stable,A)
 
+    def g_Pi(X,A,idx_grp,co_obs,Pi=None):
+        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs)
+
     if linear:
         def f(parsv):                        
-            return f_l2_Hankel(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
+            return f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
     else:
         def f(C,X):
             return f_l2_Hankel_nl(C,X,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
 
-    return f,g_C,g_A
+    return f,g_C,g_A,g_Pi
 
 def f_l2_Hankel_nl(C,X,k,l,n,Qs,Om):
     "returns overall l2 Hankel reconstruction error"
@@ -808,24 +824,37 @@ def f_l2_Hankel_nl(C,X,k,l,n,Qs,Om):
         err += f_l2_block(C,X[:,m-1].reshape(n,n),Qs[m],Om)
             
     return err/(k*l)
+
+def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
+    "returns overall l2 Hankel reconstruction error"
+
+    p = Qs[0].shape[0]
+    A,Pi,C = l2_vec_to_system_mats(parsv,p,n)
+
+    err = 0.
+    for m in range(1,k+l-1):
+        APi = np.linalg.matrix_power(A, m).dot(Pi)  
+        err += f_l2_block(C,APi,Qs[m],Om)
+            
+    return err/(k*l)    
     
 
 
-def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
+def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                 converged,Om,idx_grp,co_obs,batch_size=None,linear=True):
     
     if isinstance(pars_0, dict):
-        C, Pi, B, A = pars_0['C'].copy(), pars_0['Pi'].copy(), pars_0['B'].copy(), pars_0['A'].copy()
+        C, Pi, A = pars_0['C'].copy(), pars_0['Pi'].copy(), pars_0['A'].copy()
     else:
         N = pars_0.size
         p = Om.shape[0]
         n = np.int(np.round( np.sqrt( p**2/16 + N/2 ) - p/4 ))
         A = pars_0[:n*n].reshape(n,n).copy()
-        B = pars_0[n*n:2*n*n].reshape(n,n).copy()
+        Pi = pars_0[n*n:2*n*n].reshape(n,n).copy()
         C = pars_0[-p*n:].reshape(p,n).copy()
-        Pi = B.dot(B.T)
 
     A = A if linear else g_A(C,idx_grp,co_obs)[0] # A is either A or X
+
 
     p, n = C.shape
 
@@ -901,7 +930,7 @@ def adam_zip_bad_stable(f,g_C,g_A,pars_0,a,b1,b2,e,max_iter,
 
         A,X =  g_A(C,idx_grp,co_obs,A)
 
-        Pi = s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs) if linear else Pi
+        Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linear else Pi
 
         if t_iter <= max_iter:          # outcomment this eventually - really expensive!
             theta = np.zeros( (p + 2*n)*n )
@@ -952,6 +981,10 @@ def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
             grad_C[a,:] += g_C_l2_idxgrp(Ci,CiT,AmPi)
             
     return grad_C
+
+def id_C(C, A, Pi, idx_use,idx_co):
+
+    return C
 
 def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,A_old=None):
     "returns l2 Hankel reconstr. solution for A given C and the covariances Qs"
@@ -1031,15 +1064,22 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs):
     # minimize || [A;A^2;A^3] * Pi - [X1; X2; X3] ||
     # subt. to   Pi is symmetric and psd.
 
+    n = A.shape[0]
+
+    assert n == A.shape[1]
 
     As = np.zeros((n*(k+l-2),n))
     XT = np.zeros((n*(k+l-2),n))
     for m in range(k+l-2):
-        X1[m*n:(m+1)*n,:] = X[:,m].reshape(n,n)
+        XT[m*n:(m+1)*n,:] = X[:,m].reshape(n,n)
         As[m*n:(m+1)*n,:] = np.linalg.matrix_power(A,m+1)
         
     Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=None,Y0=None,tol=1e-10,verbose=False)
 
     assert not fail
+
+    return Pi
+
+def id_Pi(X,A,idx_grp,co_obs,Pi=None):
 
     return Pi
