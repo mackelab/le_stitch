@@ -359,7 +359,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
         elif batch_size == p:
             a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
             return g(theta,a, b)
-    
+
     # trace function values
     fun = np.empty(max_iter)    
     
@@ -369,8 +369,13 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
 
         t_iter += 1
         idx_use, idx_co = batch_draw()
-        
-        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)        
+        if batch_size is None:
+            zip_size = 1
+        elif batch_size == 1:
+            zip_size = idx_use.size
+        elif batch_size == p:
+            zip_size = len(idx_use)
+
         for idx_zip in range(zip_size):
             t += 1
 
@@ -441,9 +446,12 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
         elif batch_size == p:
             a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
             return g(theta,a, b)
-    
+
     # trace function values
     fun = np.empty(max_iter)    
+    sig = np.empty(max_iter)    
+
+
     
     while not converged(theta_old, theta, e, t_iter):
 
@@ -451,8 +459,13 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
 
         t_iter += 1
         idx_use, idx_co = batch_draw()
+        if batch_size is None:
+                zip_size = 1
+        elif batch_size == 1:
+            zip_size = idx_use.size
+        elif batch_size == p:
+            zip_size = len(idx_use)
         
-        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)        
         for idx_zip in range(zip_size):
             t += 1
 
@@ -476,13 +489,13 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
 
 
         # shift-cutting for A
-        A, a_tmp = (theta[:n*n] - a_A/p * grad[:n*n]).reshape(n,n), a_A
+        A, a_tmp = (theta[:n*n] - a_A * grad[:n*n]).reshape(n,n), a_A
         c = 0
         while not s(A) and c < 10000:
             c += 1
             a_tmp = tau * a_tmp
             A = (theta[:n*n] - a_tmp * grad[:n*n]).reshape(n,n)
-        if c == 10000:
+        if c >= 10000:
             print(('Warning: crossed maximum number of stability-ensuring ',
                    'step-size reductions. Dynamics matrix might be unstable!'))
             print('maximum singular value:', np.max(np.linalg.svd(A)[1]))
@@ -497,13 +510,14 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
 
         if t_iter <= max_iter:          # outcomment this eventually - really expensive!
             fun[t_iter-1] = f(theta)
+            sig[t_iter-1] = np.max(np.max(np.linalg.svd(A)[1]))
             
         if np.mod(t_iter,max_iter//10) == 2:
             print('f = ', fun[t_iter-1])
             
     print('total iterations: ', t)
         
-    return theta, fun    
+    return theta, (fun,sig)    
 
 def l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_):
     "returns sequence of indices for sets of neuron pairs for SGD"
@@ -803,7 +817,7 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linear=True,stable=False):
         return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,linear,stable,A)
 
     def g_Pi(X,A,idx_grp,co_obs,Pi=None):
-        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs)
+        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi)
 
     if linear:
         def f(parsv):                        
@@ -844,7 +858,8 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                 converged,Om,idx_grp,co_obs,batch_size=None,linear=True):
     
     if isinstance(pars_0, dict):
-        C, Pi, A = pars_0['C'].copy(), pars_0['Pi'].copy(), pars_0['A'].copy()
+        C = pars_0['C'].copy()
+        Pi, A = pars_0['Pi'], pars_0['A']
     else:
         N = pars_0.size
         p = Om.shape[0]
@@ -853,8 +868,14 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         Pi = pars_0[n*n:2*n*n].reshape(n,n).copy()
         C = pars_0[-p*n:].reshape(p,n).copy()
 
-    A = A if linear else g_A(C,idx_grp,co_obs)[0] # A is either A or X
 
+    if A is None:
+        A,X = g_A(C,idx_grp,co_obs,A)
+        Pi = g_Pi(X,A,idx_grp,co_obs,Pi)
+    else:
+        A = A if linear else g_A(C,idx_grp,co_obs)[0] # A is either A or X
+        Pi = Pi.copy()
+    
 
     p, n = C.shape
 
@@ -871,6 +892,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         v_0 = np.zeros((p,n))
     else: 
         raise Exception('cannot handle selected batch size')
+
 
 
     # setting up the stitching context
@@ -901,10 +923,14 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
 
         C_old = C.copy()
 
-        t_iter += 1
         idx_use, idx_co = batch_draw()
-        
-        zip_size = idx_use.size if isinstance(idx_use, np.ndarray) else len(idx_use)    
+        if batch_size is None:
+            zip_size = 1
+        elif batch_size == 1:
+            zip_size = idx_use.size
+        elif batch_size == p:
+            zip_size = len(idx_use)        
+
         e_frac = 0.1 
         #Cm = np.zeros((p,n)) 
         for idx_zip in range(zip_size):
@@ -932,17 +958,20 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
 
         Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linear else Pi
 
-        if t_iter <= max_iter:          # outcomment this eventually - really expensive!
+        if t_iter < max_iter:          # outcomment this eventually - really expensive!
             theta = np.zeros( (p + 2*n)*n )
             if linear:
                 theta[:n*n] = A.reshape(-1,)
                 theta[n*n:2*n*n] = Pi.reshape(-1,)
             theta[-p*n:] = C.reshape(-1,)
 
-            fun[t_iter-1] = f(theta) if linear else f(C,X)
+            fun[t_iter] = f(theta) if linear else f(C,X)
             
-        if np.mod(t_iter,max_iter//10) == 2:
-            print('f = ', fun[t_iter-1])
+        if np.mod(t_iter,max_iter//10) == 0:
+            print('f = ', fun[t_iter])
+
+        t_iter += 1
+
             
     print('total iterations: ', t)
 
@@ -1018,7 +1047,14 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,A_ol
 
         sol = cvxopt.solvers.qp(P=P,q=q)
         assert sol['status'] == 'optimal'
+
+        r = np.trace(X2.T.dot(X2))/2
         A = np.asarray(sol['x']).reshape(n,n)
+
+        print('f', r+sol['primal objective'])
+        print('f', np.mean( (A.dot(X1) - X2)**2 ))
+        print('MSE X1', np.mean(X1**2))
+        print('MSE X2', np.mean(X2**2))
 
         # enforcing stability of A
         if stable:
@@ -1058,7 +1094,7 @@ def id_A(C,idx_grp,co_obs,A):
 
     return A
 
-def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs):    
+def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None):    
 
     # requires solution of semidefinite least-squares problem (no solver known for Python):
     # minimize || [A;A^2;A^3] * Pi - [X1; X2; X3] ||
@@ -1066,17 +1102,17 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,idx_grp,co_obs):
 
     n = A.shape[0]
 
-    assert n == A.shape[1]
-
-    As = np.zeros((n*(k+l-2),n))
-    XT = np.zeros((n*(k+l-2),n))
+    As = np.empty((n*(k+l-2),n))
+    XT = np.empty((n*(k+l-2),n))
     for m in range(k+l-2):
         XT[m*n:(m+1)*n,:] = X[:,m].reshape(n,n)
         As[m*n:(m+1)*n,:] = np.linalg.matrix_power(A,m+1)
         
-    Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=None,Y0=None,tol=1e-10,verbose=False)
+    Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=Pi,Y0=None,tol=1e-8,verbose=False)
 
-    assert not fail
+    print('MSE reconstruction for A^m Pi - X_m', np.max(np.abs(As.dot(Pi) - XT)))
+
+    #assert not fail
 
     return Pi
 
