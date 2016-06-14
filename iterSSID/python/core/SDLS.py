@@ -47,7 +47,7 @@ def sdls(A,B,X0=None,Y0=None,tol=1e-10,verbose=False):
      squares problems.  M.Sc. thesis, University of British Columbia,
      Vancouver, British Columbia, Canada, 2003.
 
-     Translated to Python by the Mackelab, research institute caesar, 2016
+     Translated to Python by Marcel Nonnenmacher, research institute caesar, 2016
 
     """
 
@@ -105,8 +105,10 @@ def sdls(A,B,X0=None,Y0=None,tol=1e-10,verbose=False):
         muv[r] = mu;
         r +=1
     fail = True if r==max_iter and ( norm_res > tol1 or mu > tol2 ) else False
-    if fail:
+    if fail and verbose:
         print('\n Failed to reach desired tolerance. \n')
+        print(' (reached,set) tolerance is (norm_res, tol1) = ', (norm_res,tol1))
+        print(' (reached,set) tolerance is (mu, tol2) = ', (mu, tol2))
 
     return X,Y,norm_res,muv,r,fail        
         
