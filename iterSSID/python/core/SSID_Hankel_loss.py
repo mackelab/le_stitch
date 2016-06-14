@@ -951,16 +951,13 @@ def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
 
 def run_bad(k,l,n,Qs,Om,
             sub_pops,idx_grp,co_obs,obs_idx,
-            linear=False,stable=False,init='SSID',
+            linearity='False',stable=False,init='SSID',
             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1):
 
     p = Qs[0].shape[0]
 
     if isinstance(init, dict):
-        if linear:
-            assert np.all([key in init.keys() for key in ('A', 'Pi', 'C')])
-        else:
-            assert 'C' in init.keys()
+        assert 'C' in init.keys()
 
         pars_init = init.copy()
 
@@ -980,7 +977,7 @@ def run_bad(k,l,n,Qs,Om,
 
     f_i, g_C, g_A, g_Pi = l2_bad_sis_setup(k=k,l=l,n=n,Qs=Qs,
                                            Om=Om,idx_grp=idx_grp,obs_idx=obs_idx,
-                                           linear=linear,stable=stable)
+                                           linearity=linearity,stable=stable)
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
@@ -989,7 +986,7 @@ def run_bad(k,l,n,Qs,Om,
                                        a=a,b1=b1,b2=b2,e=e,
                                        max_iter=max_iter,converged=converged,
                                        Om=Om,idx_grp=idx_grp,co_obs=co_obs,
-                                       batch_size=batch_size,linear=linear)                 
+                                       batch_size=batch_size,linearity=linearity)                 
 
     return pars_init, pars_est, (fs,)
 
@@ -1015,17 +1012,27 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False):
     (is_, js_) = np.where(Om)
 
     if linearity == 'True':
-        linear_C, linear_A = True, True
-    elif linearity == 'False':
-        linear_C, linear_A = False, False
-    elif linearity == 'first_order':
-        linear_C, linear_A = False, True
+        linear_A = True
+        linearise_X = False
+        def g_C(C,A,X,Pi,idx_grp,co_obs):
+            return g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear=True)
 
-    def g_C(C,A,Pi,idx_grp,co_obs):
-        return g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear_C)
+    elif linearity == 'first_order':
+        linear_A = True
+        linearise_X = True
+        def g_C(C,A,X,Pi,idx_grp,co_obs):
+            return g_C_l2_Hankel_bad_sis(C,X,Pi,k,l,Qs,idx_grp,co_obs,linear=False)
+
+    elif linearity == 'False':
+        linear_A = False
+        linearise_X = False
+        def g_C(C,A,X,Pi,idx_grp,co_obs):
+            return g_C_l2_Hankel_bad_sis(C,X,Pi,k,l,Qs,idx_grp,co_obs,linear=False)
+
 
     def g_A(C,idx_grp,co_obs,A=None):
-        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,linear_C,stable,A)
+        return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,
+            linear=linear_A,linearise_X=linearise_X,stable=stable,A_old=A)
 
     def g_Pi(X,A,idx_grp,co_obs,Pi=None):
         return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi)
@@ -1066,26 +1073,25 @@ def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
 
 
 def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
-                converged,Om,idx_grp,co_obs,batch_size=None,linear=True):
+                converged,Om,idx_grp,co_obs,batch_size=None,linearity='False'):
     
-    if isinstance(pars_0, dict):
-        C = pars_0['C'].copy()
-        Pi, A = pars_0['Pi'], pars_0['A']
-    else:
-        N = pars_0.size
-        p = Om.shape[0]
-        n = np.int(np.round( np.sqrt( p**2/16 + N/2 ) - p/4 ))
-        A = pars_0[:n*n].reshape(n,n).copy()
-        Pi = pars_0[n*n:2*n*n].reshape(n,n).copy()
-        C = pars_0[-p*n:].reshape(p,n).copy()
+    C = pars_0['C'].copy()
 
-
-    if A is None:
-        A,X = g_A(C,idx_grp,co_obs,A)
-        Pi = g_Pi(X,A,idx_grp,co_obs,Pi)
+    if linearity=='False':
+        A,X = g_A(C,idx_grp,co_obs,None)
+        Pi = None
+    elif linearity=='first_order': # may want to allow providing initial A!
+        A,X = g_A(C,idx_grp,co_obs,None)
+        Pi = None
+    elif linearity=='True':
+        if 'A' in pars_0.keys() and not pars_0['A'] is None:
+            A,X,Pi = pars_0['A'].copy(), None, pars_0['Pi'].copy()
+        else: 
+            A,X = g_A(C,idx_grp,co_obs,None)
+            Pi = g_Pi(X,A,idx_grp,co_obs,None)
     else:
-        A = A if linear else g_A(C,idx_grp,co_obs)[0] # A is either A or X
-        Pi = Pi.copy()
+        raise Exception(('Selected unsupported value for argument linearity. ',
+                         'Selected value is ', linearity))
     
 
     p, n = C.shape
@@ -1104,8 +1110,6 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
     else: 
         raise Exception('cannot handle selected batch size')
 
-
-
     # setting up the stitching context
     is_, js_ = np.where(Om)
     
@@ -1116,15 +1120,15 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
     # setting up the stochastic batch selection:
     batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
 
-    def g_sis(C, A, Pi, use, co, i):
+    def g_sis(C, A, X, Pi, use, co, i):
 
         if batch_size is None:  # eventually pull if-statements out of function def
-            return g_C(C, A, Pi, idx_use,idx_co)
+            return g_C(C, A, X, Pi, idx_use,idx_co)
         elif batch_size == 1:
-            return g_C(C, A, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
+            return g_C(C, A, X, Pi, (np.array((use[i],)),),(np.array((co[i],)),))
         elif batch_size == p:
             a,b = (co_obs[idx_co[idx_zip]],), (np.array((idx_use[idx_zip],)),)
-            return g_C(C, A, Pi, a, b)
+            return g_C(C, A, X, Pi, a, b)
     
     # trace function values
     fun = np.empty(max_iter)    
@@ -1142,13 +1146,13 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         elif batch_size == p:
             zip_size = len(idx_use)        
 
-        e_frac = 0.1 
+        #e_frac = 0.1 
         #Cm = np.zeros((p,n)) 
         for idx_zip in range(zip_size):
             t += 1
 
             # get data point(s) and corresponding gradients: 
-            grad = g_sis(C,A,Pi,idx_use,idx_co, idx_zip)
+            grad = g_sis(C,A,X,Pi,idx_use,idx_co, idx_zip)
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
             if b1 != 1.:                    # delete those eventually 
@@ -1167,16 +1171,16 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
 
         A,X =  g_A(C,idx_grp,co_obs,A)
 
-        Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linear else Pi
+        Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linearity=='True' else Pi
 
         if t_iter < max_iter:          # outcomment this eventually - really expensive!
             theta = np.zeros( (p + 2*n)*n )
-            if linear:
+            if linearity=='True':
                 theta[:n*n] = A.reshape(-1,)
                 theta[n*n:2*n*n] = Pi.reshape(-1,)
             theta[-p*n:] = C.reshape(-1,)
 
-            fun[t_iter] = f(theta) if linear else f(C,X)
+            fun[t_iter] = f(theta) if linearity=='True' else f(C,X)
             
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter)
@@ -1188,9 +1192,12 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
     print('total iterations: ', t)
 
     pars_out = {'C' : C }
-    if linear: 
+    if linearity=='True': 
         pars_out['A'], pars_out['Pi'] = A, Pi
-    else:
+    elif linearity=='first_order':
+        pars_out['A'], pars_out['Pi'] = A, np.zeros((n,n))     
+        pars_out['X'] = X   
+    if linearity=='False': 
         pars_out['A'], pars_out['Pi'] = np.zeros((n,n)), np.zeros((n,n))
 
     #print('A final:' , A)
@@ -1227,7 +1234,8 @@ def id_C(C, A, Pi, idx_use,idx_co):
 
     return C
 
-def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,
+def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, 
+                            linear=True, linearise_X=False, stable=False,
                             A_old=None,verbose=False):
     "returns l2 Hankel reconstr. solution for A given C and the covariances Qs"
 
@@ -1256,18 +1264,12 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,
             
         P = cvxopt.matrix( np.kron(np.eye(n), X1.dot(X1.T)), tc='d')
         q = cvxopt.matrix( - (X2.dot(X1.T)).reshape(n**2,), tc='d')
-
+        #r = np.trace(X2.T.dot(X2))/2
 
         sol = cvxopt.solvers.qp(P=P,q=q)
         assert sol['status'] == 'optimal'
 
-        r = np.trace(X2.T.dot(X2))/2
         A = np.asarray(sol['x']).reshape(n,n)
-
-        if verbose:
-            print('MSE reconstruction for A^m X1 - X2',  np.mean( (A.dot(X1) - X2)**2 ))
-            print('MSE X1', np.mean(X1**2))
-            print('MSE X2', np.mean(X2**2))
 
         # enforcing stability of A
         if stable:
@@ -1297,11 +1299,33 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs, linear=True,stable=False,
             #    print('largest singular value: ' , s[0])
             #    print('largest eigenvalue: ' , lam0)
 
+        AX1 = A.dot(X1)
+        if verbose:
+            print('MSE reconstruction for A^m X1 - X2',  np.mean( (AX1 - X2)**2 ))
+            print('MSE X1', np.mean(X1**2))
+            print('MSE X2', np.mean(X2**2))
+
+        if linearise_X:
+            linearise_latent_covs(A, X, X1)
+
         #print(lam0)
         if G.shape[0] >= 1000:
             print('Warning! CG failed to guarantee stable A within iteration max')
 
     return A, X
+
+def linearise_latent_covs(A, X, X1=None):
+
+    n = A.shape[0]
+    klm1 = X.shape[1]
+    if X1 is None:
+        X1 = np.zeros((n, n*(klm1-1)))
+        for m in range(klm1-1):
+            X1[:,m*n:(m+1)*n] = X[:,m].reshape(n,n)
+
+    AX1 = A.dot(X1)
+    for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
+        X[:,m] = AX1[:,(m-1)*n:m*n].reshape(-1,)
 
 def id_A(C,idx_grp,co_obs,A):
 
@@ -1313,7 +1337,7 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False):
     # minimize || [A;A^2;A^3] * Pi - [X1; X2; X3] ||
     # subt. to   Pi is symmetric and psd.
 
-    n = A.shape[0]
+    n = A.shape[1]
 
     As = np.empty((n*(k+l-2),n))
     XT = np.empty((n*(k+l-2),n))
