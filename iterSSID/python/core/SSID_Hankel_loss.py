@@ -25,14 +25,17 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None,linear=True):
         assert n*n == A.shape[0] and k+l-1 <= A.shape[1]
         
     assert (Om is None) or (Om.shape == (p,p))
-    
-    H = np.zeros((k*p, l*p))
+    if not Om is None:
+        Om_idx = np.asarray(Om, dtype=float)
+        Om_idx[~Om] = np.nan
+
+    H = np.empty((k*p, l*p))
     
     for kl_ in range(k+l-1):        
         AmPi = np.linalg.matrix_power(A,kl_+1).dot(Pi) if linear else A[:,kl_].reshape(n,n)
         lamK = C.dot(AmPi).dot(C.T)
         
-        lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
+        lamK = lamK if Om is None else lamK * Om_idx
         if kl_ < k-0.5:     
             for l_ in range(0, min(kl_ + 1,l)):
                 offset0, offset1 = (kl_-l_)*p, l_*p
@@ -53,8 +56,9 @@ def yy_Hankel_cov_mat_Qs(Qs,idx,k,l,n,Om=None):
     assert (Om is None) or (Om.shape == (p,p))
     if not Om is None:
         Om_idx = np.asarray(Om, dtype=float)[np.ix_(idx,idx)]
+        Om_idx[~Om[np.ix_(idx,idx)]] = np.nan
     
-    H = np.zeros((k*pe, l*pe))
+    H = np.empty((k*pe, l*pe))
     
     for kl_ in range(k+l-1):        
         lamK = Qs[kl_+1][np.ix_(idx,idx)]
@@ -87,8 +91,13 @@ def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
     C = Obs[:p,:]
     Chat = VV[:p,:n]
     if pi_method=='proper':
-        Pi,_,_ = control.matlab.dare(A=A.T,B=-C.T,Q=np.zeros((n,n)),R=-SIGyy,
-            S=Chat.T, E=np.eye(n))    
+
+        try:
+            Pi,_,_ = control.matlab.dare(A=A.T,B=-C.T,Q=np.zeros((n,n)),R=-SIGyy,
+                S=Chat.T, E=np.eye(n))    
+        except:
+            Pi = np.linalg.lstsq(A,np.dot(Chat.T,np.linalg.pinv(C.T)))[0]
+
     else:
         #warnings.warn(('Will not solve DARE, using heuristics; this might '
         #    'lead to poor estimates of Q and V0'))  
@@ -117,7 +126,7 @@ def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
 
 def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
                                        Qs_full, Om, Ovc, Ovw, f_i, g_i, traces=None,
-                                       linear = True, idx_grp = None, co_obs = None, 
+                                       linearity = 'True', idx_grp = None, co_obs = None, 
                                        if_flip = False, m = 1):
 
 
@@ -133,12 +142,15 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     parsv_est  = l2_system_mats_to_vec(pars_est['A'], pars_est['Pi'], pars_est['C'])
     parsv_init = l2_system_mats_to_vec(pars_init['A'],pars_init['Pi'],pars_init['C'])
 
-    if not linear: 
-        X = s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=linear)[1]
+    if linearity=='False': 
+        X = s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=False)[1]
+    elif linearity == 'first_order':
+        X = s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, 
+            linear=False, linearise_X=True)[1]
 
 
     def f(Om):
-        if linear:
+        if linearity=='True':
             return f_l2_Hankel_lin(parsv_est,k,l,n,Qs_full, Om)
         else:
             return f_l2_Hankel_nl(pars_est['C'],X,k,l,n,Qs_full,Om)
@@ -156,27 +168,26 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         except:
             parsv_fest  = l2_system_mats_to_vec(pars_est['A'],pars_est['Pi'],C_flip)
         H_flip = yy_Hankel_cov_mat(C_flip,pars_est['A'],pars_est['Pi'],k,l)
-        f_flip = f_l2_Hankel_lin(parsv_fest,k,l,n,Qs,Om) if linear else f_l2_Hankel_nl(C_flip,X,k,l,n,Qs,Om)
+        if linearity=='True':
+            f_flip = f_l2_Hankel_lin(parsv_fest,k,l,n,Qs,Om)
+        else: 
+            f_flip = f_l2_Hankel_nl(C_flip,X,k,l,n,Qs,Om)
         print('final squared error on stitched parts (C over first subpop sign-flipped):',
           f_l2_Hankel_lin(parsv_fest,k,l,n,Qs_full,~Om))
 
-    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],
-        pars_true['Pi'],k,l)
-    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],
-        pars_init['Pi'],k,l)
+    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=None)
+    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
 
-    H_obs = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
-        pars_true['Pi'],k,l, Om)
+    H_obs = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om= Om)
     H_obs[np.where(H_obs==0)] = np.nan
-    H_sti = yy_Hankel_cov_mat( pars_true['C'],pars_true['A'],
-        pars_true['Pi'],k,l,~Om)
+    H_sti = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=~Om)
 
-    if linear:
+    if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
             pars_est['Pi'],k,l)
     else:
         H_est = yy_Hankel_cov_mat(pars_est['C'],X,
-            pars_est['Pi'],k,l,linear=linear)
+            pars_est['Pi'],k,l,linear=False)
 
     if plot_mats():
         if if_flip:
@@ -221,15 +232,13 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     """
 
     print('\n observed covariance entries')
-    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],pars_true['Pi'],
-        k,l,Om=Om,linear=True)
-    if linear:
+    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=Om)
+    if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
-            k,l,Om=Om,linear=linear)
+            k,l,Om=Om,linear=True)
     else:
-        X = s_A_l2_Hankel_bad_sis(pars_est['C'],
-            k,l,Qs,idx_grp,co_obs, linear=linear)[1]
-        H_est  = yy_Hankel_cov_mat(pars_est['C'], X,None,k,l,Om=Om,linear=linear)        
+        X = s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=False)[1]
+        H_est  = yy_Hankel_cov_mat(pars_est['C'],X,None,k,l,Om=Om,linear=False)        
     if plot_mats():
         plt.figure(figsize=(20,20))
         plt.subplot(3,3,1)
@@ -253,18 +262,17 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.ylabel('H_kl rec.')
         plt.axis('equal')
 
-    print('correlation:', np.corrcoef(H_true.reshape(-1,), H_est.reshape(-1,))[0,1])
+    print('correlation:', np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                                      H_est[np.invert(np.isnan(H_est))])[0,1])
 
     print('\n stitched covariance entries')
-    H_true = yy_Hankel_cov_mat(pars_true['C'],pars_true['A'],pars_true['Pi'],
-        k,l,Om=~Om,linear=True)
-    if linear:
+    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=~Om)
+    if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
-            k,l,Om=~Om,linear=linear)
+            k,l,Om=~Om,linear=True)
     else:
-        X = s_A_l2_Hankel_bad_sis(pars_est['C'],
-            k,l,Qs,idx_grp,co_obs, linear=linear)[1]
-        H_est  = yy_Hankel_cov_mat(pars_est['C'], X,None,k,l,Om=~Om,linear=linear)   
+        X = s_A_l2_Hankel_bad_sis(pars_est['C'],k,l,Qs,idx_grp,co_obs, linear=False)[1]
+        H_est  = yy_Hankel_cov_mat(pars_est['C'], X,None,k,l,Om=~Om,linear=False)   
     if plot_mats():
         plt.subplot(3,3,4)
         plt.imshow(H_true, interpolation='none')
@@ -287,11 +295,12 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.axis('equal')
 
 
-    print('correlation:', np.corrcoef(H_true.reshape(-1,), H_est.reshape(-1,))[0,1])
+    print('correlation:', np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                                      H_est[np.invert(np.isnan(H_est))])[0,1])
 
     print('\n full time-lagged covariances, for time-lag m = ', m)
     H_true = pars_true['C'].dot( np.linalg.matrix_power(pars_true['A'],m).dot(pars_true['Pi']) ).dot(pars_true['C'].T)
-    if linear:
+    if linearity=='True':
         H_est = pars_est['C'].dot( np.linalg.matrix_power(pars_est['A'],m).dot(pars_est['Pi']) ).dot(pars_est['C'].T)
     else:
         H_est = pars_est['C'].dot(X[:,m-1].reshape(n,n).dot(pars_est['C'].T))
@@ -316,7 +325,8 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.ylabel('H_kl rec.')
         plt.axis('equal')
 
-    print('correlation:', np.corrcoef(H_true.reshape(-1,), H_est.reshape(-1,))[0,1])
+    print('correlation:', np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                                      H_est[np.invert(np.isnan(H_est))])[0,1])
     plt.show()
 
     if not traces is None:
