@@ -959,8 +959,8 @@ def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
 # Subsampling in space #
 ########################
 
-def run_bad(k,l,n,Qs,Om,
-            sub_pops,idx_grp,co_obs,obs_idx,
+def run_bad(k,l,n,Qs,
+            Om,sub_pops,idx_grp,co_obs,obs_idx,
             linearity='False',stable=False,init='SSID',
             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1):
 
@@ -984,6 +984,13 @@ def run_bad(k,l,n,Qs,Om,
              'Pi' : M.dot(pars_ssid['Pi']).dot(M.T),
              'B'  : np.eye(n), 
              'C'  : np.random.normal(size=(p,n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
+
+    elif init =='default':
+        pars_init = {'A'  : np.diag(np.linspace(0.89, 0.91, n)),
+             'Pi' : np.eye(n),
+             'B'  : np.eye(n), 
+             'C'  : np.random.normal(size=(p,n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
+
 
     f_i, g_C, g_A, g_Pi = l2_bad_sis_setup(k=k,l=l,n=n,Qs=Qs,
                                            Om=Om,idx_grp=idx_grp,obs_idx=obs_idx,
@@ -1349,9 +1356,9 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False):
 
     n = A.shape[1]
 
-    As = np.empty((n*(k+l-2),n))
-    XT = np.empty((n*(k+l-2),n))
-    for m in range(k+l-2):
+    As = np.empty((n*(k+l-1),n))
+    XT = np.empty((n*(k+l-1),n))
+    for m in range(k+l-1):
         XT[m*n:(m+1)*n,:] = X[:,m].reshape(n,n)
         As[m*n:(m+1)*n,:] = np.linalg.matrix_power(A,m+1)
         
