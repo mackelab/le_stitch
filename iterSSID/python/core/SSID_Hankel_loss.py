@@ -151,7 +151,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
 
     def f(Om):
         if linearity=='True':
-            return f_l2_Hankel_lin(parsv_est,k,l,n,Qs_full, Om)
+            return f_l2_Hankel_lin(parsv_est,k,l,n,Qs_full, Om) # Qs_full in case ~Om
         else:
             return f_l2_Hankel_nl(pars_est['C'],X,k,l,n,Qs_full,Om)
 
@@ -175,12 +175,12 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         print('final squared error on stitched parts (C over first subpop sign-flipped):',
           f_l2_Hankel_lin(parsv_fest,k,l,n,Qs_full,~Om))
 
-    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=None)
+    H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=None)
     H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
 
     H_obs = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om= Om)
     H_obs[np.where(H_obs==0)] = np.nan
-    H_sti = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=~Om)
+    H_sti = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
 
     if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
@@ -232,7 +232,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     """
 
     print('\n observed covariance entries')
-    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=Om)
+    H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=Om)
     if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
             k,l,Om=Om,linear=True)
@@ -264,9 +264,11 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
 
     print('correlation:', np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
                                       H_est[np.invert(np.isnan(H_est))])[0,1])
+    print('obs. MSE:', np.mean( (H_true[np.invert(np.isnan(H_true))] - 
+                                      H_est[np.invert(np.isnan(H_est))])**2 ) )
 
     print('\n stitched covariance entries')
-    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=~Om)
+    H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
     if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
             k,l,Om=~Om,linear=True)
@@ -962,7 +964,8 @@ def g_l2_coord_asc_sgd(C,Cd,Q, p,n, idx_grp,co_obs,not_co_obs,X_ms):
 def run_bad(k,l,n,Qs,
             Om,sub_pops,idx_grp,co_obs,obs_idx,
             linearity='False',stable=False,init='SSID',
-            a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1):
+            a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1,
+            verbose=False):
 
     p = Qs[0].shape[0]
 
@@ -994,7 +997,8 @@ def run_bad(k,l,n,Qs,
 
     f_i, g_C, g_A, g_Pi = l2_bad_sis_setup(k=k,l=l,n=n,Qs=Qs,
                                            Om=Om,idx_grp=idx_grp,obs_idx=obs_idx,
-                                           linearity=linearity,stable=stable)
+                                           linearity=linearity,stable=stable,
+                                           verbose=verbose)
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
@@ -1008,7 +1012,8 @@ def run_bad(k,l,n,Qs,
     return pars_init, pars_est, (fs,)
 
 
-def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False):
+def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
+                        verbose=False):
     "returns error function and gradient for use with gradient descent solvers"
 
     def co_observed(x, i):
@@ -1049,10 +1054,11 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False):
 
     def g_A(C,idx_grp,co_obs,A=None):
         return s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,
-            linear=linear_A,linearise_X=linearise_X,stable=stable,A_old=A)
+            linear=linear_A,linearise_X=linearise_X,stable=stable,A_old=A,
+            verbose=verbose)
 
     def g_Pi(X,A,idx_grp,co_obs,Pi=None):
-        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi)
+        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi,verbose=verbose)
 
     if linearity == 'True':
         def f(parsv):                        
@@ -1090,7 +1096,8 @@ def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
 
 
 def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
-                converged,Om,idx_grp,co_obs,batch_size=None,linearity='False'):
+                converged,Om,idx_grp,co_obs,batch_size=None,
+                linearity='False'):
     
     C = pars_0['C'].copy()
 
@@ -1101,11 +1108,17 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         A,X = g_A(C,idx_grp,co_obs,None)
         Pi = None
     elif linearity=='True':
+        A,X = g_A(C,idx_grp,co_obs,None)
+        print('getting initial Pi now')
+        Pi = g_Pi(X,A,idx_grp,co_obs,None)
+
         if 'A' in pars_0.keys() and not pars_0['A'] is None:
             A,X,Pi = pars_0['A'].copy(), None, pars_0['Pi'].copy()
         else: 
             A,X = g_A(C,idx_grp,co_obs,None)
+            print('getting initial Pi now')
             Pi = g_Pi(X,A,idx_grp,co_obs,None)
+            pars_0['A'], pars_0['Pi'] = A.copy(), Pi.copy()
     else:
         raise Exception(('Selected unsupported value for argument linearity. ',
                          'Selected value is ', linearity))
@@ -1211,11 +1224,13 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
     pars_out = {'C' : C }
     if linearity=='True': 
         pars_out['A'], pars_out['Pi'] = A, Pi
+        pars_out['X'] = X           
     elif linearity=='first_order':
         pars_out['A'], pars_out['Pi'] = A, np.zeros((n,n))     
         pars_out['X'] = X   
     if linearity=='False': 
         pars_out['A'], pars_out['Pi'] = np.zeros((n,n)), np.zeros((n,n))
+        pars_out['X'] = X   
 
     #print('A final:' , A)
 
@@ -1264,11 +1279,13 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,
     c = np.zeros((n**2, k+l-1))
     for i in range(len(idx_grp)):
         a,b = idx_grp[i], co_obs[i]
-        M += np.kron(C[a,:].T.dot(C[a,:]), C[b,:].T.dot(C[b,:]))
-        Mab = np.kron(C[a,:], C[b,:])
+        M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
+        Mab = np.kron(C[b,:], C[a,:]).T
         for m_ in range(1,k+l):
-            c[:,m_-1] +=  Mab.T.dot(Qs[m_][np.ix_(a,b)].reshape(-1,))
+            c[:,m_-1] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) # Mab * vec(Qs[m](a,b)
     X = np.linalg.solve(M,c)
+    for m in range(k+l-1):
+        X[:,m] = (X[:,m].reshape(n,n).T).reshape(-1,)
     A = X
 
 
@@ -1365,7 +1382,7 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False):
     Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=Pi,Y0=None,tol=1e-8,verbose=False)
 
     if verbose:
-        print('MSE reconstruction for A^m Pi - X_m', np.max(np.abs(As.dot(Pi) - XT)))
+        print('MSE reconstruction for A^m Pi - X_m', np.mean( (As.dot(Pi) - XT)**2 ))
 
     #assert not fail
 
