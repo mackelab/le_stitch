@@ -1259,8 +1259,18 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                 if linearity=='True':
                     H_est = yy_Hankel_cov_mat(C,A,Pi,k,l,Om=~Om,linear=True)
                 else:
-                    H_est  = yy_Hankel_cov_mat(C, X,None,k,l,Om=~Om,linear=False)   
-
+                    H_est  = yy_Hankel_cov_mat(C, X,None,k,l,Om=~Om,linear=False) 
+                #print('Om',   np.mean(Om))
+                #print('Qs[0]',   np.mean(np.isfinite(Qs[0])))
+                #print('Qs[1]',   np.mean(np.isfinite(Qs[1])))
+                #print('Qs[2]',   np.mean(np.isfinite(Qs[2])))
+                #print('Qs[-1]',   np.mean(np.isfinite(Qs[-1])))
+                #print('Qs_full[0]',   np.mean(np.isfinite(Qs_full[0])))
+                #print('Qs_full[1]',   np.mean(np.isfinite(Qs_full[1])))
+                #print('Qs_full[2]',   np.mean(np.isfinite(Qs_full[2])))
+                #print('Qs_full[-1]',   np.mean(np.isfinite(Qs_full[-1])))
+                #print('H_true', np.mean(np.isfinite(H_true)))
+                #print('H_est', np.mean(np.isfinite(H_est)))
                 corrs[1,ct_iter] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
                         H_est[np.invert(np.isnan(H_est))])[0,1]
                 ct_iter += 1
@@ -1522,6 +1532,9 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
 
     Om_mask = np.asarray(Om, dtype=np.float)
     Om_mask[~Om] = np.nan
+    #plt.imshow(Om_mask, interpolation='none')
+    #plt.show()
+
     for T in Ts:        
 
         T = int(T) if np.isfinite(T) else T
@@ -1542,10 +1555,12 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
                     #Qs[m] = Qs_full[m] * Om_mask
                 Qs_full[m] = np.cov(y[:,m:T+m-(k+l)], y[:,:T-(k+l)])[:p,p:]
                 Qs[m] = Qs_full[m] * Om_mask
+                #print('Qs', np.mean(np.isfinite(Qs[m])))  
+                #print('Qs_full', np.mean(np.isfinite(Qs_full[m])))  
         
         linearity = 'False'
         stable = True
-        pars_init, pars_est, traces = run_bad(k=k,l=l,n=n,Qs=Qs,Om=Om,
+        pars_init, pars_est, traces = run_bad(k=k,l=l,n=n,Qs=Qs,Om=Om,Qs_full=Qs_full,
                                               sub_pops=sub_pops,idx_grp=idx_grp,co_obs=co_obs,obs_idx=obs_idx,
                                               linearity=linearity,stable=stable,init=init,
                                               a=a,b1=b1,b2=b2,e=e,max_iter=max_iter_nl,batch_size=batch_size,
