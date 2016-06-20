@@ -246,7 +246,7 @@ def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=Tru
         for m in range(k+l):
             Qs.append(None)
             Qs_full.append(None)
-            
+
     return pars_true, Qs, Qs_full
 
 ###########################################################################
@@ -445,3 +445,6 @@ def idx_global2local(overlap, sub_pop):
 
     idxi = range(overlap.size) 
     return np.array([np.where(overlap[i] == sub_pop)[0][0] for i in idxi])
+
+
+
