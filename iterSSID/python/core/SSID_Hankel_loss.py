@@ -7,6 +7,7 @@ from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
 import cvxopt
 import SDLS
+import os
 
 def mat(X):
     return cvxopt.matrix(X, tc='d')
@@ -1465,10 +1466,10 @@ def id_Pi(X,A,idx_grp,co_obs,Pi=None):
 
 
 
-def test_run(p,n,T=np.inf,k=None,l=None,batch_size=None,sub_pops=None,reps=1,
+def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1,
              nr=None, eig_m_r=0.8, eig_M_r=0.99, eig_m_c=0.8, eig_M_c=0.99,
              a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter_nl = 100,
-             linearity=False, stable=False,init='default',
+             linearity=False, stable=False,init='default',save_file=None,
              verbose=False,get_subpop_stats=None, draw_sys=None, sim_data=None):
 
     # finish setting defaults:
@@ -1479,6 +1480,11 @@ def test_run(p,n,T=np.inf,k=None,l=None,batch_size=None,sub_pops=None,reps=1,
     # default subpops: fully observed
     sub_pops = (np.arange(0,p), np.arange(0,p)) if sub_pops is None else sub_pops
 
+    Tmax = np.max(Ts)
+    Ts = np.sort(Ts)    
+    if Tmax == np.inf and np.any(np.isfinite(Ts)):
+        raise Exception('cannot mix finite and infinite data sizes T')
+
     if get_subpop_stats is None:
         raise Exception(('ehem. Will need to properly install modules in the future. ',
                 'For now, code requires utility.get_subpop_stats as provided input'))
@@ -1488,6 +1494,12 @@ def test_run(p,n,T=np.inf,k=None,l=None,batch_size=None,sub_pops=None,reps=1,
     if sim_data is None:
         raise Exception(('ehem. Will need to properly install modules in the future. ',
                 'For now, code requires ssm_scripts.sim_data as provided input'))
+
+    if save_file is None:
+        save_file = 'p' + str(p) + 'n' + str(n) + 'r' + str(len(sub_pops))
+        save_file = save_file + 'k' + str(k) + 'l' + str(l)
+
+
     # draw data, run simulation
 
     obs_idx, idx_grp, co_obs, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc = \
@@ -1498,19 +1510,31 @@ def test_run(p,n,T=np.inf,k=None,l=None,batch_size=None,sub_pops=None,reps=1,
     ev_c = np.exp(2 * 1j * np.pi * np.random.uniform(size= (n - nr)//2))
     ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
 
-    calc_stats = True if T == np.inf else False
+    calc_stats = True if Tmax == np.inf else False
     pars_true, Qs, Qs_full = draw_sys(p=p,n=n,k=k,l=l,Om=Om, nr=nr, ev_r=ev_r,ev_c=ev_c,calc_stats=calc_stats)
     pars_true['d'], pars_true['mu0'], pars_true['V0'] = np.zeros(p), np.zeros(n), pars_true['Pi'].copy()
     if calc_stats:
         x,y = np.zeros((n,0)), np.zeros((p,0))
     else:
-        x,y,_ = sim_data(pars=pars_true, t_tot= T ) 
+        x,y,_ = sim_data(pars=pars_true, t_tot= Tmax ) 
         x,y = x[:,:,0], y[:,:,0]
-        for m in range(k+l):
-            Qs_full[m] = np.cov(y[:,m:m-(k+l)], y[:,:-(k+l)])[:p,p:]
-            Qs[m] = np.cov(y[:,m:m-(k+l)], y[:,:-(k+l)])[:p,p:]
 
-    for rep in range(reps):        
+    Om_mask = np.asarray(Om, dtype=np.float)
+    Om_mask[~Om] = np.nan
+    for T in Ts:        
+
+
+        print('(p,n,T,k,l) = ', (p,n,T,k,l))
+        print('max_iter = ', max_iter_nl)
+        if p < 100:
+            print('sub_pops = ', sub_pops)
+        else:
+            print('# of sub_pops = ', len(sub_pops))
+
+
+        for m in range(k+l):
+            Qs_full[m] = np.cov(y[:,m:T+m-(k+l)], y[:,:T-(k+l)])[:p,p:]
+            Qs[m] = Qs_full[m] * Om_mask
         
         linearity = 'False'
         stable = True
@@ -1519,6 +1543,67 @@ def test_run(p,n,T=np.inf,k=None,l=None,batch_size=None,sub_pops=None,reps=1,
                                               linearity=linearity,stable=stable,init=init,
                                               a=a,b1=b1,b2=b2,e=e,max_iter=max_iter_nl,batch_size=batch_size,
                                               verbose=verbose)
-    options = {}
+        os.chdir('../fits/nonlinear_cluster')
 
-    return pars_true, pars_init, pars_est, traces, x, y, Qs, Qs_full, options
+        """
+        save_file_m = {'linearity': linearity,
+                       'A_true': pars_true['A'],
+                       'Pi_true' : pars_true['Pi'], 
+                       'C_true' : pars_true['C'],
+                       'A_0': pars_init['A'],
+                       'Pi_0': pars_init['Pi'],
+                       'C_0': pars_init['C'],
+                       'A_est': pars_est['A'],
+                       'Pi_est' :  pars_est['Pi'], 
+                       'C_est' :  pars_est['C'],
+                       'fs' : traces[0],
+                       'corrs' : traces[1],
+                       'p': p, 'n': n,
+                       'k': k, 'l': l, 
+                       'Ts': Ts,
+                       'a': a, 'b1': b1, 'b2': b2, 'e': e, 'max_iter_nl': max_iter_nl,
+                       'r': len(sub_pops),
+                       'sub_pops': sub_pops,
+                       'batch_size': batch_size,
+                       'y': y,
+                       'x': x,
+                       'Qs': Qs, 
+                       'Qs_full': Qs_full}
+
+        savemat(save_file,save_file_m) # does the actual saving
+        """
+        pars_true_vec = np.hstack((pars_true['A'].reshape(n*n,),
+                            pars_true['Pi'].reshape(n*n,),
+                            pars_true['C'].reshape(p*n,)))
+        pars_init_vec = np.hstack((pars_init['A'].reshape(n*n,),
+                            pars_init['Pi'].reshape(n*n,),
+                            pars_init['C'].reshape(p*n,)))
+        pars_est_vec  = np.hstack((pars_est['A'].reshape(n*n,),
+                            pars_est['Pi'].reshape(n*n,),
+                            pars_est['C'].reshape(p*n,)))
+
+        np.savez(save_file + 'T' + str(T), 
+                 y=y[:,:T],
+                 x=x[:,:T],
+                 Ts=Ts,
+                 T=T,
+                 Qs_full=Qs_full,
+                 Qs=Qs,
+                 linearity=linearity,
+                 pars_init=pars_init,
+                 pars_est =pars_est,
+                 pars_true=pars_true,         
+                 pars_0_vec=pars_init_vec,
+                 pars_true_vec=pars_true_vec, 
+                 pars_est_vec=pars_est_vec,
+                 traces=traces,
+                 p=p, n=n, k=k, l=l, 
+                 batch_size=batch_size,
+                 a=a, b1=b1, b2=b2, e=e, max_iter_nl=max_iter_nl, 
+                 sub_pops = sub_pops,
+                 r=len(sub_pops))  
+
+        os.chdir('../../dev')
+
+
+    options = {}
