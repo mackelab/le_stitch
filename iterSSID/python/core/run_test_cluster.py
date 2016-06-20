@@ -5,14 +5,14 @@ np.random.seed(0)
 
 from script_like import run_test
 
-p = 1000
+p = 50
 k,l = 5,5
 
 ns = (3,10,15)
 Ts = (100, 1000, 10000, np.inf)
 num_reps = 2
 
-max_iter_nl = 1000
+max_iter_nl = 50
 
 for rep in range(num_reps):
 
@@ -38,10 +38,10 @@ for rep in range(num_reps):
 
     #"""        
     # leap-frogging
-    assert p == 1000
-    sub_pops = (np.arange(400), np.arange(200,600), np.arange(400,800), np.arange(600,p))
-    #assert p == 100
-    #sub_pops = (np.arange(40), np.arange(20,60), np.arange(40,80), np.arange(60,p))
+    #assert p == 1000
+    #sub_pops = (np.arange(400), np.arange(200,600), np.arange(400,800), np.arange(600,p))
+    assert p == 50
+    sub_pops = (np.arange(20), np.arange(10,30), np.arange(20,40), np.arange(30,p))
     for n in ns:
         save_file = 'sweep_n_T_p' + str(p) + 'n' + str(n) + 'k' + str(k) + 'l' + str(l)
         save_file = save_file + '_LeapFrog_nr' + str(rep)
