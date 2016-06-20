@@ -2,7 +2,7 @@ import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 import warnings
-import control
+#import control
 from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
 import cvxopt
