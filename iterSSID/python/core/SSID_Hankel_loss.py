@@ -132,7 +132,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
 
     p,n = pars_true['C'].shape
 
-    def plot_mats(thresh=200):
+    def plot_mats(thresh=500):
         return p * max((k,l)) <= thresh
 
     pars_init = set_none_mats(pars_init, p, n)
@@ -336,6 +336,13 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
             fs, len_traces = traces, 1
         elif isinstance(traces, tuple):
             fs, len_traces = traces[0], len(traces)  
+            try:
+                corrs = traces[1]
+                len_corrs = corrs.shape[1]
+                plot_corrs = True
+            except:
+                plot_corrs = False
+                pass
 
         plt.figure(figsize=(20,8))
         plt.subplot(len_traces,1,1)
@@ -344,6 +351,17 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.ylabel('target error')
         plt.title('target function vs. iteration count')
         plt.show()
+
+        if plot_corrs:        
+            plt.figure(figsize=(20,8))
+            plt.subplot(len_traces,1,1)
+            plt.plot(np.linspace(0,100, corrs.shape[1]), corrs.T)
+            plt.xlabel('percent of total iterations')
+            plt.ylabel('correlations of est. and true covariances')
+            plt.title('recovered correlations vs. iteration percentage')
+            plt.legend(('observed', 'non-observed'))
+            plt.show()
+
 
 def set_none_mats(pars, p, n, val=np.nan):
 
@@ -1106,7 +1124,6 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         Qs_full = Qs if Qs_full is None else Qs_full
         kl_ = np.min((len(Qs),len(Qs_full)))
         k,l = kl_ - 1, 1
-        print('k,l = ', (k,l))
 
     C = pars_0['C'].copy()
 
@@ -1444,3 +1461,64 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False):
 def id_Pi(X,A,idx_grp,co_obs,Pi=None):
 
     return Pi
+
+
+
+
+def test_run(p,n,T=np.inf,k=None,l=None,batch_size=None,sub_pops=None,reps=1,
+             nr=None, eig_m_r=0.8, eig_M_r=0.99, eig_m_c=0.8, eig_M_c=0.99,
+             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter_nl = 100,
+             linearity=False, stable=False,init='default',
+             verbose=False,get_subpop_stats=None, draw_sys=None, sim_data=None):
+
+    # finish setting defaults:
+    nr = n//2 if nr is None else nr
+    if k is None and l is None:
+        k,l = n,n
+    batch_size = p if batch_size is None else batch_size
+    # default subpops: fully observed
+    sub_pops = (np.arange(0,p), np.arange(0,p)) if sub_pops is None else sub_pops
+
+    if get_subpop_stats is None:
+        raise Exception(('ehem. Will need to properly install modules in the future. ',
+                'For now, code requires utility.get_subpop_stats as provided input'))
+    if draw_sys is None:
+        raise Exception(('ehem. Will need to properly install modules in the future. ',
+                'For now, code requires utility.draw_sys as provided input'))
+    if sim_data is None:
+        raise Exception(('ehem. Will need to properly install modules in the future. ',
+                'For now, code requires ssm_scripts.sim_data as provided input'))
+    # draw data, run simulation
+
+    obs_idx, idx_grp, co_obs, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc = \
+        get_subpop_stats(sub_pops=sub_pops, p=p, verbose=False)
+
+    # draw system matrices    
+    ev_r = np.linspace(eig_m_r, eig_M_r, nr)
+    ev_c = np.exp(2 * 1j * np.pi * np.random.uniform(size= (n - nr)//2))
+    ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
+
+    calc_stats = True if T == np.inf else False
+    pars_true, Qs, Qs_full = draw_sys(p=p,n=n,k=k,l=l,Om=Om, nr=nr, ev_r=ev_r,ev_c=ev_c,calc_stats=calc_stats)
+    pars_true['d'], pars_true['mu0'], pars_true['V0'] = np.zeros(p), np.zeros(n), pars_true['Pi'].copy()
+    if calc_stats:
+        x,y = np.zeros((n,0)), np.zeros((p,0))
+    else:
+        x,y,_ = sim_data(pars=pars_true, t_tot= T ) 
+        x,y = x[:,:,0], y[:,:,0]
+        for m in range(k+l):
+            Qs_full[m] = np.cov(y[:,m:m-(k+l)], y[:,:-(k+l)])[:p,p:]
+            Qs[m] = np.cov(y[:,m:m-(k+l)], y[:,:-(k+l)])[:p,p:]
+
+    for rep in range(reps):        
+        
+        linearity = 'False'
+        stable = True
+        pars_init, pars_est, traces = run_bad(k=k,l=l,n=n,Qs=Qs,Om=Om,
+                                              sub_pops=sub_pops,idx_grp=idx_grp,co_obs=co_obs,obs_idx=obs_idx,
+                                              linearity=linearity,stable=stable,init=init,
+                                              a=a,b1=b1,b2=b2,e=e,max_iter=max_iter_nl,batch_size=batch_size,
+                                              verbose=verbose)
+    options = {}
+
+    return pars_true, pars_init, pars_est, traces, x, y, Qs, Qs_full, options

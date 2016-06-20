@@ -234,13 +234,19 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
 
     return { 'A': A, 'B': np.linalg.cholesky(Pi), 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
-def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None):
+def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True):
 
     Om = np.ones((p,p), dtype=int) if Om is None else Om
     pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
-    Qs = comp_model_covariances(pars_true, k+l, Om)
-    Qs_full = comp_model_covariances(pars_true, k+l)
-
+    if calc_stats:
+        Qs = comp_model_covariances(pars_true, k+l, Om)
+        Qs_full = comp_model_covariances(pars_true, k+l)
+    else:
+        Qs, Qs_full = [], []
+        for m in range(k+l):
+            Qs.append(None)
+            Qs_full.append(None)
+            
     return pars_true, Qs, Qs_full
 
 ###########################################################################
