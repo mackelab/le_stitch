@@ -965,7 +965,9 @@ def run_bad(k,l,n,Qs,
             Om,sub_pops,idx_grp,co_obs,obs_idx,
             linearity='False',stable=False,init='SSID',
             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1,
-            verbose=False):
+            verbose=False, Qs_full=None):
+
+    Qs_full = Qs if Qs_full is None else Qs_full
 
     p = Qs[0].shape[0]
 
@@ -1002,14 +1004,15 @@ def run_bad(k,l,n,Qs,
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
-    pars_est, fs = adam_zip_bad_stable(f=f_i,g_C=g_C,g_A=g_A,g_Pi=g_Pi,
+    pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_A=g_A,g_Pi=g_Pi,
                                        pars_0=pars_init,
                                        a=a,b1=b1,b2=b2,e=e,
                                        max_iter=max_iter,converged=converged,
                                        Om=Om,idx_grp=idx_grp,co_obs=co_obs,
-                                       batch_size=batch_size,linearity=linearity)                 
+                                       batch_size=batch_size,linearity=linearity,
+                                       Qs=Qs, Qs_full=Qs_full)                 
 
-    return pars_init, pars_est, (fs,)
+    return pars_init, pars_est, traces
 
 
 def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
@@ -1097,8 +1100,14 @@ def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
 
 def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                 converged,Om,idx_grp,co_obs,batch_size=None,
-                linearity='False'):
+                linearity='False',Qs=None, Qs_full=None):
     
+    if not Qs is None:
+        Qs_full = Qs if Qs_full is None else Qs_full
+        kl_ = np.min((len(Qs),len(Qs_full)))
+        k,l = kl_ - 1, 1
+        print('k,l = ', (k,l))
+
     C = pars_0['C'].copy()
 
     if linearity=='False':
@@ -1145,6 +1154,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
     
     # setting up Adam
     t_iter, t, t_zip = 0, 0, 0
+    ct_iter, corrs  = 0, np.zeros((2, 11))
     m, v = np.zeros((p,n)), v_0.copy()
 
     # setting up the stochastic batch selection:
@@ -1200,23 +1210,66 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
             #    Cm += C/(zip_size * e_frac)
 
         A,X =  g_A(C,idx_grp,co_obs,A)
-
         Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linearity=='True' else Pi
 
         if t_iter < max_iter:          # outcomment this eventually - really expensive!
-            theta = np.zeros( (p + 2*n)*n )
             if linearity=='True':
+                theta = np.zeros( (p + 2*n)*n )
                 theta[:n*n] = A.reshape(-1,)
                 theta[n*n:2*n*n] = Pi.reshape(-1,)
-            theta[-p*n:] = C.reshape(-1,)
+                theta[-p*n:] = C.reshape(-1,)
 
             fun[t_iter] = f(theta) if linearity=='True' else f(C,X)
-            
+        
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter)
             print('f = ', fun[t_iter])
 
+            if not Qs_full is None:
+                #print('\n observed covariance entries')
+                H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=Om)
+                if linearity=='True':
+                    H_est = yy_Hankel_cov_mat(C,A,Pi,k,l,Om=Om,linear=True)
+                else:
+                    H_est  = yy_Hankel_cov_mat(C,X,None,k,l,Om=Om,linear=False)        
+
+                corrs[0,ct_iter]= np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                                                  H_est[np.invert(np.isnan(H_est))])[0,1]
+
+                #print('\n stitched covariance entries')
+                H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
+                if linearity=='True':
+                    H_est = yy_Hankel_cov_mat(C,A,Pi,k,l,Om=~Om,linear=True)
+                else:
+                    H_est  = yy_Hankel_cov_mat(C, X,None,k,l,Om=~Om,linear=False)   
+
+                corrs[1,ct_iter] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                        H_est[np.invert(np.isnan(H_est))])[0,1]
+                ct_iter += 1
+
+
         t_iter += 1
+
+        if not Qs_full is None:
+
+            H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=Om)
+            if linearity=='True':
+                H_est = yy_Hankel_cov_mat(C,A,Pi,k,l,Om=Om,linear=True)
+            else:
+                H_est  = yy_Hankel_cov_mat(C,X,None,k,l,Om=Om,linear=False)        
+
+            corrs[0,-1]= np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                                              H_est[np.invert(np.isnan(H_est))])[0,1]
+
+            #print('\n stitched covariance entries')
+            H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
+            if linearity=='True':
+                H_est = yy_Hankel_cov_mat(C,A,Pi,k,l,Om=~Om,linear=True)
+            else:
+                H_est  = yy_Hankel_cov_mat(C, X,None,k,l,Om=~Om,linear=False)   
+
+            corrs[1,-1] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+                    H_est[np.invert(np.isnan(H_est))])[0,1]
 
             
     print('total iterations: ', t)
@@ -1234,7 +1287,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
 
     #print('A final:' , A)
 
-    return pars_out, fun    
+    return pars_out, (fun,corrs)    
 
 def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
