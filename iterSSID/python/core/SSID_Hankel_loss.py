@@ -1534,6 +1534,12 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
 
         if np.isfinite(T):
             for m in range(k+l):
+                #for i in range(len(idx_grp)):
+                    #slm = np.ix_(idx_grp[i],idx_grp[i])
+                    #slt = np.ix_(idx_grp[i], range(m,T+m-(k+l)))
+                    #slt = np.ix_(idx_grp[i], range(m,T-(k+l)]))
+                    #Qs_full[m][slm] = np.cov(y[slt], y[sls])[:p,p:]
+                    #Qs[m] = Qs_full[m] * Om_mask
                 Qs_full[m] = np.cov(y[:,m:T+m-(k+l)], y[:,:T-(k+l)])[:p,p:]
                 Qs[m] = Qs_full[m] * Om_mask
         
