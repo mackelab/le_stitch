@@ -1480,10 +1480,11 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
     # default subpops: fully observed
     sub_pops = (np.arange(0,p), np.arange(0,p)) if sub_pops is None else sub_pops
 
-    Tmax = np.max(Ts)
-    Ts = np.sort(Ts)    
-    if Tmax == np.inf and np.any(np.isfinite(Ts)):
-        raise Exception('cannot mix finite and infinite data sizes T')
+    Ts = np.array(Ts)
+    calc_stats = True if np.max(Ts) == np.inf else False    
+    draw_data  = True if np.any(np.isfinite(Ts)) else False
+    Tmax = int(np.max(Ts[np.isfinite(Ts)]))
+    Ts = np.sort(Ts) if np.max(Ts) != np.inf else np.hstack((np.inf, np.sort(Ts[np.isfinite(Ts)])))
 
     if get_subpop_stats is None:
         raise Exception(('ehem. Will need to properly install modules in the future. ',
@@ -1510,12 +1511,12 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
     ev_c = np.exp(2 * 1j * np.pi * np.random.uniform(size= (n - nr)//2))
     ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
 
-    calc_stats = True if Tmax == np.inf else False
     pars_true, Qs, Qs_full = draw_sys(p=p,n=n,k=k,l=l,Om=Om, nr=nr, ev_r=ev_r,ev_c=ev_c,calc_stats=calc_stats)
     pars_true['d'], pars_true['mu0'], pars_true['V0'] = np.zeros(p), np.zeros(n), pars_true['Pi'].copy()
-    if calc_stats:
+    if not draw_data:
         x,y = np.zeros((n,0)), np.zeros((p,0))
     else:
+        print(Tmax)
         x,y,_ = sim_data(pars=pars_true, t_tot= Tmax ) 
         x,y = x[:,:,0], y[:,:,0]
 
@@ -1523,7 +1524,7 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
     Om_mask[~Om] = np.nan
     for T in Ts:        
 
-
+        T = int(T) if np.isfinite(T) else T
         print('(p,n,T,k,l) = ', (p,n,T,k,l))
         print('max_iter = ', max_iter_nl)
         if p < 100:
@@ -1531,10 +1532,10 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
         else:
             print('# of sub_pops = ', len(sub_pops))
 
-
-        for m in range(k+l):
-            Qs_full[m] = np.cov(y[:,m:T+m-(k+l)], y[:,:T-(k+l)])[:p,p:]
-            Qs[m] = Qs_full[m] * Om_mask
+        if np.isfinite(T):
+            for m in range(k+l):
+                Qs_full[m] = np.cov(y[:,m:T+m-(k+l)], y[:,:T-(k+l)])[:p,p:]
+                Qs[m] = Qs_full[m] * Om_mask
         
         linearity = 'False'
         stable = True
@@ -1583,8 +1584,8 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
                             pars_est['C'].reshape(p*n,)))
 
         np.savez(save_file + 'T' + str(T), 
-                 y=y[:,:T],
-                 x=x[:,:T],
+                 y=y[:,:T] if np.isfinite(T) else None,
+                 x=x[:,:T] if np.isfinite(T) else None,
                  Ts=Ts,
                  T=T,
                  Qs_full=Qs_full,
