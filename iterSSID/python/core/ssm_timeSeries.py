@@ -1097,7 +1097,7 @@ class timeSeriesData:
             raise Exception(('model factorization for data model is '
                              'required, but apparently not yet initialized'))                         
                         
-        np.random.seed(RNGseed)                            
+        #np.random.seed(RNGseed)                            
                         
         if isinstance(numTrials , numbers.Integral):  
             numTrials = np.array([numTrials],dtype=int)   

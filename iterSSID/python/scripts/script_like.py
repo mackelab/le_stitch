@@ -13,6 +13,27 @@ os.chdir('../../../../pyRRHDLDS/core')
 from ssm_scripts import sim_data
 os.chdir('../../code_le_stitch/iterSSID/python/dev')
 
+def run_test_cluster(p=1000,n=None,Ts=(100,1000,10000,np.inf),k=5,l=5,
+        sub_pops_type=None, rep=None):
+
+    if sub_pops_type == 'fo':
+        sub_pops = (np.arange(p), np.arange(p))        
+        save_file = 'sweep_n_T_p' + str(p) + 'n' + str(n) + 'k' + str(k) + 'l' + str(l)
+        save_file = save_file + '_fullyObs_nr' + str(rep)
+        
+    elif sub_pops_type == 'no':
+        sub_pops = (np.arange(0,p//2), np.arange(p//2,p))
+        save_file = 'sweep_n_T_p' + str(p) + 'n' + str(n) + 'k' + str(k) + 'l' + str(l)
+        save_file = save_file + '_nonOverlap_nr' + str(rep)
+    elif sub_pops_type == 'lf':
+        assert p == 1000
+        sub_pops = (np.arange(400), np.arange(200,600), np.arange(400,800), np.arange(600,p))
+        save_file = 'sweep_n_T_p' + str(p) + 'n' + str(n) + 'k' + str(k) + 'l' + str(l)
+        save_file = save_file + '_LeapFrog_nr' + str(rep)
+
+
+    run_test(p,n,Ts,k,l,sub_pops,max_iter_nl=max_iter_nl, save_file = save_file)
+
 
 def run_test(p,n,Ts,k,l,sub_pops,max_iter_nl=1000, save_file = None):
 
