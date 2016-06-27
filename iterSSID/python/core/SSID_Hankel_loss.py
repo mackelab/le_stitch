@@ -438,7 +438,7 @@ def f_l2_Hankel(parsv,k,l,n,Qs,Om):
     Pi = B.dot(B.T)
 
     err = 0.
-    for m in range(1,k+l-1):
+    for m in range(1,k+l):
         APi = np.linalg.matrix_power(A, m).dot(Pi)  
         err += f_l2_block(C,APi,Qs[m],Om)
             
@@ -465,7 +465,7 @@ def g_l2_Hankel(parsv,k,l,n,Qs,idx_grp,co_obs):
         Aexpm[:,:,m] = A.dot(Aexpm[:,:,m-1])
 
     grad_A, grad_B, grad_C = np.zeros((n,n)), np.zeros((n,n)), np.zeros((p,n))
-    for m in range(1,k+l-1):
+    for m in range(1,k+l):
 
         AmPi = Aexpm[:,:,m].dot(Pi)
 
@@ -526,9 +526,6 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     else: 
         raise Exception('cannot handle selected batch size')
 
-
-    # setting up the stitching context
-    is_, js_ = np.where(Om)
     
     # setting up Adam
     t_iter, t, t_zip = 0, 0, 0
@@ -536,7 +533,7 @@ def adam_zip(f,g,theta_0,a,b1,b2,e,max_iter,
     theta, theta_old = theta_0.copy(), np.inf * np.ones(N)
 
     # setting up the stochastic batch selection:
-    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
+    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, Om)
 
     def g_i(theta, use, co, i):
         
@@ -614,9 +611,6 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
     else: 
         raise Exception('cannot handle selected batch size')
 
-
-    # setting up the stitching context
-    is_, js_ = np.where(Om)
     
     # setting up Adam
     t_iter, t, t_zip = 0, 0, 0
@@ -624,7 +618,7 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
     theta, theta_old = theta_0.copy(), np.inf * np.ones(NnA)
 
     # setting up the stochastic batch selection:
-    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
+    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, Om)
 
     def g_i(theta, use, co, i):
         
@@ -708,7 +702,7 @@ def adam_zip_stable(f,g,s,tau,theta_0,a,a_A,b1,b2,e,max_iter,
         
     return theta, (fun,sig)    
 
-def l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_):
+def l2_sis_draw(p, batch_size, idx_grp, co_obs, Om):
     "returns sequence of indices for sets of neuron pairs for SGD"
 
     if batch_size is None:
@@ -721,6 +715,7 @@ def l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_):
             idx_use = np.hstack(idx_grp)[idx_perm]
             return idx_use, idx_co 
     elif batch_size == 1:
+        is_,js_ = np.where(Om)
         def batch_draw():
             idx = np.random.permutation(len(is_))
             return is_[idx], js_[idx]       
@@ -773,7 +768,7 @@ def g_l2_Hankel_sis(parsv,k,l,n,Qs,idx_grp,co_obs):
         Aexpm[:,:,m] = A.dot(Aexpm[:,:,m-1])
 
     grad_A, grad_B, grad_C = np.zeros((n,n)), np.zeros((n,n)), np.zeros((p,n))
-    for m in range(1,k+l-1):
+    for m in range(1,k+l):
 
         AmPi = Aexpm[:,:,m].dot(Pi)            
 
@@ -986,9 +981,10 @@ def run_bad(k,l,n,Qs,
             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1,
             verbose=False, Qs_full=None):
 
-    Qs_full = Qs if Qs_full is None else Qs_full
-
-    p = Qs[0].shape[0]
+    if not Om is None:
+        p = Om.shape[0]
+    else:
+        p = Qs_full[1].shape[0] if Qs_full[0] is None else Qs_full[0].shape[0] 
 
     if isinstance(init, dict):
         assert 'C' in init.keys()
@@ -1029,7 +1025,7 @@ def run_bad(k,l,n,Qs,
                                        max_iter=max_iter,converged=converged,
                                        Om=Om,idx_grp=idx_grp,co_obs=co_obs,
                                        batch_size=batch_size,linearity=linearity,
-                                       Qs=Qs, Qs_full=Qs_full)                 
+                                       Qs_full=Qs_full)                 
 
     return pars_init, pars_est, traces
 
@@ -1045,15 +1041,11 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
         return False        
 
     num_idx_grps = len(idx_grp)
-    co_obs, mat_obs = [], np.zeros((num_idx_grps,num_idx_grps))
+    co_obs = []
     for i in range(num_idx_grps):    
-        for j in range(num_idx_grps):
-            if co_observed(i,j):
-                mat_obs[i,j] = True             
         co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
-    (is_, js_) = np.where(Om)
 
     if linearity == 'True':
         linear_A = True
@@ -1097,7 +1089,7 @@ def f_l2_Hankel_nl(C,X,k,l,n,Qs,Om):
     p,n = C.shape
 
     err = 0.
-    for m in range(1,k+l-1):
+    for m in range(1,k+l):
         err += f_l2_block(C,X[:,m-1].reshape(n,n),Qs[m],Om)
             
     return err/(k*l)
@@ -1109,7 +1101,7 @@ def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
     A,Pi,C = l2_vec_to_system_mats(parsv,p,n)
 
     err = 0.
-    for m in range(1,k+l-1):
+    for m in range(1,k+l):
         APi = np.linalg.matrix_power(A, m).dot(Pi)  
         err += f_l2_block(C,APi,Qs[m],Om)
             
@@ -1119,12 +1111,13 @@ def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
 
 def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                 converged,Om,idx_grp,co_obs,batch_size=None,
-                linearity='False',Qs=None, Qs_full=None):
+                linearity='False',Qs_full=None, 
+                max_zip_size=np.inf):
     
-    if not Qs is None:
-        Qs_full = Qs if Qs_full is None else Qs_full
-        kl_ = np.min((len(Qs),len(Qs_full)))
-        k,l = kl_ - 1, 1
+    if not Qs_full is None: # may provide (ground-truth) true time-lagged
+        kl_ = len(Qs_full)  # covariances for online tracking of fitting
+        k,l = kl_-1, 1      # process over unobserved covariances
+        print('provded Qs_full (ground-truth data) for online tracking of stitching error!')
 
     C = pars_0['C'].copy()
 
@@ -1166,9 +1159,6 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         v_0 = np.zeros((p,n))
     else: 
         raise Exception('cannot handle selected batch size')
-
-    # setting up the stitching context
-    is_, js_ = np.where(Om)
     
     # setting up Adam
     t_iter, t, t_zip = 0, 0, 0
@@ -1176,7 +1166,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
     m, v = np.zeros((p,n)), v_0.copy()
 
     # setting up the stochastic batch selection:
-    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, is_,js_)
+    batch_draw = l2_sis_draw(p, batch_size, idx_grp, co_obs, Om)
 
     def g_sis(C, A, X, Pi, use, co, i):
 
@@ -1202,7 +1192,9 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         elif batch_size == 1:
             zip_size = idx_use.size
         elif batch_size == p:
-            zip_size = len(idx_use)        
+            zip_size = len(idx_use)  
+
+        zip_size = int(np.min((zip_size, max_zip_size)))      
 
         #e_frac = 0.1 
         #Cm = np.zeros((p,n)) 
@@ -1236,9 +1228,10 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                 theta[:n*n] = A.reshape(-1,)
                 theta[n*n:2*n*n] = Pi.reshape(-1,)
                 theta[-p*n:] = C.reshape(-1,)
+                fun[t_iter] = f(theta) 
+            else:
+                fun[t_iter] = f(C,X)
 
-            fun[t_iter] = f(theta) if linearity=='True' else f(C,X)
-        
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter)
             print('f = ', fun[t_iter])
@@ -1260,17 +1253,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
                     H_est = yy_Hankel_cov_mat(C,A,Pi,k,l,Om=~Om,linear=True)
                 else:
                     H_est  = yy_Hankel_cov_mat(C, X,None,k,l,Om=~Om,linear=False) 
-                #print('Om',   np.mean(Om))
-                #print('Qs[0]',   np.mean(np.isfinite(Qs[0])))
-                #print('Qs[1]',   np.mean(np.isfinite(Qs[1])))
-                #print('Qs[2]',   np.mean(np.isfinite(Qs[2])))
-                #print('Qs[-1]',   np.mean(np.isfinite(Qs[-1])))
-                #print('Qs_full[0]',   np.mean(np.isfinite(Qs_full[0])))
-                #print('Qs_full[1]',   np.mean(np.isfinite(Qs_full[1])))
-                #print('Qs_full[2]',   np.mean(np.isfinite(Qs_full[2])))
-                #print('Qs_full[-1]',   np.mean(np.isfinite(Qs_full[-1])))
-                #print('H_true', np.mean(np.isfinite(H_true)))
-                #print('H_est', np.mean(np.isfinite(H_est)))
+
                 corrs[1,ct_iter] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
                         H_est[np.invert(np.isnan(H_est))])[0,1]
                 ct_iter += 1
@@ -1326,7 +1309,7 @@ def g_C_l2_Hankel_bad_sis(C,A,Pi,k,l,Qs,idx_grp,co_obs,linear=True):
     AmPi = Pi.copy() if linear else None
 
     grad_C = np.zeros((p,n))
-    for m in range(1,k+l-1):
+    for m in range(1,k+l):
 
         AmPi = A.dot(AmPi) if linear else A[:,m-1].reshape(n,n)      
 
@@ -1355,19 +1338,29 @@ def s_A_l2_Hankel_bad_sis(C,k,l,Qs,idx_grp,co_obs,
     # sis: subsampled/sparse in space
     
     p,n = C.shape
+
+    if p > 1000:
+        print('starting extraction of A')
     
     M = np.zeros((n**2, n**2))
     c = np.zeros((n**2, k+l-1))
     for i in range(len(idx_grp)):
         a,b = idx_grp[i], co_obs[i]
         M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
-        Mab = np.kron(C[b,:], C[a,:]).T
-        for m_ in range(1,k+l):
-            c[:,m_-1] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) # Mab * vec(Qs[m](a,b)
+
+        if a.size * b.size * n**2 > 10e6: # size of variable Mab (see below)
+            for s in range(b.size):
+                Mab = np.kron(C[b[s],:], C[a,:]).T
+                for m_ in range(1,k+l):
+                    c[:,m_-1] += Mab.dot(Qs[m_][a,b[s]].T.reshape(-1,))
+        else:                             # switch to single row of cov mats (size < p * n^2)
+            Mab = np.kron(C[b,:], C[a,:]).T
+            for m_ in range(1,k+l):
+                c[:,m_-1] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) # Mab * vec(Qs[m](a,b)
     X = np.linalg.solve(M,c)
     for m in range(k+l-1):
         X[:,m] = (X[:,m].reshape(n,n).T).reshape(-1,)
-    A = X
+    A = X # will be overwritten immediately if linear == True
 
 
     if linear:

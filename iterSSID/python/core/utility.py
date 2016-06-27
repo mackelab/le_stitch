@@ -161,7 +161,7 @@ def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
             
     return H
 
-def comp_model_covariances(pars, m, Om=None):
+def comp_model_covariances(pars, m, Om=None, zero_lag = False):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
     p = pars['C'].shape[0]
@@ -169,16 +169,19 @@ def comp_model_covariances(pars, m, Om=None):
     if Om is None:
         Om = np.ones((p,p), dtype=int)
         
-    Qs = []
-    for kl_ in range(m):
+    Qs = [None]
+    if zero_lag and 'R' in pars.keys():
+        Qs[0] = pars['C'].dot( pars['Pi'] ).dot(pars['C'].T) * \
+            np.asarray( Om,dtype=int)
+        Qs[0][range(p),range(p)] += pars['R']
+        Qs[0] = (Qs[0] + Qs[0].T) / 2
+
+    for kl_ in range(1,m):
         Akl = np.linalg.matrix_power(pars['A'], kl_)
         Qs.append(pars['C'].dot(Akl.dot(pars['Pi'])).dot(pars['C'].T) * \
             np.asarray( Om,dtype=int) )
 
-    if 'R' in pars.keys():
-        Qs[0][range(p),range(p)] += pars['R']
 
-    Qs[0] = (Qs[0] + Qs[0].T) / 2
 
     return Qs
 
@@ -233,13 +236,14 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
 
     return { 'A': A, 'B': np.linalg.cholesky(Pi), 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
-def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True):
+def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True,
+            return_masked=True):
 
     Om = np.ones((p,p), dtype=int) if Om is None else Om
     pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
     if calc_stats:
-        Qs = comp_model_covariances(pars_true, k+l, Om)
         Qs_full = comp_model_covariances(pars_true, k+l)
+        Qs = comp_model_covariances(pars_true, k+l, Om) if return_masked else Qs_full
     else:
         Qs, Qs_full = [], []
         for m in range(k+l):
