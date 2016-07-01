@@ -979,7 +979,7 @@ def run_bad(k,l,n,Qs,
             Om,sub_pops,idx_grp,co_obs,obs_idx,
             linearity='False',stable=False,init='SSID',
             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1,
-            verbose=False, Qs_full=None):
+            verbose=False, Qs_full=None, sym_psd=True):
 
     if not Om is None:
         p = Om.shape[0]
@@ -1015,7 +1015,7 @@ def run_bad(k,l,n,Qs,
     f_i, g_C, g_A, g_Pi = l2_bad_sis_setup(k=k,l=l,n=n,Qs=Qs,
                                            Om=Om,idx_grp=idx_grp,obs_idx=obs_idx,
                                            linearity=linearity,stable=stable,
-                                           verbose=verbose)
+                                           verbose=verbose,sym_psd=sym_psd)
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
@@ -1031,7 +1031,7 @@ def run_bad(k,l,n,Qs,
 
 
 def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
-                        verbose=False):
+                        verbose=False, sym_psd=True):
     "returns error function and gradient for use with gradient descent solvers"
 
     def co_observed(x, i):
@@ -1072,7 +1072,7 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
             verbose=verbose)
 
     def g_Pi(X,A,idx_grp,co_obs,Pi=None):
-        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi,verbose=verbose)
+        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi,verbose=verbose, sym_psd=sym_psd)
 
     if linearity == 'True':
         def f(parsv):                        
@@ -1097,7 +1097,11 @@ def f_l2_Hankel_nl(C,X,k,l,n,Qs,Om):
 def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
     "returns overall l2 Hankel reconstruction error"
 
-    p = Qs[0].shape[0]
+    if Om is None:
+        p = Qs[1].shape[0] if Qs[0] is None else Qs[0].shape[0]
+    else:
+        p = Om.shape[0]
+
     A,Pi,C = l2_vec_to_system_mats(parsv,p,n)
 
     err = 0.
@@ -1439,7 +1443,7 @@ def id_A(C,idx_grp,co_obs,A):
 
     return A
 
-def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False):    
+def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False, sym_psd=True):    
 
     # requires solution of semidefinite least-squares problem (no solver known for Python):
     # minimize || [A;A^2;A^3] * Pi - [X1; X2; X3] ||
@@ -1453,7 +1457,12 @@ def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False):
         XT[m*n:(m+1)*n,:] = X[:,m].reshape(n,n)
         As[m*n:(m+1)*n,:] = np.linalg.matrix_power(A,m+1)
         
-    Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=Pi,Y0=None,tol=1e-8,verbose=False)
+    if sym_psd:
+        Pi,_,norm_res,muv,r,fail = SDLS.sdls(A=As,B=XT,X0=Pi,Y0=None,
+                                             tol=1e-8,verbose=False)
+    else:
+        print('ls Pie')
+        Pi = np.linalg.lstsq(a=As,b=XT)[0]
 
     if verbose:
         print('MSE reconstruction for A^m Pi - X_m', np.mean( (As.dot(Pi) - XT)**2 ))

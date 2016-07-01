@@ -234,7 +234,12 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
     C = np.random.normal(size=(p,n))
     R = np.sum(C*C.dot(Pi), axis=1) * (3+2*np.random.uniform(size=[p]))/4
 
-    return { 'A': A, 'B': np.linalg.cholesky(Pi), 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
+    try:
+        B = np.linalg.cholesky(Pi)
+    except:
+        B = np.nan * np.ones((n,n))
+        
+    return { 'A': A, 'B': B, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
 def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True,
             return_masked=True):
