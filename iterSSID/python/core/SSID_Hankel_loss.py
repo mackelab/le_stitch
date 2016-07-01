@@ -415,7 +415,8 @@ def iter_X_m(CdQCdT_obs, C, Cd, p, n, idx_grp, not_co_obs, X_m):
 def run_bad(k,l,n,Qs,
             Om,sub_pops,idx_grp,co_obs,obs_idx,
             linearity='False',stable=False,init='SSID',
-            a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter=100,batch_size=1,
+            a=0.001, b1=0.9, b2=0.99, e=1e-8, 
+            max_iter=100, max_zip_size=np.inf, batch_size=1,
             verbose=False, Qs_full=None, sym_psd=True):
 
     if not Om is None:
@@ -449,7 +450,7 @@ def run_bad(k,l,n,Qs,
              'C'  : np.random.normal(size=(p,n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
 
-    f_i, g_C, g_A, g_Pi = l2_bad_sis_setup(k=k,l=l,n=n,Qs=Qs,
+    f_i, g_C, g_A, g_Pi,track_corrs = l2_bad_sis_setup(k=k,l=l,n=n,Qs=Qs,Qs_full=Qs_full,
                                            Om=Om,idx_grp=idx_grp,obs_idx=obs_idx,
                                            linearity=linearity,stable=stable,
                                            verbose=verbose,sym_psd=sym_psd)
@@ -458,18 +459,24 @@ def run_bad(k,l,n,Qs,
         return True if t >= max_iter else False
     pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_A=g_A,g_Pi=g_Pi,
                                        pars_0=pars_init,
-                                       a=a,b1=b1,b2=b2,e=e,
+                                       a=a,b1=b1,b2=b2,e=e,max_zip_size=max_zip_size,
                                        max_iter=max_iter,converged=converged,
                                        Om=Om,idx_grp=idx_grp,co_obs=co_obs,
                                        batch_size=batch_size,linearity=linearity,
-                                       Qs_full=Qs_full)                 
+                                       track_corrs=track_corrs)                 
 
     return pars_init, pars_est, traces
 
 
-def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
-                        verbose=False, sym_psd=True):
+def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,Qs_full=None, 
+                        linearity='True', stable=False, sym_psd=True, W=None,
+                        verbose=False):
     "returns error function and gradient for use with gradient descent solvers"
+
+    if not Om is None:
+        p = Om.shape[0]
+    else:
+        p = Qs_full[1].shape[0] if Qs_full[0] is None else Qs_full[0].shape[0] 
 
     def co_observed(x, i):
         for idx in obs_idx:
@@ -518,7 +525,10 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,linearity='True',stable=False,
         def f(C,X):
             return f_l2_Hankel_nl(C,X,k,l,n,Qs,Om)*np.sum(Om)*(k*l)
 
-    return f,g_C,g_A,g_Pi
+    def track_corrs(C, A, Pi, X) :
+         return track_correlations(Qs_full, p, n, Om, C, A, Pi, X, linearity=linearity)
+
+    return f,g_C,g_A,g_Pi,track_corrs
 
 def f_l2_Hankel_nl(C,X,k,l,n,Qs,Om):
     "returns overall l2 Hankel reconstruction error"
@@ -550,10 +560,10 @@ def f_l2_Hankel_Pi(parsv,k,l,n,Qs,Om):
     
 
 
-def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
-                converged,Om,idx_grp,co_obs,batch_size=None,
-                linearity='False',Qs_full=None, 
-                max_zip_size=np.inf):
+def adam_zip_bad_stable(f,g_C,g_A,g_Pi,track_corrs,pars_0,
+                a,b1,b2,e,max_iter,
+                converged,batch_size,max_zip_size,
+                Om,idx_grp,co_obs,linearity='False'):
 
     # initialise pars
     C,A,X,Pi = set_adam_init(pars_0, g_A, g_Pi, idx_grp, co_obs, linearity)
@@ -614,12 +624,12 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,pars_0,a,b1,b2,e,max_iter,
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter)
             print('f = ', fun[t_iter])
-            corrs = track_corrs(corrs, ct_iter, Qs_full, p, n, Om, C, A, Pi, X, linearity)
+            corrs[:,ct_iter] = track_corrs(C, A, Pi, X) 
             ct_iter += 1
 
         t_iter += 1
 
-    corrs = track_corrs(corrs, ct_iter, Qs_full, p, n, Om, C, A, Pi, X, linearity)            
+    corrs[:,ct_iter] = track_corrs(C, A, Pi, X)            
 
     print('total iterations: ', t)
 
@@ -851,7 +861,10 @@ def id_Pi(X,A,idx_grp,co_obs,Pi=None):
     return Pi
 
 
-def track_corrs(corrs, ct_iter, Qs_full, p, n, Om, C, A, Pi, X, linearity='False'):
+def track_correlations(Qs_full, p, n, Om, C, A, Pi, X, 
+    linearity='False'):
+
+    corrs = np.zeros(2)
 
     if not Qs_full is None:
         kl_ = len(Qs_full)  # covariances for online tracking of fitting
@@ -863,7 +876,7 @@ def track_corrs(corrs, ct_iter, Qs_full, p, n, Om, C, A, Pi, X, linearity='False
         else:
             H_est  = yy_Hankel_cov_mat(C,X,None,k,l,Om=Om,linear=False)        
 
-        corrs[0,ct_iter]= np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+        corrs[0]= np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
                                           H_est[np.invert(np.isnan(H_est))])[0,1]
 
         H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
@@ -872,8 +885,11 @@ def track_corrs(corrs, ct_iter, Qs_full, p, n, Om, C, A, Pi, X, linearity='False
         else:
             H_est  = yy_Hankel_cov_mat(C, X,None,k,l,Om=~Om,linear=False) 
 
-        corrs[1,ct_iter] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
+        corrs[1] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
                 H_est[np.invert(np.isnan(H_est))])[0,1]
+
+    else:
+        corrs *= np.nan
     return corrs
 
 
