@@ -161,7 +161,7 @@ def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
             
     return H
 
-def comp_model_covariances(pars, m, Om=None, zero_lag = False):
+def comp_model_covariances(pars, m, Om=None, zero_lag = True):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
     p = pars['C'].shape[0]
