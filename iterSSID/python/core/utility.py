@@ -161,35 +161,59 @@ def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
             
     return H
 
-def comp_model_covariances(pars, m, Om=None, zero_lag = True, mmap=False):
+def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksize=None):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
     p = pars['C'].shape[0]
     
+    chunksize = p if chunksize is None else chunksize
+
+    max_i = int(np.floor(p/chunksize))
+    assert np.allclose(max_i * chunksize, p) 
+
     if Om is None:
         Om = np.ones((p,p), dtype=int)
         
     Qs = [None]
     if zero_lag and 'R' in pars.keys():
-        Qs[0] = pars['C'].dot( pars['Pi'] ).dot(pars['C'].T) * \
-            np.asarray( Om,dtype=int)
+
+        if mmap:
+            Qs[0] = np.memmap('../fits/Qs_'+str(0), dtype=np.float, mode='w+', shape=(p,p))            
+        else:
+            Qs[0] = np.empty((p,p))
+
+        for i in range(max_i):
+            idx_i  = range(i*chunksize, (i+1)*chunksize)
+            for j in range(i+1):
+                idx_j = range(j*chunksize, (j+1)*chunksize)
+                Qs[0][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( pars['Pi'] ).dot(pars['C'][idx_j,:].T) * \
+                    np.asarray( Om[np.ix_(idx_i,idx_j)],dtype=int)
+                if j != i:
+                    Qs[0][np.ix_(idx_j,idx_i)] = Qs[0][np.ix_(idx_i,idx_j)].T
+
         Qs[0][range(p),range(p)] += pars['R']
 
-        print('Qs[0].nbytes', Qs[0].nbytes)
-        #Qs[0] = (Qs[0] + Qs[0].T) / 2
-
         if mmap:
-            np.save('../fits/Qs_'+str(0), Qs[0])
-            Qs[0] = np.load('../fits/Qs_'+str(0)+'.npy', mmap_mode='r')
+            del Qs[0]           
+            Qs = [np.memmap('../fits/Qs_'+str(0), dtype=np.float, mode='r', shape=(p,p)) ]
 
     for kl_ in range(1,m):
+        if mmap:
+            Qs.append(np.memmap('../fits/Qs_'+str(kl_), dtype=np.float, mode='w+', shape=(p,p)))
+        else:
+            Qs.append(np.empty((p,p)))
+
         Akl = np.linalg.matrix_power(pars['A'], kl_)
-        Qs.append(pars['C'].dot(Akl.dot(pars['Pi'])).dot(pars['C'].T) * \
-            np.asarray( Om,dtype=int) )
+        for i in range(max_i):
+            idx_i  = range(i*chunksize, (i+1)*chunksize)
+            for j in range(max_i):
+                idx_j = range(j*chunksize, (j+1)*chunksize)
+                Qs[kl_][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( np.linalg.matrix_power(pars['A'],kl_).dot(pars['Pi']) ).dot(pars['C'][idx_j,:].T) * \
+                    np.asarray( Om[np.ix_(idx_i,idx_j)], dtype=int)
 
         if mmap:
-            np.save('../fits/Qs_'+str(kl_), Qs[kl_])
-            Qs[kl_] = np.load('../fits/Qs_'+str(kl_)+'.npy', mmap_mode='r')
+            del Qs[kl_]
+            Qs.append(np.memmap('../fits/Qs_'+str(kl_), dtype=np.float, mode='r', shape=(p,p)))
 
     return Qs
 
@@ -250,13 +274,16 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
     return { 'A': A, 'B': B, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
 def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True,
-            return_masked=True, mmap=False):
+            return_masked=True, mmap=False, chunksize=None):
 
     Om = np.ones((p,p), dtype=int) if Om is None else Om
     pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
     if calc_stats:
-        Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap)
-        Qs = comp_model_covariances(pars_true, k+l, Om, mmap=mmap) if return_masked else Qs_full
+        Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap, chunksize=chunksize)
+        if return_masked:
+            Qs = comp_model_covariances(pars_true, k+l, Om, mmap=mmap, chunksize=chunksize) 
+        else: 
+            Qs = Qs_full
     else:
         Qs, Qs_full = [], []
         for m in range(k+l):
@@ -393,21 +420,25 @@ def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
     for i in range(len(sub_pops)):
         Om[np.ix_(sub_pops[i],sub_pops[i])] = True
 
-    Ovw = np.zeros((p,p), dtype=int)
-    for i in range(len(sub_pops)):
-        Ovw[np.ix_(sub_pops[i],sub_pops[i])] += 1
-    Ovw = np.minimum(np.maximum(Ovw-1, 0),1)
-    Ovw = np.asarray(Ovw, dtype=bool)
+    if p < 10000:
+        Ovw = np.zeros((p,p), dtype=int)
+        for i in range(len(sub_pops)):
+            Ovw[np.ix_(sub_pops[i],sub_pops[i])] += 1
+        Ovw = np.minimum(np.maximum(Ovw-1, 0),1)
+        Ovw = np.asarray(Ovw, dtype=bool)
 
-    Ovc = np.zeros((p,p), dtype=bool)
-    for i in range(len(overlap_grp)):
-        for j in range(len(idx_overlap[i])):
-            Ovc[np.ix_(idx_grp[overlap_grp[i]], \
-                sub_pops[idx_overlap[i][j]])] = True
-            Ovc[np.ix_(sub_pops[idx_overlap[i][j]], \
-                idx_grp[overlap_grp[i]])] = True
-            Ovc[np.ix_(idx_grp[overlap_grp[i]], \
-                idx_grp[overlap_grp[i]])] = False
+        Ovc = np.zeros((p,p), dtype=bool)
+        for i in range(len(overlap_grp)):
+            for j in range(len(idx_overlap[i])):
+                Ovc[np.ix_(idx_grp[overlap_grp[i]], \
+                    sub_pops[idx_overlap[i][j]])] = True
+                Ovc[np.ix_(sub_pops[idx_overlap[i][j]], \
+                    idx_grp[overlap_grp[i]])] = True
+                Ovc[np.ix_(idx_grp[overlap_grp[i]], \
+                    idx_grp[overlap_grp[i]])] = False
+
+    else:
+        Ovw, Ovc = None, None
     
     return Om, Ovw, Ovc
 
