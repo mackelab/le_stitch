@@ -533,8 +533,8 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,Qs_full=None,
             linear=linear_A,linearise_X=linearise_X,stable=stable,A_old=A,
             verbose=verbose)
 
-    def g_R(C,Pi):
-        return s_R_l2_Hankel_bad_sis(C,Pi,Qs[0])
+    def g_R(C,Pi,idx_grp):
+        return s_R_l2_Hankel_bad_sis(C,Pi,Qs[0], idx_grp)
 
     def g_Pi(X,A,idx_grp,co_obs,Pi=None):
         return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi,verbose=verbose, sym_psd=sym_psd)
@@ -620,7 +620,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
             t += 1
 
             # get data point(s) and corresponding gradients: 
-            grad = g_sis(C,X,R,idx_use,idx_co, idx_zip, lag_range)
+            grad, kl_ = g_sis(C,X,R,idx_use,idx_co, idx_zip, lag_range)
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
             if b1 != 1.:                    # delete those eventually 
@@ -632,9 +632,10 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
             else:
                 vh = v
 
+            if kl_ == 0:
+                R[b,b] = g_R(C, X[:,0].reshape(n,n), idx_use)
             C -= a * mh/(np.sqrt(vh) + e)
 
-            R = g_R(C, X[:,0].reshape(n,n))
 
         # updating A: solving linear least squares
         A,X,X1 =  g_A(C,R,idx_grp,co_obs,A)
@@ -703,7 +704,9 @@ def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
             print('getting initial Pi now')
             Pi = g_Pi(X,A,idx_grp,co_obs,None)
             pars_0['A'], pars_0['Pi'] = A.copy(), Pi.copy()
-    R = g_R(C,X[:,0].reshape(n,n))
+    X0 = X[:,0].reshape(n,n)
+    for i in range(p):
+        R[i] = g_R(C,X0,i)
 
     return C,A,X,Pi,R
 
@@ -759,11 +762,23 @@ def g_C_l2_Hankel_bad_sis(C,X,R,k,l,Qs,
                 tmp = C_b.dot(X[:,m].reshape(n,n))      # n-by-1 vector            
                 grad_C[a,:] += ( C_a.dot(tmp.T) - Qs[m].T[ix_ab] ).dot(tmp)
             
-    return grad_C
+    return grad_C, lag_range
 
 def id_C(C, A, Pi, idx_use,idx_co):
 
     return C
+
+
+def s_R_l2_Hankel_bad_sis(C, Pi, cov_y, i):
+
+
+    if cov_y is None:
+        R_bb = np.zeros((1,)) 
+    else: 
+        R_bb = np.maximum(cov_y[i,i] - C[i,:].dot(Pi).dot(C[i,:].T), 0)
+
+    return R_bb
+
 
 def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs, 
                             linear=True, linearise_X=False, stable=False,
@@ -865,12 +880,6 @@ def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
             print('Warning! CG failed to guarantee stable A within iteration max')
 
     return A, X, X1
-
-def s_R_l2_Hankel_bad_sis(C, Pi, cov_y):
-
-    R = np.zeros(C.shape[0]) if cov_y is None else np.maximum(np.diag(cov_y - C.dot(Pi).dot(C.T)), 0)
-
-    return R
 
 def linearise_latent_covs(A, X, Pi=None, X1=None, linearity='True'):
 
