@@ -161,7 +161,7 @@ def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
             
     return H
 
-def comp_model_covariances(pars, m, Om=None, zero_lag = True):
+def comp_model_covariances(pars, m, Om=None, zero_lag = True, mmap=False):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
     p = pars['C'].shape[0]
@@ -174,14 +174,22 @@ def comp_model_covariances(pars, m, Om=None, zero_lag = True):
         Qs[0] = pars['C'].dot( pars['Pi'] ).dot(pars['C'].T) * \
             np.asarray( Om,dtype=int)
         Qs[0][range(p),range(p)] += pars['R']
-        Qs[0] = (Qs[0] + Qs[0].T) / 2
+
+        print('Qs[0].nbytes', Qs[0].nbytes)
+        #Qs[0] = (Qs[0] + Qs[0].T) / 2
+
+        if mmap:
+            np.save('../fits/Qs_'+str(0), Qs[0])
+            Qs[0] = np.load('../fits/Qs_'+str(0)+'.npy', mmap_mode='r')
 
     for kl_ in range(1,m):
         Akl = np.linalg.matrix_power(pars['A'], kl_)
         Qs.append(pars['C'].dot(Akl.dot(pars['Pi'])).dot(pars['C'].T) * \
             np.asarray( Om,dtype=int) )
 
-
+        if mmap:
+            np.save('../fits/Qs_'+str(kl_), Qs[kl_])
+            Qs[kl_] = np.load('../fits/Qs_'+str(kl_)+'.npy', mmap_mode='r')
 
     return Qs
 
@@ -242,13 +250,13 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
     return { 'A': A, 'B': B, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
 def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True,
-            return_masked=True):
+            return_masked=True, mmap=False):
 
     Om = np.ones((p,p), dtype=int) if Om is None else Om
     pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
     if calc_stats:
-        Qs_full = comp_model_covariances(pars_true, k+l)
-        Qs = comp_model_covariances(pars_true, k+l, Om) if return_masked else Qs_full
+        Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap)
+        Qs = comp_model_covariances(pars_true, k+l, Om, mmap=mmap) if return_masked else Qs_full
     else:
         Qs, Qs_full = [], []
         for m in range(k+l):
