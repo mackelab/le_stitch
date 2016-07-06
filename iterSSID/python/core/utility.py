@@ -168,7 +168,7 @@ def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksiz
     
     chunksize = p if chunksize is None else chunksize
 
-    max_i = int(np.floor(p/chunksize))
+    max_i = p//chunksize
     assert np.allclose(max_i * chunksize, p) 
 
     if Om is None:
@@ -291,6 +291,46 @@ def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=Tru
             Qs_full.append(None)
 
     return pars_true, Qs, Qs_full
+
+
+def gen_data(pars,T, mmap=False, chunksize = None):
+    "cythonise me!"
+
+    p,n = pars['C'].shape
+    chunksize = p if chunksize is None else chunksize
+    max_i = p//chunksize
+
+    # start with noise terms
+    L = np.linalg.cholesky(pars['Q'])
+    x = np.random.normal(size=(n,T))
+    x = L.dot(x)
+
+    # step thourhg latent dynamics
+    x[:,0]  = pars['mu0'].copy() 
+    x[:,0] += np.linalg.cholesky(pars['V0']).dot(np.random.normal(size=n))
+    for t in range(1,T):
+        x[:,t] += pars['A'].dot(x[:,t-1])
+
+    # do emissions
+    L = np.sqrt(pars['R'])
+    if mmap:
+        y = np.memmap('../fits/y', dtype=np.float, mode='w+', shape=(p,T))
+    else:
+        y = np.random.normal(size=(p,T))
+    for i in range(max_i):
+        idx_i  = range(i*chunksize, (i+1)*chunksize)
+        y[idx_i,:]  = np.atleast_2d(L[idx_i]).T * y[idx_i,:]
+        y[idx_i,:] += pars['C'][idx_i,:].dot(x)
+    idx_i = range((max_i+1)*chunksize, p)        
+    y[idx_i,:]  = np.atleast_2d(L[idx_i]).T * y[idx_i,:] + pars['C'][idx_i,:].dot(x)
+
+
+    if mmap:
+        del y # releases RAM, forces flush to disk
+        y = np.memmap('../fits/y', dtype=np.float, mode='r', shape=(p,T))
+
+    return x, y
+
 
 ###########################################################################
 # Utility (stitching-specific)

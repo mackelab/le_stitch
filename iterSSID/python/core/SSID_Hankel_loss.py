@@ -597,6 +597,11 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
     t_iter, t, t_zip = 0, 0, 0
     ct_iter, corrs  = 0, np.zeros((2, 11))
     m, v = np.zeros((p,n)), v_0.copy()
+    def zip_range(zip_size):
+        if p > 1000:
+            return progprint_xrange(zip_size, perline=100)
+        else:
+            return range(zip_size)
 
     # setting up the stochastic batch selection:
     batch_draw, g_sis = l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, Om)
@@ -611,7 +616,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
         C_old = C.copy()
         idx_use, idx_co = batch_draw()        
         zip_size = get_zip_size(batch_size, p, idx_use, max_zip_size)
-        for idx_zip in progprint_xrange(zip_size, perline=100):
+        for idx_zip in zip_range(zip_size):
             t += 1
 
             # get data point(s) and corresponding gradients: 
