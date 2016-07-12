@@ -464,6 +464,8 @@ def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
             print('getting initial Pi now')
             Pi = g_Pi(X,A,idx_grp,co_obs,None)
             pars_0['A'], pars_0['Pi'] = A.copy(), Pi.copy()
+
+    R = np.zeros(p)
     #X0 = X[:,0].reshape(n,n)
     #R = g_R(R,C,X0,idx_grp, co_obs)
 
@@ -505,7 +507,6 @@ def g_C_l2_Hankel_bad_sis(C,X,R,k,l,Qs,
         for m in lag_range:
 
             if m==0 and not Qs[0] is None:
-                print('gradients w.r.t. C using R!')
                 idx_R = np.where(np.in1d(a,b))[0]
                 tmp  = X[:,0].reshape(n,n).dot(C_b.T)       # n-by-1 vector
                 tmpQ = C_a.dot(tmp) - Qs[0][ix_ab]          # p-by-1 vector (at most)
@@ -533,7 +534,7 @@ def id_C(C, A, Pi, a, b):
 def s_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
 
     if not cov_y is None:
-        R[a,a] = np.maximum(cov_y[a,a] - C[a,:].dot(Pi).dot(C[a,:].T), 0)
+        R[a] = np.maximum(cov_y[a,a] - C[a,:].dot(Pi).dot(C[a,:].T), 0)
 
     return R
 
@@ -564,36 +565,8 @@ def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
     if p > 1000:
         print('starting extraction of A')
     
-    M = np.zeros((n**2, n**2))
-    c = np.zeros((n**2, k+l))
-    for i in range(len(idx_grp)):
-        a,b = idx_grp[i], co_obs[i]
-        if not Qs[0] is None:
-            idx_R = np.where(np.in1d(a,b))[0]
+    X = s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs)
 
-        M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
-
-        if a.size * b.size * n**2 > 10e6: # size of variable Mab (see below)
-            for s in range(b.size):
-                Mab = np.kron(C[b[s],:], C[a,:]).T
-                if not Qs[0] is None:
-                    tmpQ = Qs[0][a,b[s]].copy()
-                    tmpQ[idx_R[s]] -= R[b[s]]
-                    c[:,0] += Mab.dot(tmpQ)
-                for m_ in range(1,k+l):
-                    c[:,m_] += Mab.dot(Qs[m_][a,b[s]])
-        else:                             # switch to single row of cov mats (size < p * n^2)
-            Mab = np.kron(C[b,:], C[a,:]).T
-            if not Qs[0] is None:
-                tmpQ = Qs[0][np.ix_(a,b)].copy()
-                tmpQ[idx_R, np.arange(b.size)] -= R[b]
-                c[:,0] += Mab.dot(tmpQ.T.reshape(-1,))
-            for m_ in range(1,k+l):
-                c[:,m_] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) # Mab * vec(Qs[m](a,b)
-
-    X = np.linalg.solve(M,c)
-    for m in range(k+l):
-        X[:,m] = (X[:,m].reshape(n,n).T).reshape(-1,)
     A, X1 = A_old, None
 
 
@@ -652,6 +625,64 @@ def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
             print('Warning! CG failed to guarantee stable A within iteration max')
 
     return A, X, X1
+
+
+def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
+    "solves min || C X C.T - Q || for X, using a naive approach based on vectorisation."
+
+    p,n = C.shape
+
+    M = np.zeros((n**2, n**2))
+    c = np.zeros((n**2, k+l))
+    for i in range(len(idx_grp)):
+        a,b = idx_grp[i], co_obs[i]
+        if not Qs[0] is None:
+            idx_R = np.where(np.in1d(a,b))[0]
+
+        M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
+
+        if a.size * b.size * n**2 > 10e6: # size of variable Mab (see below)
+            for s in range(b.size):
+                Mab = np.kron(C[b[s],:], C[a,:]).T
+                if not Qs[0] is None:
+                    tmpQ = Qs[0][a,b[s]].copy()
+                    tmpQ[idx_R[s]] -= R[b[s]]
+                    c[:,0] += Mab.dot(tmpQ)
+                for m_ in range(1,k+l):
+                    c[:,m_] += Mab.dot(Qs[m_][a,b[s]])
+        else:                             # switch to single row of cov mats (size < p * n^2)
+            Mab = np.kron(C[b,:], C[a,:]).T
+            if not Qs[0] is None:
+                tmpQ = Qs[0][np.ix_(a,b)].copy()
+                tmpQ[idx_R, np.arange(b.size)] -= R[b]
+                c[:,0] += Mab.dot(tmpQ.T.reshape(-1,))
+            for m_ in range(1,k+l):
+                c[:,m_] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) # Mab * vec(Qs[m](a,b)
+
+    X = np.linalg.solve(M,c)
+    for m in range(k+l):
+        X[:,m] = (X[:,m].reshape(n,n).T).reshape(-1,)
+
+    return X
+
+
+def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs):
+    "solves min || C X C.T - Q || for X, using a naive approach based on vectorisation."
+
+    assert len(idx_grp) == 1
+
+    p,n = C.shape
+
+    Cd = np.linalg.pinv(C)
+
+    X = np.zeros((n**2, k+l))
+    if not Qs[0] is None:
+        X[:,0] = (Cd.dot(Qs[0]).dot(Cd.T)).reshape(-1,)
+    for m_ in range(1,k+l):
+        X[:,m_] = (Cd.dot(Qs[m_]).dot(Cd.T)).reshape(-1,)
+
+    return X
+
 
 def linearise_latent_covs(A, X, Pi=None, X1=None, linearity='True'):
 
