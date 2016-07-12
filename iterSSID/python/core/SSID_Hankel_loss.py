@@ -666,20 +666,34 @@ def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
     return X
 
 
-def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs):
+def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs, max_i=None, chunksize=5000):
     "solves min || C X C.T - Q || for X, using a naive approach based on vectorisation."
 
     assert len(idx_grp) == 1
 
     p,n = C.shape
-
     Cd = np.linalg.pinv(C)
+
+    if max_i is None:
+        max_i = p//chunksize
+        assert np.allclose(max_i * chunksize, p) 
 
     X = np.zeros((n**2, k+l))
     if not Qs[0] is None:
-        X[:,0] = (Cd.dot(Qs[0]).dot(Cd.T)).reshape(-1,)
+        for i in range(max_i):
+            idx_i  = range(i*chunksize, (i+1)*chunksize)
+            for j in range(max_i):
+                idx_j = range(j*chunksize, (j+1)*chunksize)
+                X[:,0] += (Cd[:,idx_i].dot(Qs[0][np.ix_(idx_i,idx_j)]).dot(Cd[:,idx_j].T)).reshape(-1,)
+
     for m_ in range(1,k+l):
-        X[:,m_] = (Cd.dot(Qs[m_]).dot(Cd.T)).reshape(-1,)
+        if p > 1000:
+            print('extracting latent cov. matrix for time-lag m=', m)
+        for i in range(max_i):
+            idx_i  = range(i*chunksize, (i+1)*chunksize)
+            for j in range(max_i):
+                idx_j = range(j*chunksize, (j+1)*chunksize)
+                    X[:,m_] += (Cd[:,idx_i].dot(Qs[m_][np.ix_(idx_i,idx_j)]).dot(Cd[:,idx_j].T)).reshape(-1,)
 
     return X
 
