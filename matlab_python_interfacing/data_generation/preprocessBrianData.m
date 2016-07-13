@@ -24,7 +24,7 @@ load(['/home/mackelab/Desktop/Projects/Stitching/data/clustered_networks/raw_spi
 % important broke in the process.
 
 T  = 2000000; % length of simulation, has to be verified
-dt = 20;     % 
+dt = 30;     % 
 
 disp('CHECK THIS TIME AND TIME AGAIN:')
 fprintf('total simulation length in milliseconds is %d \n',T)
@@ -52,7 +52,7 @@ for i = 1:N
     fr(i) = length(st{i})/T*1000;
 end
 
-frthrs = 0.5;
+frthrs = 0.0;
 fprintf('we sort out all cells with firing rate < %d Hz \n', frthrs)
 idxBad_e = fr(1:Ne)<frthrs;   nbe = sum(idxBad_e);
 idxBad_i = fr(Ne+1:N)<frthrs; nbi = sum(idxBad_i);
@@ -91,7 +91,7 @@ disp('creating dense spiking array of dim #cells-by-#bins')
 disp(['Note: the representation as lists of spike times just cries out',...
       ' for sparse matrix representation, but we will need to convolve'])
 X = zeros(N, ceil(T/dt));
-x = (0:dt:T)/1000;
+x = (0:dt:ceil(T/dt)*dt)/1000;
 for i = 1:N
     tmp = histc(st{i}, x);              % a slightly annoying property of 
     tmp(end-1) = tmp(end-1) + tmp(end); % histc is the last bin thingy
@@ -168,7 +168,7 @@ set(gca, 'TickDir', 'out')
 axis([x(1)-width*(x(2)-x(1))/2, x(end)+(x(2)-x(1))*width/2, 0, 1.1*max(h)])
 
 subplot(2,3,3)
-covx = cov(X(1:Ne,:)');
+covx = cov(X(1:N,:)');
 imagesc(covx)
 colormap('gray')
 title('full covariance (exc. & inh.)')
