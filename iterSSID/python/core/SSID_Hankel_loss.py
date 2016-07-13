@@ -173,7 +173,7 @@ def run_bad(k,l,n,Qs,
              'R'  : np.ones(p)} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
 
-    f_i, g_C, g_A, g_Pi, g_R, track_corrs = l2_bad_sis_setup(k=k,l=l,n=n,
+    f_i, g_C, g_A, g_Pi, g_R, s_R, track_corrs = l2_bad_sis_setup(k=k,l=l,n=n,
                                            Qs=Qs,Qs_full=Qs_full,
                                            Om=Om,idx_grp=idx_grp,obs_idx=obs_idx,
                                            linearity=linearity,stable=stable,
@@ -182,7 +182,7 @@ def run_bad(k,l,n,Qs,
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
-    pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_A=g_A,g_Pi=g_Pi,g_R=g_R,
+    pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_A=g_A,g_Pi=g_Pi,g_R=g_R,s_R=s_R,
                                        pars_0=pars_init,linearity=linearity,
                                        alpha=alpha,b1=b1,b2=b2,e=e,max_zip_size=max_zip_size,
                                        max_iter=max_iter,converged=converged,
@@ -250,42 +250,38 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,Qs_full=None,
         def g_R(R, C, Pi, a, b=None):
             return s_R_l2_Hankel_bad_sis(R,C,Pi,Qs[0], a)
 
+    def s_R(R,C,Pi):
+        return s_R_l2_Hankel_bad_sis_block(R,C,Pi,Qs[0], idx_grp, co_obs)
+
     def g_Pi(X,A,idx_grp,co_obs,Pi=None):
         return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi,verbose=verbose, sym_psd=sym_psd)
 
     if linearity == 'True':
-        def f(parsv):                        
-            return f_l2_Hankel_Pi(parsv,k,l,n,Qs,idx_grp,co_obs)
+        def f(C,A,Pi,R):                        
+            return f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs)
     else:
         def f(C,X,R):
-            return f_l2_Hankel_nl(C,X,R,k,l,n,Qs,idx_grp,co_obs)
+            return f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs)
 
     def track_corrs(C, A, Pi, X) :
          return track_correlations(Qs_full, p, n, Om, C, A, Pi, X, linearity=linearity)
 
-    return f,g_C,g_A,g_Pi,g_R,track_corrs
+    return f,g_C,g_A,g_Pi,g_R,s_R,track_corrs
 
-def f_l2_Hankel_nl(C,X,R,k,l,n,Qs,idx_grp,co_obs):
+def f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs):
     "returns overall l2 Hankel reconstruction error"
 
     p,n = C.shape
-
     err = f_l2_inst(C,X[:,0].reshape(n,n),R,Qs[0],idx_grp,co_obs)
     for m in range(1,k+l):
         err += f_l2_block(C,X[:,m].reshape(n,n),Qs[m],idx_grp,co_obs)
             
     return err/(k*l)
 
-def f_l2_Hankel_Pi(parsv,k,l,n,Qs,idx_grp,co_obs):
+def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs):
     "returns overall l2 Hankel reconstruction error"
 
-    if Om is None:
-        p = Qs[1].shape[0] if Qs[0] is None else Qs[0].shape[0]
-    else:
-        p = Om.shape[0]
-
-    A,Pi,C = l2_vec_to_system_mats(parsv,p,n)
-
+    p,n = C.shape    
     err = f_l2_inst(C,Pi,R,Qs[0],idx_grp,co_obs)
     for m in range(1,k+l):
         APi = np.linalg.matrix_power(A, m).dot(Pi)  
@@ -325,7 +321,7 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs):
         return v.dot(v)/(2*a.size*b.size)
     return err
 
-def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
+def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
                 alpha,b1,b2,e,max_iter,
                 converged,batch_size,lag_range,max_zip_size,
                 Om,idx_grp,co_obs,linearity='False'):
@@ -403,11 +399,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
 
         if t_iter < max_iter:          # outcomment this eventually - really expensive!
             if linearity=='True':
-                theta = np.zeros( (p + 2*n)*n )
-                theta[:n*n] = A.reshape(-1,)
-                theta[n*n:2*n*n] = Pi.reshape(-1,)
-                theta[-p*n:] = C.reshape(-1,)
-                fun[t_iter] = f(theta) 
+                fun[t_iter] = f(C,A,Pi,R) 
             else:
                 fun[t_iter] = f(C,X,R)
 
@@ -418,6 +410,9 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,track_corrs,pars_0,
             ct_iter += 1
 
         t_iter += 1
+
+    # finally: one more round over R (we before only updated R_ii just-in-time)
+    R = s_R(R, C, X[:,0].reshape(n,n))     
 
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X)            
 
@@ -458,7 +453,7 @@ def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
     Pi =  None
     if linearity=='True':
         if 'A' in pars_0.keys() and not pars_0['A'] is None:
-            A,X,Pi = pars_0['A'].copy(), None, pars_0['Pi'].copy()
+            A,Pi = pars_0['A'].copy(), pars_0['Pi'].copy()
         else: 
             print('getting initial Pi now')
             Pi = g_Pi(X,A,idx_grp,co_obs,None)
@@ -989,7 +984,7 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
 
 
 def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
-                                       Qs_full, Om, Ovc, Ovw, f_i, g_i, traces=None,
+                                       Qs_full, Om, traces=None,
                                        linearity = 'True', idx_grp = None, co_obs = None, 
                                        if_flip = False, m = 1):
 
@@ -1000,16 +995,18 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         return p * max((k,l)) <= thresh
 
     pars_init = set_none_mats(pars_init, p, n)
-    f_l2_Hankel_lin =  f_l2_Hankel_Pi
 
-    if linearity=='False': 
-        X = s_A_l2_Hankel_bad_sis(pars_est['C'],pars_est['R'], 
-            k,l,Qs,idx_grp,co_obs, linear=False)[1]
-    elif linearity == 'first_order':
-        X = s_A_l2_Hankel_bad_sis(pars_est['C'],pars_est['R'], 
-            k,l,Qs,idx_grp,co_obs, linear=False, linearise_X=True)[1]
+    if linearity == 'True':
+        def f(C,A,Pi,R):                        
+            return f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs)
+        print('final squared error on observed parts:', 
+            f(pars_est['C'],pars_est['A'],pars_est['Pi'],pars_est['R'])) 
+    else:
+        def f(C,X,R):
+            return f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs)
+        print('final squared error on observed parts:', 
+            f(pars_est['C'],pars_est['X'],pars_est['R'])) 
 
-    print('final squared error on observed parts:', f_i(pars_est['C'],X,pars_est['R'])) 
     H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=None)
     H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
 
@@ -1147,6 +1144,9 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
     else:
         plt.subplot(1,3,3)
         plt.plot(H_true.reshape(-1,), H_est.reshape(-1,), 'k.')
+        if m == 0:
+            plt.hold(True)
+            plt.plot(np.diag(H_true), np.diag(H_est), 'r.')
         plt.title('true vs. reconstr. un-observed Hankel entries')
         plt.xlabel('H_kl true')
         plt.ylabel('H_kl rec.')
