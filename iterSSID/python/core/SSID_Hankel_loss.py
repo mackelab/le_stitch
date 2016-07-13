@@ -116,7 +116,6 @@ def l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
                        lag_range)
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
-
     return batch_draw, g_sis_C, g_sis_R
 
     
@@ -246,7 +245,7 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,Qs_full=None,
 
     if batch_size == None:
         def g_R(R, C, Pi, a, b):
-            return s_R_l2_Hankel_bad_sis_block(R, C,Pi,Qs[0], a, b)
+            return s_R_l2_Hankel_bad_sis_block(R,C,Pi,Qs[0], a, b)
     else:
         def g_R(R, C, Pi, a, b=None):
             return s_R_l2_Hankel_bad_sis(R,C,Pi,Qs[0], a)
@@ -465,7 +464,7 @@ def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
             Pi = g_Pi(X,A,idx_grp,co_obs,None)
             pars_0['A'], pars_0['Pi'] = A.copy(), Pi.copy()
 
-    R = np.zeros(p)
+    R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
     #X0 = X[:,0].reshape(n,n)
     #R = g_R(R,C,X0,idx_grp, co_obs)
 
@@ -530,6 +529,35 @@ def id_C(C, A, Pi, a, b):
 
     return C
 
+def g_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
+
+    p,n = C.shape
+
+    g = np.zeros(p)
+    if not cov_y is None:
+        g[a] = R[a] + C[a,:].dot(Pi.dot(C[a,:].T)) - cov_y[a, a]
+
+    R -= 0.01 * g
+
+    return R
+
+def g_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
+
+    p,n = C.shape
+    g = np.zeros(p)
+
+    if not cov_y is None:
+        for i in range(len(idx_grp)):
+            a,b = idx_grp[i], co_obs[i]
+            ab = np.intersect1d(a,b)
+
+            PiC = Pi.dot(C[ab,:].T)
+            for s in range(ab.size):
+                g[ab[s]] = R[ab[s]] + C[ab[s],:].dot(PiC[:,s]) - cov_y[ab[s], ab[s]]
+    R -= 0.01 * g
+
+    return R
+
 
 def s_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
 
@@ -545,10 +573,10 @@ def s_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
             a,b = idx_grp[i], co_obs[i]
             ab = np.intersect1d(a,b)
 
-            PiC = Pi.dot(C[b,:].T)
+            PiC = Pi.dot(C[ab,:].T)
             for s in range(ab.size):
-                R[ab[s]] = C[a[s],:].dot(PiC[:,s])
-            R[ab] = np.maximum(cov_y[ab,ab] - R[ab], 0)
+                R[ab[s]] = cov_y[ab[s], ab[s]] - C[ab[s],:].dot(PiC[:,s])
+            R[ab] = np.maximum(R[ab], 0)
 
     return R
 
@@ -681,11 +709,15 @@ def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs, max_i=None, chunksi
 
     X = np.zeros((n**2, k+l))
     if not Qs[0] is None:
+        range_chunksize = range(chunksize)
         for i in range(max_i):
             idx_i  = range(i*chunksize, (i+1)*chunksize)
             for j in range(max_i):
                 idx_j = range(j*chunksize, (j+1)*chunksize)
-                X[:,0] += (Cd[:,idx_i].dot(Qs[0][np.ix_(idx_i,idx_j)]).dot(Cd[:,idx_j].T)).reshape(-1,)
+                tmpQ = Qs[0][np.ix_(idx_i,idx_j)].copy()
+                if i == j: 
+                    tmpQ[range_chunksize, range_chunksize] -= R[idx_i]
+                X[:,0] += (Cd[:,idx_i].dot(tmpQ).dot(Cd[:,idx_j].T)).reshape(-1,)
 
     for m_ in range(1,k+l):
         if p > 1000:
