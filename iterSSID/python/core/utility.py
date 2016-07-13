@@ -161,7 +161,7 @@ def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
             
     return H
 
-def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksize=None):
+def comp_model_covariances(pars, m, zero_lag=True, mmap=False, chunksize=None):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
     p = pars['C'].shape[0]
@@ -170,15 +170,13 @@ def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksiz
 
     max_i = p//chunksize
     assert np.allclose(max_i * chunksize, p) 
-
-    if Om is None:
-        Om = np.ones((p,p), dtype=int)
         
     Qs = [None]
     if zero_lag and 'R' in pars.keys():
 
         if mmap:
-            Qs[0] = np.memmap('../fits/Qs_'+str(0), dtype=np.float, mode='w+', shape=(p,p))            
+            Qs[0] = np.memmap('../fits/Qs_'+str(0), dtype=np.float, mode='w+', shape=(p,p))      
+            print('computing time-lagged covariance for lag m = 0')      
         else:
             Qs[0] = np.empty((p,p))
 
@@ -186,10 +184,13 @@ def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksiz
             idx_i  = range(i*chunksize, (i+1)*chunksize)
             for j in range(i+1):
                 idx_j = range(j*chunksize, (j+1)*chunksize)
-                Qs[0][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( pars['Pi'] ).dot(pars['C'][idx_j,:].T) * \
-                    np.asarray( Om[np.ix_(idx_i,idx_j)],dtype=int)
+                Qs[0][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( pars['Pi'] ).dot(pars['C'][idx_j,:].T)
                 if j != i:
                     Qs[0][np.ix_(idx_j,idx_i)] = Qs[0][np.ix_(idx_i,idx_j)].T
+                if mmap:
+                    del Qs[0]           
+                    Qs = [np.memmap('../fits/Qs_'+str(0), dtype=np.float, mode='r+', shape=(p,p)) ]
+
 
         Qs[0][range(p),range(p)] += pars['R']
 
@@ -200,6 +201,7 @@ def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksiz
     for kl_ in range(1,m):
         if mmap:
             Qs.append(np.memmap('../fits/Qs_'+str(kl_), dtype=np.float, mode='w+', shape=(p,p)))
+            print('computing time-lagged covariance for lag m =', str(kl_))      
         else:
             Qs.append(np.empty((p,p)))
 
@@ -208,12 +210,14 @@ def comp_model_covariances(pars, m, Om=None, zero_lag=True, mmap=False, chunksiz
             idx_i  = range(i*chunksize, (i+1)*chunksize)
             for j in range(max_i):
                 idx_j = range(j*chunksize, (j+1)*chunksize)
-                Qs[kl_][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( np.linalg.matrix_power(pars['A'],kl_).dot(pars['Pi']) ).dot(pars['C'][idx_j,:].T) * \
-                    np.asarray( Om[np.ix_(idx_i,idx_j)], dtype=int)
-
+                Qs[kl_][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( np.linalg.matrix_power(pars['A'],kl_).dot(pars['Pi']) ).dot(pars['C'][idx_j,:].T) 
+                if mmap:
+                    del Qs[kl_]
+                    Qs.append(np.memmap('../fits/Qs_'+str(kl_), dtype=np.float, mode='r+', shape=(p,p)))
         if mmap:
             del Qs[kl_]
             Qs.append(np.memmap('../fits/Qs_'+str(kl_), dtype=np.float, mode='r', shape=(p,p)))
+
 
     return Qs
 
@@ -273,15 +277,14 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
         
     return { 'A': A, 'B': B, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
-def draw_sys(p,n,k,l, Om=None, nr=None, ev_r = None, ev_c = None, calc_stats=True,
+def draw_sys(p,n,k,l, nr=None, ev_r = None, ev_c = None, calc_stats=True,
             return_masked=True, mmap=False, chunksize=None):
 
-    Om = np.ones((p,p), dtype=int) if Om is None else Om
     pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
     if calc_stats:
         Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap, chunksize=chunksize)
         if return_masked:
-            Qs = comp_model_covariances(pars_true, k+l, Om, mmap=mmap, chunksize=chunksize) 
+            Qs = comp_model_covariances(pars_true, k+l, mmap=mmap, chunksize=chunksize) 
         else: 
             Qs = Qs_full
     else:

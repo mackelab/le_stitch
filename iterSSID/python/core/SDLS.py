@@ -147,7 +147,7 @@ def max_step(X,dX):
     if np.isfinite(x) and not np.allclose(x, np.real(x)):
         print('\n Warning: max_step returns complex argument')
         print('max_step: ', x)
-        print('real(max_step): ', np.real(x))
+        print('abs(max_step): ', np.abs(x))
         
-    x = np.real(x)
+    x = np.abs(x)
     return 1/x if x > 0 else np.inf
