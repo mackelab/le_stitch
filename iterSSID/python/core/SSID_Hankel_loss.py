@@ -79,6 +79,7 @@ def yy_Hankel_cov_mat_Qs(Qs,idx,k,l,n,Om=None):
             
     return H    
 
+
 def l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
     "returns sequence of indices for sets of neuron pairs for SGD"
 
@@ -118,6 +119,22 @@ def l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
             return g_R(R, C, X0, a[i], None)
     return batch_draw, g_sis_C, g_sis_R
 
+
+# large-scale problems may require solutions to be computed in smaller chunks
+
+def chunking_blocks(f, a, b, max_size):
+
+    out = 0.
+    size_a, size_b = a.size, b.size
+    max_i, max_j = int(np.ceil(size_a/max_size)), int(np.ceil(size_b/max_size))
+
+    for i in range(max_i):
+        idx_i = range(i*max_size, np.minimum((i+1)*max_size, size_a)) 
+        for j in range(max_j):
+            idx_j = range(j*max_size, np.minimum((j+1)*max_size, size_a))
+            out += f(idx_i, idx_j, i, j)
+            
+    return out
     
 
 ###########################################################################
@@ -267,59 +284,6 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,Qs_full=None,
          return track_correlations(Qs_full, p, n, Om, C, A, Pi, X, linearity=linearity)
 
     return f,g_C,g_A,g_Pi,g_R,s_R,track_corrs
-
-def f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs):
-    "returns overall l2 Hankel reconstruction error"
-
-    p,n = C.shape
-    err = f_l2_inst(C,X[:,0].reshape(n,n),R,Qs[0],idx_grp,co_obs)
-    for m in range(1,k+l):
-        err += f_l2_block(C,X[:,m].reshape(n,n),Qs[m],idx_grp,co_obs)
-            
-    return err/(k*l)
-
-def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs):
-    "returns overall l2 Hankel reconstruction error"
-
-    p,n = C.shape    
-    err = f_l2_inst(C,Pi,R,Qs[0],idx_grp,co_obs)
-    for m in range(1,k+l):
-        APi = np.linalg.matrix_power(A, m).dot(Pi)  
-        err += f_l2_block(C,APi,Qs[m],idx_grp,co_obs)
-            
-    return err/(k*l)    
-    
-def f_l2_block(C,AmPi,Q,idx_grp,co_obs):
-    "Hankel reconstruction error on an individual Hankel block"
-
-    err = 0.
-    for i in range(len(idx_grp)):
-
-        a,b = idx_grp[i],co_obs[i]
-        C_a, C_b  = C[a,:], C[b,:]
-        v = (C_a.dot(AmPi).dot(C_b.T) - Q[np.ix_(a,b)]).reshape(-1,)
-        err += v.dot(v)/(2*a.size*b.size)
-
-    return err
-
-def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs):
-    "reconstruction error on the instantaneous covariance"
-
-    err = 0.
-    if not Q is None:
-        for i in range(len(idx_grp)):
-
-            a,b = idx_grp[i],co_obs[i]
-            C_a, C_b  = C[a,:], C[b,:]
-            idx_R = np.where(np.in1d(a,b))[0]
-
-            v = C_a.dot(Pi).dot(C_b.T) - Q[np.ix_(a,b)]
-            v[idx_R, np.arange(idx_R.size)] += R[b]
-            v = v.reshape(-1,)
-            err += v.dot(v)/(2*a.size*b.size)
-
-        return v.dot(v)/(2*a.size*b.size)
-    return err
 
 def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
                 alpha,b1,b2,e,max_iter,
@@ -476,6 +440,72 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
     return int(np.min((zip_size, max_zip_size)))      
 
 
+# evaluation of target loss function
+
+def f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs):
+    "returns overall l2 Hankel reconstruction error"
+
+    p,n = C.shape
+    err = f_l2_inst(C,X[:,0].reshape(n,n),R,Qs[0],idx_grp,co_obs)
+    for m in range(1,k+l):
+        err += f_l2_block(C,X[:,m].reshape(n,n),Qs[m],idx_grp,co_obs)
+            
+    return err/(k*l)
+
+def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs):
+    "returns overall l2 Hankel reconstruction error"
+
+    err = f_l2_inst(C,Pi,R,Qs[0],idx_grp,co_obs)
+    for m in range(1,k+l):
+        APi = np.linalg.matrix_power(A, m).dot(Pi)  
+        err += f_l2_block(C,APi,Qs[m],idx_grp,co_obs)
+            
+    return err/(k*l)    
+    
+def f_l2_block(C,AmPi,Q,idx_grp,co_obs):
+    "Hankel reconstruction error on an individual Hankel block"
+
+    err = 0.
+    for i in range(len(idx_grp)):
+        err_ab = 0.
+        a,b = idx_grp[i],co_obs[i]
+        C_a, C_b  = C[a,:], C[b,:]
+
+        def f(idx_i, idx_j, i=None, j=None):
+            v = (C_a[idx_i,:].dot(AmPi).dot(C_b[idx_j,:].T) - \
+                 Q[np.ix_(a[idx_i],b[idx_j])]).reshape(-1,)
+            return v.dot(v)
+
+        err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
+
+    return err
+
+def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs):
+    "reconstruction error on the instantaneous covariance"
+
+    err = 0.
+    if not Q is None:
+        for i in range(len(idx_grp)):
+
+            a,b = idx_grp[i],co_obs[i]
+            C_a, C_b  = C[a,:], C[b,:]
+
+            def f(idx_i, idx_j, i, j):
+                v = (C_a[idx_i,:].dot(Pi).dot(C_b[idx_j,:].T) - \
+                     Q[np.ix_(a[idx_i],b[idx_j])])
+                if i == j:
+                    idx_R = np.where(np.in1d(a[idx_i],b[idx_j]))[0]
+                    v[idx_R, np.arange(idx_R.size)] += R[a[idx_j][idx_R]]
+                v = v.reshape(-1,)
+                return v.dot(v)
+
+            err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
+
+    return err
+
+
+# gradients (g_*) & solvers (s_*) for model parameters
+
 def g_C_l2_Hankel_bad_sis(C,X,R,k,l,Qs,
                             idx_grp,co_obs,lag_range=None,
                             linear=True, W=None):
@@ -524,6 +554,8 @@ def id_C(C, A, Pi, a, b):
 
     return C
 
+
+
 def g_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
 
     p,n = C.shape
@@ -553,7 +585,6 @@ def g_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
 
     return R
 
-
 def s_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
 
     if not cov_y is None:
@@ -574,6 +605,11 @@ def s_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
             R[ab] = np.maximum(R[ab], 0)
 
     return R
+
+def id_R(R, C, Pi, cov_y, a):
+
+     return R
+
 
 
 def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs, 
@@ -649,6 +685,37 @@ def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
 
     return A, X, X1
 
+def linearise_latent_covs(A, X, Pi=None, X1=None, linearity='True'):
+
+    n = int(np.sqrt(X.shape[0]))
+    klm1 = X.shape[1]
+
+    if linearity=='True':
+        X[:,0] = Pi.reshape(-1,)
+        for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
+            X[:,m] = np.linalg.matrix_power(A,m).dot(Pi).reshape(-1,)
+
+
+    elif linearity=='first_order':
+        if X1 is None:
+            X1 = np.zeros((n, n*(klm1-1)))
+            for m in range(klm1-1):
+                X1[:,m*n:(m+1)*n] = X[:,m].reshape(n,n)
+
+        AX1 = A.dot(X1)
+        X[:,0] = X1[:,:n].reshape(-1,)
+        for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
+            X[:,m] = AX1[:,(m-1)*n:m*n].reshape(-1,)
+
+    elif linearity=='False':
+        pass 
+    return X
+
+def id_A(C,idx_grp,co_obs,A):
+
+    return A
+
+
 
 def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
     "solves min || C X C.T - Q || for X, using a naive approach based on vectorisation."
@@ -688,8 +755,7 @@ def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
 
     return X
 
-
-def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs, max_i=None, chunksize=None):
+def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs, max_size=1000):
     "solves min || C X C.T - Q || for X, using a naive approach based on vectorisation."
 
     assert len(idx_grp) == 1
@@ -697,63 +763,33 @@ def s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs, max_i=None, chunksi
     p,n = C.shape
     Cd = np.linalg.pinv(C)
 
-    if max_i is None:
-        chunksize = np.min((p//2, 5000)) if chunksize is None else chunksize
-        max_i = p//chunksize
-        assert np.allclose(max_i * chunksize, p) 
-
     X = np.zeros((n**2, k+l))
+    p_range = np.arange(p)
     if not Qs[0] is None:
-        range_chunksize = range(chunksize)
-        for i in range(max_i):
-            idx_i  = range(i*chunksize, (i+1)*chunksize)
-            for j in range(max_i):
-                idx_j = range(j*chunksize, (j+1)*chunksize)
-                tmpQ = Qs[0][np.ix_(idx_i,idx_j)].copy()
-                if i == j: 
-                    tmpQ[range_chunksize, range_chunksize] -= R[idx_i]
-                X[:,0] += (Cd[:,idx_i].dot(tmpQ).dot(Cd[:,idx_j].T)).reshape(-1,)
+        if p > 1000:
+            print('extracting latent cov. matrix for time-lag m=', 0)
+
+        def f(idx_i, idx_j, i, j):
+            tmpQ = Qs[0][np.ix_(idx_i,idx_j)].copy()
+            if i == j: # indicates that idx_i == idx_j
+                tmpQ[np.diag_indices(len(idx_i))] -= R[idx_i]
+            return (Cd[:,idx_i].dot(tmpQ).dot(Cd[:,idx_j].T)).reshape(-1,)
+
+        p_range = np.arange(p)
+        X[:,0] += chunking_blocks(f, p_range, p_range, max_size)
 
     for m_ in range(1,k+l):
         if p > 1000:
             print('extracting latent cov. matrix for time-lag m=', m_)
-        for i in range(max_i):
-            idx_i  = range(i*chunksize, (i+1)*chunksize)
-            for j in range(max_i):
-                idx_j = range(j*chunksize, (j+1)*chunksize)
-                X[:,m_] += (Cd[:,idx_i].dot(Qs[m_][np.ix_(idx_i,idx_j)]).dot(Cd[:,idx_j].T)).reshape(-1,)
+
+        def f(idx_i, idx_j, i, j):
+            return (Cd[:,idx_i].dot(Qs[m_][np.ix_(idx_i,idx_j)]).dot(Cd[:,idx_j].T)).reshape(-1,)
+
+        X[:,m_] += chunking_blocks(f, p_range, p_range, max_size)            
+
     return X
 
 
-def linearise_latent_covs(A, X, Pi=None, X1=None, linearity='True'):
-
-    n = int(np.sqrt(X.shape[0]))
-    klm1 = X.shape[1]
-
-    if linearity=='True':
-        X[:,0] = Pi.reshape(-1,)
-        for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
-            X[:,m] = np.linalg.matrix_power(A,m).dot(Pi).reshape(-1,)
-
-
-    elif linearity=='first_order':
-        if X1 is None:
-            X1 = np.zeros((n, n*(klm1-1)))
-            for m in range(klm1-1):
-                X1[:,m*n:(m+1)*n] = X[:,m].reshape(n,n)
-
-        AX1 = A.dot(X1)
-        X[:,0] = X1[:,:n].reshape(-1,)
-        for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
-            X[:,m] = AX1[:,(m-1)*n:m*n].reshape(-1,)
-
-    elif linearity=='False':
-        pass 
-    return X
-
-def id_A(C,idx_grp,co_obs,A):
-
-    return A
 
 def s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi=None,verbose=False, sym_psd=True):    
 
@@ -788,10 +824,15 @@ def id_Pi(X,A,idx_grp,co_obs,Pi=None):
     return Pi
 
 
+###########################################################################
+# utility, semi-scripts, plotting
+###########################################################################
+
+
 def track_correlations(Qs_full, p, n, Om, C, A, Pi, X, 
     linearity='False'):
 
-    corrs = np.zeros(2)
+    corrs = np.nan * np.ones(2)
 
     if not Qs_full is None:
         kl_ = len(Qs_full)  # covariances for online tracking of fitting
@@ -815,18 +856,7 @@ def track_correlations(Qs_full, p, n, Om, C, A, Pi, X,
         corrs[1] = np.corrcoef(H_true[np.invert(np.isnan(H_true))], 
                 H_est[np.invert(np.isnan(H_est))])[0,1]
 
-    else:
-        corrs *= np.nan
     return corrs
-
-
-
-
-
-###########################################################################
-# Utility, semi-scripts, plotting
-###########################################################################
-
 
 def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1,
              nr=None, eig_m_r=0.8, eig_M_r=0.99, eig_m_c=0.8, eig_M_c=0.99,
@@ -1041,11 +1071,6 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.subplot(n_rows,2,4)
         plt.imshow(H_est,interpolation='none')
         plt.title('Estimated matrix (A_est)')
-        #if if_flip:
-        #    plt.subplot(n_rows,2,6)
-        #    plt.imshow(H_est,interpolation='none')
-        #    plt.title('Estimated matrix (A_est, C[\rho_2] sign-flipped)')
-
         plt.show()
     
     print('\n observed covariance entries')
