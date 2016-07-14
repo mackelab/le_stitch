@@ -19,7 +19,7 @@ def blockarray(*args,**kwargs):
 
 def soft_impute(X, n, eps = 0, max_iter = 500, P_sig=None):
 
-    nan_m = np.asarray(np.isnan(X),dtype=float)
+    nan_m = np.asarray(np.isnan(X),dtype=np.float)
     P_sig_X = X.copy()
     P_sig_X[np.isnan(P_sig_X)] = 0
 
@@ -48,6 +48,8 @@ def matrix_power_derivative(A,m,i,j):
 ###########################################################################
 # Utility (SSID-specific)
 ###########################################################################
+
+
 
 def observability_mat(pars, k):
 
@@ -131,24 +133,36 @@ def xx_Hankel_cov_mat(A,Pi,k,l):
             
     return H
 
-def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
+###########################################################################
+# constructing Hankel matrices
+###########################################################################
+
+def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None,linear=True):
     "matrix with blocks cov(y_t+m, y_t) m = 1, ..., k+l-1 on the anti-diagonal"
     
     p,n = C.shape
     if linear:
-        assert n == X.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
+        assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
     else:
-        assert n*n == X.shape[0] and k+l-1 <= X.shape[1]
+        assert n*n == A.shape[0] and k+l-1 <= A.shape[1]
         
     assert (Om is None) or (Om.shape == (p,p))
-    
-    H = np.zeros((k*p, l*p))
+    if not Om is None:
+        Om_idx = np.asarray(Om, dtype=float)
+        Om_idx[~Om] = np.nan
+
+    H = np.empty((k*p, l*p))
     
     for kl_ in range(k+l-1):        
-        AmPi = np.linalg.matrix_power(X,kl_+1).dot(Pi) if linear else X[kl_-1,:].reshape(n,n)
-        lamK = C.dot(Ampi).dot(C.T)
+
+        if linear:
+            AmPi = np.linalg.matrix_power(A,kl_+1).dot(Pi) 
+        else:
+            A[:,kl_+1].reshape(n,n)
+
+        lamK = C.dot(AmPi).dot(C.T)
         
-        lamK = lamK if Om is None else lamK * np.asarray( Om, dtype=float) 
+        lamK = lamK if Om is None else lamK * Om_idx
         if kl_ < k-0.5:     
             for l_ in range(0, min(kl_ + 1,l)):
                 offset0, offset1 = (kl_-l_)*p, l_*p
@@ -160,6 +174,51 @@ def yy_Hankel_cov_mat(C,X,Pi,k,l,Om=None,linear=True):
                 H[offset0:offset0+p,offset1:offset1+p] = lamK
             
     return H
+
+def yy_Hankel_cov_mat_Qs(Qs,idx,k,l,n,Om=None):
+    "matrix with blocks cov(y_t+m, y_t) m = 1, ..., k+l-1 on the anti-diagonal"
+    
+    p = Qs[1].shape[0] if Qs[0] is None else Qs[0].shape[0]     
+    pe = idx.size
+        
+    assert (Om is None) or (Om.shape == (p,p))
+    if not Om is None:
+        Om_idx = np.asarray(Om, dtype=float)[np.ix_(idx,idx)]
+        Om_idx[~Om[np.ix_(idx,idx)]] = np.nan
+    
+    H = np.empty((k*pe, l*pe))
+    
+    for kl_ in range(k+l-1):        
+        lamK = Qs[kl_+1][np.ix_(idx,idx)]
+        
+        lamK = lamK if Om is None else lamK * Om_idx
+        if kl_ < k-0.5:     
+            for l_ in range(0, min(kl_ + 1,l)):
+                offset0, offset1 = (kl_-l_)*pe, l_*pe
+                H[offset0:offset0+pe, offset1:offset1+pe] = lamK
+                
+        else:
+            for l_ in range(0, min(k+l - kl_ -1, l, k)):
+                offset0, offset1 = (k - l_ - 1)*pe, ( l_ + kl_ + 1 - k)*pe
+                H[offset0:offset0+pe,offset1:offset1+pe] = lamK
+            
+    return H    
+
+# large-scale problems may require solutions to be computed in smaller chunks
+
+def chunking_blocks(f, a, b, max_size):
+
+    out = 0.
+    size_a, size_b = a.size, b.size
+    max_i, max_j = int(np.ceil(size_a/max_size)), int(np.ceil(size_b/max_size))
+
+    for i in range(max_i):
+        idx_i = range(i*max_size, np.minimum((i+1)*max_size, size_a)) 
+        for j in range(max_j):
+            idx_j = range(j*max_size, np.minimum((j+1)*max_size, size_a))
+            out += f(idx_i, idx_j, i, j)
+            
+    return out
 
 def comp_model_covariances(pars, m, zero_lag=True, 
     mmap=False, chunksize=None, data_path='../fits/'):
@@ -176,7 +235,8 @@ def comp_model_covariances(pars, m, zero_lag=True,
     if zero_lag and 'R' in pars.keys():
 
         if mmap:
-            Qs[0] = np.memmap(data_path+'Qs_'+str(0), dtype=np.float, mode='w+', shape=(p,p))      
+            Qs[0] = np.memmap(data_path+'Qs_'+str(0), 
+                dtype=np.float, mode='w+', shape=(p,p))      
             print('computing time-lagged covariance for lag m = 0')      
         else:
             Qs[0] = np.empty((p,p))
@@ -185,23 +245,27 @@ def comp_model_covariances(pars, m, zero_lag=True,
             idx_i  = range(i*chunksize, (i+1)*chunksize)
             for j in range(i+1):
                 idx_j = range(j*chunksize, (j+1)*chunksize)
-                Qs[0][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( pars['Pi'] ).dot(pars['C'][idx_j,:].T)
+                Qs[0][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( \
+                    pars['Pi'] ).dot(pars['C'][idx_j,:].T)
                 if j != i:
                     Qs[0][np.ix_(idx_j,idx_i)] = Qs[0][np.ix_(idx_i,idx_j)].T
                 if mmap:
                     del Qs[0]           
-                    Qs = [np.memmap(data_path+'Qs_'+str(0), dtype=np.float, mode='r+', shape=(p,p)) ]
+                    Qs = [np.memmap(data_path+'Qs_'+str(0), dtype=np.float, 
+                        mode='r+', shape=(p,p)) ]
 
 
         Qs[0][range(p),range(p)] += pars['R']
 
         if mmap:
             del Qs[0]           
-            Qs = [np.memmap(data_path+'Qs_'+str(0), dtype=np.float, mode='r', shape=(p,p)) ]
+            Qs = [np.memmap(data_path+'Qs_'+str(0), dtype=np.float, 
+                mode='r', shape=(p,p)) ]
 
     for kl_ in range(1,m):
         if mmap:
-            Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, mode='w+', shape=(p,p)))
+            Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, 
+                mode='w+', shape=(p,p)))
             print('computing time-lagged covariance for lag m =', str(kl_))      
         else:
             Qs.append(np.empty((p,p)))
@@ -211,14 +275,17 @@ def comp_model_covariances(pars, m, zero_lag=True,
             idx_i  = range(i*chunksize, (i+1)*chunksize)
             for j in range(max_i):
                 idx_j = range(j*chunksize, (j+1)*chunksize)
-                Qs[kl_][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( np.linalg.matrix_power(pars['A'],kl_).dot(pars['Pi']) ).dot(pars['C'][idx_j,:].T) 
+                Qs[kl_][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( \
+                    np.linalg.matrix_power(pars['A'],kl_).dot( \
+                        pars['Pi']) ).dot(pars['C'][idx_j,:].T) 
                 if mmap:
                     del Qs[kl_]
-                    Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, mode='r+', shape=(p,p)))
+                    Qs.append(np.memmap(data_path+'Qs_'+str(kl_), 
+                        dtype=np.float, mode='r+', shape=(p,p)))
         if mmap:
             del Qs[kl_]
-            Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, mode='r', shape=(p,p)))
-
+            Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, 
+                mode='r', shape=(p,p)))
 
     return Qs
 
@@ -328,7 +395,7 @@ def gen_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
         y[idx_i,:]  = np.atleast_2d(L[idx_i]).T * y[idx_i,:]
         y[idx_i,:] += pars['C'][idx_i,:].dot(x)
     idx_i = range((max_i+1)*chunksize, p)        
-    y[idx_i,:]  = np.atleast_2d(L[idx_i]).T * y[idx_i,:] + pars['C'][idx_i,:].dot(x)
+    y[idx_i,:] = np.atleast_2d(L[idx_i]).T*y[idx_i,:]+pars['C'][idx_i,:].dot(x)
 
 
     if mmap:
@@ -455,10 +522,10 @@ def get_subpop_stats(sub_pops, p, obs_pops=None, verbose=False):
         plt.title('Cross-overlap pattern')
         plt.show()
         
-    return obs_idx, idx_grp, co_obs, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc
+    return obs_idx,idx_grp,co_obs,overlaps,overlap_grp,idx_overlap,Om,Ovw,Ovc
 
 def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
-    "returns masks for observed, overlapping and cross-overlapping matrix parts"
+    "return masks for observed, overlapping and cross-overlapping matrix parts"
 
     p = np.max([np.max(sub_pops[i]) for i in range(len(sub_pops))]) + 1
     
@@ -507,7 +574,7 @@ def collect_children(sub_pops_todo, idx_overlap, i):
         sub_pops_todo[js] = False
         idx = np.hstack((i * np.ones(js.shape,dtype=int), js))
         for j in js:
-            idx = np.vstack((idx,collect_children(sub_pops_todo,idx_overlap,j)))
+            idx=np.vstack((idx,collect_children(sub_pops_todo,idx_overlap,j)))
     else:
         idx = np.array([],dtype=int).reshape(0,2)
 
