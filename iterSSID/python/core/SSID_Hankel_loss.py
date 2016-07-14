@@ -79,47 +79,6 @@ def yy_Hankel_cov_mat_Qs(Qs,idx,k,l,n,Om=None):
             
     return H    
 
-
-def l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
-    "returns sequence of indices for sets of neuron pairs for SGD"
-
-    if batch_size is None:
-        def batch_draw():
-            return idx_grp, co_obs    
-        def g_sis_C(C, X, R, a, b, i, lag_range=None):
-            return g_C(C, X, R, a, b, lag_range)
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a, b)
-    elif batch_size == p:
-        def batch_draw():
-            b = np.empty(p, dtype=np.uint8)
-            start = 0
-            for idx in range(len(idx_grp)):
-                end = start + idx_grp[idx].size
-                b[start:end] = idx
-                start = end
-            a = np.hstack(idx_grp)
-            idx_perm = np.random.permutation(np.arange(p))
-            return a[idx_perm], b[idx_perm]
-        def g_sis_C(C, X, R, a, b, i, lag_range=None):
-            a,b = (co_obs[b[i]],), (np.array((a[i],)),)
-            return g_C(C, X, R, a, b, lag_range)
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a[i], None)
-    elif batch_size == 1:
-        is_,js_ = np.where(Om)
-        def batch_draw():
-            idx = np.random.permutation(len(is_))
-            return is_[idx], js_[idx]       
-        def g_sis_C(C, X, R, a, b, i, lag_range=None):
-            return g_C(C, X, R, 
-                       (np.array((a[i],)),),(np.array((b[i],)),),
-                       lag_range)
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a[i], None)
-    return batch_draw, g_sis_C, g_sis_R
-
-
 # large-scale problems may require solutions to be computed in smaller chunks
 
 def chunking_blocks(f, a, b, max_size):
@@ -285,12 +244,56 @@ def l2_bad_sis_setup(k,l,n,Qs,Om,idx_grp,obs_idx,Qs_full=None,
 
     return f,g_C,g_A,g_Pi,g_R,s_R,track_corrs
 
+
+def l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
+    "returns sequence of indices for sets of neuron pairs for SGD"
+
+    if batch_size is None:
+
+        def batch_draw():
+            return idx_grp, co_obs    
+        def g_sis_C(C, X, R, a, b, i, lag_range=None):
+            return g_C(C, X, R, a, b, lag_range)
+        def g_sis_R(R, C, X0, a, b, i):
+            return g_R(R, C, X0, a, b)
+
+    elif batch_size == p:
+
+        def batch_draw():
+            b = np.empty(p, dtype=np.uint8)
+            start = 0
+            for idx in range(len(idx_grp)):
+                end = start + idx_grp[idx].size
+                b[start:end] = idx
+                start = end
+            a = np.hstack(idx_grp)
+            idx_perm = np.random.permutation(np.arange(p))
+            return a[idx_perm], b[idx_perm]
+        def g_sis_C(C, X, R, a, b, i, lag_range=None):
+            a,b = (co_obs[b[i]],), (np.array((a[i],)),)
+            return g_C(C, X, R, a, b, lag_range)
+        def g_sis_R(R, C, X0, a, b, i):
+            return g_R(R, C, X0, a[i], None)
+
+    elif batch_size == 1:
+
+        is_,js_ = np.where(Om)
+        def batch_draw():
+            idx = np.random.permutation(len(is_))
+            return is_[idx], js_[idx]       
+        def g_sis_C(C, X, R, a, b, i, lag_range=None):
+            return g_C(C, X, R, 
+                       (np.array((a[i],)),),(np.array((b[i],)),),
+                       lag_range)
+        def g_sis_R(R, C, X0, a, b, i):
+            return g_R(R, C, X0, a[i], None)
+    return batch_draw, g_sis_C, g_sis_R
+
+
 def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
                 alpha,b1,b2,e,max_iter,
                 converged,batch_size,lag_range,max_zip_size,
                 Om,idx_grp,co_obs,linearity='False'):
-
-    print('lag_range', lag_range)
 
     # initialise pars
     C,A,X,Pi,R = set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity)
@@ -308,20 +311,14 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
             return range(zip_size)
 
     # setting up the stochastic batch selection:
-    batch_draw, g_sis_C, g_sis_R = l2_sis_draw(p, batch_size, idx_grp, co_obs, g_C, g_R, Om)
+    batch_draw, g_sis_C, g_sis_R = l2_sis_draw(p, batch_size, idx_grp, co_obs, 
+                                                g_C, g_R, Om)
 
     # trace function values
     fun = np.empty(max_iter)    
     
     C_old = np.inf * np.ones((p,n))
     while not converged(C_old, C, e, t_iter):
-
-        #for m in range(X.shape[1]):
-        #    X[:,m] = np.linalg.matrix_power(pars_0['A'],m).dot(pars_0['Pi']).reshape(-1,)
-
-        #print('|| X1 - A*Pi ||', 
-        #    np.sum(X[:,1].reshape(n,n) -pars_0['A'].dot(pars_0['Pi']))**2)
-
 
         # updating C: full SGD pass over data
         C_old = C.copy()
@@ -350,8 +347,6 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
             if 0 in kl_:
                 R = g_sis_R(R,C,X[:,0].reshape(n,n), a, b, idx_zip)
 
-            #print('||g(C)||_ADAM', np.sum((mh/(np.sqrt(vh) + e))**2))
-            #print('\n')
             C -= alpha * mh/(np.sqrt(vh) + e)
 
 
@@ -361,7 +356,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
         Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linearity=='True' else Pi
         linearise_latent_covs(A, X, Pi, X1, linearity) 
 
-        if t_iter < max_iter:          # outcomment this eventually - really expensive!
+        if t_iter < max_iter:          # really expensive!
             if linearity=='True':
                 fun[t_iter] = f(C,A,Pi,R) 
             else:
@@ -375,10 +370,10 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
 
         t_iter += 1
 
-    # finally: one more round over R (we before only updated R_ii just-in-time)
-    R = s_R(R, C, X[:,0].reshape(n,n))     
+    # final round over R (we before only updated R_ii just-in-time)
+    R = s_R(R, C, X[:,0].reshape(n,n))
 
-    corrs[:,ct_iter] = track_corrs(C, A, Pi, X)            
+    corrs[:,ct_iter] = track_corrs(C, A, Pi, X)
 
     print('total iterations: ', t)
 
@@ -386,7 +381,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
     if linearity=='True': 
         pars_out['A'], pars_out['Pi'] = A, Pi
     elif linearity=='first_order':
-        pars_out['A'], pars_out['Pi'] = A, np.zeros((n,n))     
+        pars_out['A'], pars_out['Pi'] = A, np.zeros((n,n))
     if linearity=='False': 
         pars_out['A'], pars_out['Pi'] = np.zeros((n,n)), np.zeros((n,n))
 
@@ -394,6 +389,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,track_corrs,pars_0,
 
 
 def set_adam_pars(batch_size,p,n,b1,b2,e):
+
     if batch_size is None:
         print('doing batch gradients - switching to plain gradient descent')
         b1, b2, e, v_0 = 0, 1.0, 0, np.ones((p,n))
@@ -409,12 +405,12 @@ def set_adam_pars(batch_size,p,n,b1,b2,e):
     return b1,b2,e,v_0
 
 def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
-    C = pars_0['C'].copy()
+
+    C, Pi = pars_0['C'].copy(), None
     p,n = C.shape
-    R = pars_0['R'].copy()
-    p = C.shape[0]
+    R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
     A,X,_ = g_A(C,R,idx_grp,co_obs,None)
-    Pi =  None
+
     if linearity=='True':
         if 'A' in pars_0.keys() and not pars_0['A'] is None:
             A,Pi = pars_0['A'].copy(), pars_0['Pi'].copy()
@@ -423,13 +419,10 @@ def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
             Pi = g_Pi(X,A,idx_grp,co_obs,None)
             pars_0['A'], pars_0['Pi'] = A.copy(), Pi.copy()
 
-    R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
-    #X0 = X[:,0].reshape(n,n)
-    #R = g_R(R,C,X0,idx_grp, co_obs)
-
     return C,A,X,Pi,R
 
 def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
+
     if batch_size is None:
         zip_size = 1
     elif batch_size == 1:
@@ -438,7 +431,6 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
         zip_size = len(a)  
 
     return int(np.min((zip_size, max_zip_size)))      
-
 
 # evaluation of target loss function
 
