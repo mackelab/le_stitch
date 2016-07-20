@@ -158,7 +158,7 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None,linear=True):
         if linear:
             AmPi = np.linalg.matrix_power(A,kl_+1).dot(Pi) 
         else:
-            A[:,kl_+1].reshape(n,n)
+            AmPi = A[:,kl_+1].reshape(n,n)
 
         lamK = C.dot(AmPi).dot(C.T)
         

@@ -116,23 +116,22 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None,
     if linearity == 'True':
         linear_A = True
         linearise_X = False
-        def g_C(C, X, R, t, m):
-            return g_C_l2_Hankel_bad_sit(C,X,R,y,t,m,
-                        fetch_indices,linear=True,W=None)
-
+        def g_C(C, X, R, ts, ms):
+            return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
+                                        linear=True,W=None)
     elif linearity == 'first_order':
         linear_A = True
         linearise_X = True
-        def g_C(C, X, R, t, m):
-            return g_C_l2_Hankel_bad_sit(C,X,R,y,t,m,
-                        fetch_indices,linear=False,W=None)
+        def g_C(C, X, R, ts, ms):
+            return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
+                                        linear=False,W=None)
 
     elif linearity == 'False':
         linear_A = False
         linearise_X = False
-        def g_C(C, X, R, t, m):
-            return g_C_l2_Hankel_bad_sit(C,X,R,y,t,m,
-                        fetch_indices,linear=False,W=None)
+        def g_C(C, X, R, ts, ms):
+            return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
+                                        linear=False,W=None)
 
     def g_A(C,R,idx_grp,co_obs,A=None):
         return s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
@@ -208,7 +207,7 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
             ms = np.random.randint(1, k+l, size=(ts.size,))
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
-            return g_C(C, X, R, ts[i], ms[i])
+            return g_C(C, X, R, (ts[i],), (ms[i],))
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
 
@@ -378,73 +377,14 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
 
 
-# evaluation of target loss function
-
-def f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs):
-    "returns overall l2 Hankel reconstruction error"
-
-    p,n = C.shape
-    err = f_l2_inst(C,X[:,0].reshape(n,n),R,Qs[0],idx_grp,co_obs)
-    for m in range(1,k+l):
-        err += f_l2_block(C,X[:,m].reshape(n,n),Qs[m],idx_grp,co_obs)
-            
-    return err/(k*l)
-
-def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs):
-    "returns overall l2 Hankel reconstruction error"
-
-    err = f_l2_inst(C,Pi,R,Qs[0],idx_grp,co_obs)
-    for m in range(1,k+l):
-        APi = np.linalg.matrix_power(A, m).dot(Pi)  
-        err += f_l2_block(C,APi,Qs[m],idx_grp,co_obs)
-            
-    return err/(k*l)    
-    
-def f_l2_block(C,AmPi,Q,idx_grp,co_obs):
-    "Hankel reconstruction error on an individual Hankel block"
-
-    err = 0.
-    for i in range(len(idx_grp)):
-        err_ab = 0.
-        a,b = idx_grp[i],co_obs[i]
-        C_a, C_b  = C[a,:], C[b,:]
-
-        def f(idx_i, idx_j, i=None, j=None):
-            v = (C_a[idx_i,:].dot(AmPi).dot(C_b[idx_j,:].T) - \
-                 Q[np.ix_(a[idx_i],b[idx_j])]).reshape(-1,)
-            return v.dot(v)
-
-        err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
-
-    return err
-
-def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs):
-    "reconstruction error on the instantaneous covariance"
-
-    err = 0.
-    if not Q is None:
-        for i in range(len(idx_grp)):
-
-            a,b = idx_grp[i],co_obs[i]
-            C_a, C_b  = C[a,:], C[b,:]
-
-            def f(idx_i, idx_j, i, j):
-                v = (C_a[idx_i,:].dot(Pi).dot(C_b[idx_j,:].T) - \
-                     Q[np.ix_(a[idx_i],b[idx_j])])
-                if i == j:
-                    idx_R = np.where(np.in1d(a[idx_i],b[idx_j]))[0]
-                    v[idx_R, np.arange(idx_R.size)] += R[a[idx_j][idx_R]]
-                v = v.reshape(-1,)
-                return v.dot(v)
-
-            err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
-
-    return err
-
-
 # gradients (g_*) & solvers (s_*) for model parameters
 
-def g_C_l2_Hankel_bad_sit(C,X,R,y,t,m,fetch_indices,linear=True, W=None):
+def get_observed(p, t):
+
+    return range(p) # just sad right now
+
+
+def g_C_l2_Hankel_bad_sit_old(C,X,R,y,a,b,t,m,linear=False, W=None):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
     # sis: subsampled/sparse in space
@@ -452,7 +392,7 @@ def g_C_l2_Hankel_bad_sit(C,X,R,y,t,m,fetch_indices,linear=True, W=None):
     grad_C = np.zeros(C.shape)
     n = grad_C.shape[1]
 
-    a,b = fetch_indices(t,0), fetch_indices(t,m)
+    #a,b = fetch_indices(t,0), fetch_indices(t,m)
     C_a, C_b  = C[a,:], C[b,:]
     CC_b = C_b.T.dot(C_b)
 
@@ -467,12 +407,46 @@ def g_C_l2_Hankel_bad_sit(C,X,R,y,t,m,fetch_indices,linear=True, W=None):
 
     else:
         raise Exception('not yet implemented')
-        CXCC = C_a.dot(X[:,0].reshape(n,n).dot(CC_b))
-        CXCC += 0 # something with R
-        v = y[b, t ].T.dot(C_b) # vectorise
-        grad_C[a,:] += 2 * (CXCC - y[a,t].dot(v.T)).dot(X[:,0].reshape(n,n))
+        #CXCC = C_a.dot(X[:,0].reshape(n,n).dot(CC_b))
+        #CXCC += 0 # something with R
+        #v = y[b, t ].T.dot(C_b) # vectorise
+        #grad_C[a,:] += 2 * (CXCC - y[a,t].dot(v.T)).dot(X[:,0].reshape(n,n))
             
     return grad_C
+
+def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False, W=None):
+    "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
+
+    p,n = C.shape
+    grad_C = np.zeros((p,n))
+
+    assert len(ts) == len(ms)
+
+    for (t,m) in zip(ts, ms):
+        a = get_observed(p, t)
+        b = get_observed(p, t+m)
+        #if len(b) > n:
+        #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
+        #                    'Outcomment this if annoyed'))
+        grad_C[a,:] += g_C_l2_Hankel_vector_pair(C, X[:,m].reshape(n,n), R, 
+                                            a, b, y[:,t], y[:,t+m])    
+            
+    return grad_C
+
+
+def g_C_l2_Hankel_vector_pair(C, Xm, R, a, b, y, ym):
+
+    CX  = C[b,:].dot(Xm)
+    CXT = C[b,:].dot(Xm.T) # = CX if m == 0 ...
+
+    grad = C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
+         - (np.outer(y[a],ym[b].dot(CX)) + np.outer(ym[a], y[b].dot(CXT)))
+    
+    if ym is y: # i.e, if m = 0
+        ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
+        grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
+
+    return grad
 
 def id_C(C, A, Pi, a, b):
 
@@ -752,6 +726,70 @@ def id_Pi(X,A,idx_grp,co_obs,Pi=None):
     return Pi
 
 
+
+# evaluation of target loss function
+
+def f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs):
+    "returns overall l2 Hankel reconstruction error"
+
+    p,n = C.shape
+    err = f_l2_inst(C,X[:,0].reshape(n,n),R,Qs[0],idx_grp,co_obs)
+    for m in range(1,k+l):
+        err += f_l2_block(C,X[:,m].reshape(n,n),Qs[m],idx_grp,co_obs)
+            
+    return err/(k*l)
+
+def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs):
+    "returns overall l2 Hankel reconstruction error"
+
+    err = f_l2_inst(C,Pi,R,Qs[0],idx_grp,co_obs)
+    for m in range(1,k+l):
+        APi = np.linalg.matrix_power(A, m).dot(Pi)  
+        err += f_l2_block(C,APi,Qs[m],idx_grp,co_obs)
+            
+    return err/(k*l)    
+    
+def f_l2_block(C,AmPi,Q,idx_grp,co_obs):
+    "Hankel reconstruction error on an individual Hankel block"
+
+    err = 0.
+    for i in range(len(idx_grp)):
+        err_ab = 0.
+        a,b = idx_grp[i],co_obs[i]
+        C_a, C_b  = C[a,:], C[b,:]
+
+        def f(idx_i, idx_j, i=None, j=None):
+            v = (C_a[idx_i,:].dot(AmPi).dot(C_b[idx_j,:].T) - \
+                 Q[np.ix_(a[idx_i],b[idx_j])]).reshape(-1,)
+            return v.dot(v)
+
+        err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
+
+    return err
+
+def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs):
+    "reconstruction error on the instantaneous covariance"
+
+    err = 0.
+    if not Q is None:
+        for i in range(len(idx_grp)):
+
+            a,b = idx_grp[i],co_obs[i]
+            C_a, C_b  = C[a,:], C[b,:]
+
+            def f(idx_i, idx_j, i, j):
+                v = (C_a[idx_i,:].dot(Pi).dot(C_b[idx_j,:].T) - \
+                     Q[np.ix_(a[idx_i],b[idx_j])])
+                if i == j:
+                    idx_R = np.where(np.in1d(a[idx_i],b[idx_j]))[0]
+                    v[idx_R, np.arange(idx_R.size)] += R[a[idx_j][idx_R]]
+                v = v.reshape(-1,)
+                return v.dot(v)
+
+            err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
+
+    return err
+
 ###########################################################################
 # utility, semi-scripts, plotting
 ###########################################################################
@@ -979,7 +1017,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
             pars_est['Pi'],k,l)
     else:
-        H_est = yy_Hankel_cov_mat(pars_est['C'],X,
+        H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['X'],
             None,k,l,linear=False)
 
     if plot_mats():
@@ -1010,7 +1048,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
             k,l,Om=Om,linear=True)
     else:
-        H_est  = yy_Hankel_cov_mat(pars_est['C'],X,None,k,l,Om=Om,linear=False)        
+        H_est  = yy_Hankel_cov_mat(pars_est['C'],pars_est['X'],None,k,l,Om=Om,linear=False)        
     if plot_mats():
         plt.figure(figsize=(20,20))
         plt.subplot(3,3,1)
@@ -1045,7 +1083,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
             k,l,Om=~Om,linear=True)
     else:
-        H_est  = yy_Hankel_cov_mat(pars_est['C'], X,None,k,l,Om=~Om,linear=False)   
+        H_est  = yy_Hankel_cov_mat(pars_est['C'], pars_est['X'], None,k,l,Om=~Om,linear=False)   
     if plot_mats():
         plt.subplot(3,3,4)
         plt.imshow(H_true, interpolation='none')
@@ -1081,7 +1119,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         if m == 0:
             H_est += np.diag(pars_est['R'])
     else:
-        H_est = pars_est['C'].dot(X[:,m].reshape(n,n).dot(pars_est['C'].T)) 
+        H_est = pars_est['C'].dot(pars_est['X'][:,m].reshape(n,n).dot(pars_est['C'].T)) 
         if m == 0:
             H_est += np.diag(pars_est['R'])
     if plot_mats():
