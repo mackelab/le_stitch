@@ -48,17 +48,18 @@ def run_bad(k,l,n,y,Qs,
              'Pi' : M.dot(pars_ssid['Pi']).dot(M.T),
              'B'  : np.eye(n), 
              'C'  : np.random.normal(size=(p,n)),
-             'R'  : 10e-5 * np.ones(p)} #pars_ssid['C'].dot(np.linalg.inv(M))}   
+             'R'  : 10e-5 * np.ones(p),
+             'X'  : np.zeros(((k+l)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
     elif init =='default':
         pars_init = {'A'  : np.diag(np.linspace(0.89, 0.91, n)),
              'Pi' : np.eye(n),
              'B'  : np.eye(n), 
              'C'  : np.random.normal(size=(p,n)),
-             'R'  : np.zeros(p)} #pars_ssid['C'].dot(np.linalg.inv(M))}   
+             'R'  : np.zeros(p),
+             'X'  : np.zeros(((k+l)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
-
-    f_i, g_C, g_A, g_Pi, g_R, s_R, batch_draw, track_corrs = l2_bad_sis_setup(
+    f_i, g_C, g_X, g_R, s_R, batch_draw, track_corrs = l2_bad_sis_setup(
                                            k=k,l=l,n=n,T=T,
                                            y=y,Qs=Qs,Qs_full=Qs_full,Om=Om,
                                            idx_grp=idx_grp,obs_idx=obs_idx,
@@ -68,7 +69,7 @@ def run_bad(k,l,n,y,Qs,
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
-    pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_A=g_A,g_Pi=g_Pi,
+    pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_X=g_X,
                                         g_R=g_R,s_R=s_R, batch_draw=batch_draw,
                                         pars_0=pars_init,linearity=linearity,
                                         alpha=alpha,b1=b1,b2=b2,e=e,
@@ -108,11 +109,6 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None,
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
 
-
-    def fetch_indices(t,m):
-        return np.arange(p)
-
-
     if linearity == 'True':
         linear_A = True
         linearise_X = False
@@ -132,6 +128,10 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None,
         def g_C(C, X, R, ts, ms):
             return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
                                         linear=False,W=None)
+
+    def g_X(C, X, R, ts, ms):
+        return g_X_l2_Hankel_fully_obs(C,X,R,y,ts,ms)
+
 
     def g_A(C,R,idx_grp,co_obs,A=None):
         return s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
@@ -164,13 +164,14 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None,
             linearity=linearity)
 
     # setting up the stochastic batch selection:
-    batch_draw, g_sis_C, g_sis_R = l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, 
-                                                g_C, g_R, Om)
+    batch_draw, g_sis_C, g_sis_X,g_sis_R = l2_sis_draw(p, T, k, l, batch_size, 
+                                            idx_grp, co_obs, 
+                                            g_C=g_C, g_X=g_X, g_R=g_R, Om=Om)
 
 
-    return f,g_sis_C,g_A,g_Pi,g_sis_R,s_R,batch_draw,track_corrs
+    return f,g_sis_C,g_sis_X,g_sis_R,s_R,batch_draw,track_corrs
 
-def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
+def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None):
     "returns sequence of indices for sets of neuron pairs for SGD"
 
     if batch_size is None:
@@ -179,6 +180,8 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
             return idx_grp, co_obs    
         def g_sis_C(C, X, R, a, b, i, lag_range=None):
             return g_C(C, X, R, a, b, lag_range)
+        def g_sis_X(C, X, R, a, b, i, lag_range=None):
+            return np.nan
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a, b)
 
@@ -197,6 +200,8 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
         def g_sis_C(C, X, R, a, b, i, lag_range=None):
             a,b = (co_obs[b[i]],), (np.array((a[i],)),)
             return g_C(C, X, R, a, b, lag_range)
+        def g_sis_X(C, X, R, a, b, i, lag_range=None):
+            return np.nan
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
 
@@ -208,6 +213,8 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, (ts[i],), (ms[i],))
+        def g_sis_X(C, X, R, ts, ms, i):
+            return g_X(C, X, R, (ts[i],), (ms[i],))
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
 
@@ -221,29 +228,34 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_R, Om=None):
             return g_C(C, X, R, 
                        (np.array((a[i],)),),(np.array((b[i],)),),
                        lag_range)
+        def g_sis_X(C, X, R, a, b, i, lag_range=None):
+            return np.nan
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
 
-    return batch_draw, g_sis_C, g_sis_R
+    return batch_draw, g_sis_C, g_sis_X, g_sis_R
 
 
 
 # main optimiser
 
-def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,batch_draw,track_corrs,pars_0,
+def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
                 alpha,b1,b2,e,max_iter,
                 converged,batch_size,lag_range,max_zip_size,
                 Om,idx_grp,co_obs,linearity='False'):
 
+
     # initialise pars
-    C,A,X,Pi,R = set_adam_init(pars_0,g_A,g_Pi,g_R,idx_grp,co_obs,linearity)
-    p, n = C.shape
+    p, n = pars_0['C'].shape
+    kl   = pars_0['X'].shape[0]//n
+    C,X,R = set_adam_init(pars_0, p, n, kl)
+    A, Pi = None, None
 
     # setting up Adam
-    b1,b2,e,v_0 = set_adam_pars(batch_size,p,n,b1,b2,e)
+    b1,b2,e,v_0 = set_adam_pars(batch_size,p,n,kl,b1,b2,e)
     t_iter, t, t_zip = 0, 0, 0
     ct_iter, corrs  = 0, np.zeros((2, 11))
-    m, v = np.zeros((p,n)), v_0.copy()
+    m, v = np.zeros((p+kl*n,n)), v_0.copy()
 
     def zip_range(zip_size):
         if p > 1000:
@@ -253,7 +265,7 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,batch_draw,track_corrs,pars_0,
 
     # trace function values
     fun = np.empty(max_iter)    
-    
+
     C_old = np.inf * np.ones((p,n))
     while not converged(C_old, C, e, t_iter):
 
@@ -265,7 +277,9 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,batch_draw,track_corrs,pars_0,
             t += 1
 
             # get data point(s) and corresponding gradients: 
-            grad = g_C(C,X,R,a,b, idx_zip)
+
+            grad = np.vstack((g_C(C,X,R,a,b, idx_zip),
+                              g_X(C,X,R,a,b, idx_zip)))
 
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
@@ -281,15 +295,8 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,batch_draw,track_corrs,pars_0,
             #if 0 in kl_:
             #    R = g_R(R,C,X[:,0].reshape(n,n), a, b, idx_zip)
 
-            C -= alpha * mh/(np.sqrt(vh) + e)
-
-
-        # updating A: solving linear least squares
-        A,X,X1 =  g_A(C,R,idx_grp,co_obs,A)
-
-        # updating Pi: sovling (constraint) linear least squares
-        Pi = g_Pi(X,A,idx_grp,co_obs,Pi) if linearity=='True' else Pi
-        linearise_latent_covs(A, X, Pi, X1, linearity) 
+            C -= alpha * mh[:p,:]/(np.sqrt(vh[:p,:]) + e)
+            X -= alpha * mh[p:,:]/(np.sqrt(vh[p:,:]) + e)
 
         if t_iter < max_iter:          # really expensive!
             if linearity=='True':
@@ -326,52 +333,36 @@ def adam_zip_bad_stable(f,g_C,g_A,g_Pi,g_R,s_R,batch_draw,track_corrs,pars_0,
 
 # setup
 
-def set_adam_pars(batch_size,p,n,b1,b2,e):
+def set_adam_pars(batch_size,p,n,kl,b1,b2,e):
 
     if batch_size is None:
         print('doing batch gradients - switching to plain gradient descent')
-        b1, b2, e, v_0 = 0, 1.0, 0, np.ones((p,n))
+        b1, b2, e, v_0 = 0, 1.0, 0, np.ones((p+kl*n,n))
     elif batch_size == 1:
         print('using size-1 mini-batches')
-        v_0 = np.zeros((p,n))
+        v_0 = np.zeros((p+kl*n,n))
     elif batch_size == p:
         print('using size-p mini-batches (coviarance columms)')
-        v_0 = np.zeros((p,n))
+        v_0 = np.zeros((p+kl*n,n))
     elif batch_size == 2:
         print('subsampling in time!')
-        v_0 = np.zeros((p,n))        
+        v_0 = np.zeros((p+kl*n,n))        
     else: 
         raise Exception('cannot handle selected batch size')
 
     return b1,b2,e,v_0
+def set_adam_init(pars_0, p, n, kl):
 
-def set_adam_init(pars_0, g_A, g_Pi, g_R, idx_grp, co_obs, linearity):
-
-    C, Pi = pars_0['C'].copy(), None
-    p,n = C.shape
+    C = pars_0['C'].copy()
     R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
-    A,X,_ = g_A(C,R,idx_grp,co_obs,None)
+    X = pars_0['X'].copy() if 'X' in pars_0.keys() else np.zeros(n*kl, n)
 
-    if linearity=='True':
-        if 'A' in pars_0.keys() and not pars_0['A'] is None:
-            A,Pi = pars_0['A'].copy(), pars_0['Pi'].copy()
-        else: 
-            print('getting initial Pi now')
-            Pi = g_Pi(X,A,idx_grp,co_obs,None)
-            pars_0['A'], pars_0['Pi'] = A.copy(), Pi.copy()
-
-    return C,A,X,Pi,R
+    return C,X,R
 
 def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
-    if batch_size is None:
-        zip_size = 1
-    elif batch_size == p:
-        zip_size = len(a)  
-    elif batch_size == 2:
-        zip_size = a.size
-    elif batch_size == 1:
-        zip_size = a.size
+    if batch_size == 2:
+        zip_size = len(a)
 
     return int(np.min((zip_size, max_zip_size)))      
 
@@ -383,42 +374,11 @@ def get_observed(p, t):
 
     return range(p) # just sad right now
 
-
-def g_C_l2_Hankel_bad_sit_old(C,X,R,y,a,b,t,m,linear=False, W=None):
-    "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
-
-    # sis: subsampled/sparse in space
-    
-    grad_C = np.zeros(C.shape)
-    n = grad_C.shape[1]
-
-    #a,b = fetch_indices(t,0), fetch_indices(t,m)
-    C_a, C_b  = C[a,:], C[b,:]
-    CC_b = C_b.T.dot(C_b)
-
-    if m > 0:
-        CXCC = C_a.dot(X[:,m].reshape(n,n).dot(CC_b))
-        v = y[b, t ].dot(C_b) # vectorise
-        grad_C[a,:] += (CXCC - np.outer(y[a,t+m], v)).dot(X[:,m].reshape(n,n).T)
-
-        CXCC = C_a.dot(X[:,m].reshape(n,n).T.dot(CC_b))
-        v = y[b,t+m].dot(C_b) # vectorise
-        grad_C[a,:] += (CXCC - np.outer(y[a,t], v)).dot(X[:,m].reshape(n,n))
-
-    else:
-        raise Exception('not yet implemented')
-        #CXCC = C_a.dot(X[:,0].reshape(n,n).dot(CC_b))
-        #CXCC += 0 # something with R
-        #v = y[b, t ].T.dot(C_b) # vectorise
-        #grad_C[a,:] += 2 * (CXCC - y[a,t].dot(v.T)).dot(X[:,0].reshape(n,n))
-            
-    return grad_C
-
 def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False, W=None):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
     p,n = C.shape
-    grad_C = np.zeros((p,n))
+    grad = np.zeros((p,n))
 
     assert len(ts) == len(ms)
 
@@ -428,29 +388,51 @@ def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False, W=None):
         #if len(b) > n:
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
-        grad_C[a,:] += g_C_l2_Hankel_vector_pair(C, X[:,m].reshape(n,n), R, 
+        g_C_l2_Hankel_vector_pair(grad, C, X[m*n:(m+1)*n, :], R, 
                                             a, b, y[:,t], y[:,t+m])    
             
-    return grad_C
+    return grad
 
-
-def g_C_l2_Hankel_vector_pair(C, Xm, R, a, b, y, ym):
+def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, y, ym):
 
     CX  = C[b,:].dot(Xm)
     CXT = C[b,:].dot(Xm.T) # = CX if m == 0 ...
 
-    grad = C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
-         - (np.outer(y[a],ym[b].dot(CX)) + np.outer(ym[a], y[b].dot(CXT)))
+    grad[a,:] += C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
+               - (np.outer(y[a],ym[b].dot(CX)) + np.outer(ym[a], y[b].dot(CXT)))
     
     if ym is y: # i.e, if m = 0
         ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
         grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
 
+
+
+def g_X_l2_Hankel_fully_obs(C, X, R, y, ts, ms):
+    "solves min || C X C.T - Q || for X in the fully observed case."
+
+    p,n = C.shape
+    grad = np.zeros(X.shape)
+
+    assert len(ts) == len(ms)
+
+    for (t,m) in zip(ts, ms):
+        a = get_observed(p, t)
+        b = get_observed(p, t+m)
+
+        grad[:,m] += g_X_l2_vector_pair(C, X[m*n:(m+1)*n, :], R, 
+                                        a, b, y[:,t], y[:,t+m]).reshape(-1,)
+
     return grad
 
-def id_C(C, A, Pi, a, b):
+def g_X_l2_vector_pair(C, Xm, R, a, b, y, ym):
 
-    return C
+
+    CC_a = C[a,:].T.dot(C[a,:])
+    CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a.copy()
+
+    grad = CC_a.dot(Xm).dot(CC_b) - np.outer(ym[a].dot(C[a,:]), y[b].dot(C[b,:]))
+
+    return grad
 
 
 
