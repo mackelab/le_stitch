@@ -209,7 +209,7 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None)
 
         def batch_draw():
             ts = np.random.permutation(np.arange(T - (k+l) ))
-            ms = np.random.randint(1, k+l, size=(ts.size,))
+            ms = np.random.randint(1, k+l, size=(len(ts),))
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, (ts[i],), (ms[i],))
@@ -391,17 +391,17 @@ def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False, W=None):
         g_C_l2_Hankel_vector_pair(grad, C, X[m*n:(m+1)*n, :], R, 
                                             a, b, y[:,t], y[:,t+m])    
             
-    return grad
+    return grad / len(ts)
 
-def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, y, ym):
+def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, yp, yf):
 
     CX  = C[b,:].dot(Xm)
     CXT = C[b,:].dot(Xm.T) # = CX if m == 0 ...
 
     grad[a,:] += C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
-               - (np.outer(y[a],ym[b].dot(CX)) + np.outer(ym[a], y[b].dot(CXT)))
+               - (np.outer(yp[a],yf[b].dot(CX)) + np.outer(yf[a], yp[b].dot(CXT)))
     
-    if ym is y: # i.e, if m = 0
+    if yf is yp: # i.e, if m = 0
         ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
         grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
 
@@ -419,18 +419,18 @@ def g_X_l2_Hankel_fully_obs(C, X, R, y, ts, ms):
         a = get_observed(p, t)
         b = get_observed(p, t+m)
 
-        grad[:,m] += g_X_l2_vector_pair(C, X[m*n:(m+1)*n, :], R, 
-                                        a, b, y[:,t], y[:,t+m]).reshape(-1,)
+        grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, X[m*n:(m+1)*n, :], R, 
+                                        a, b, y[:,t], y[:,t+m])
 
-    return grad
+    return grad / len(ts)
 
-def g_X_l2_vector_pair(C, Xm, R, a, b, y, ym):
+def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
 
-
+    # if |a|, |b| < n, we actually first want to compute CXC' rather than the C'C !
     CC_a = C[a,:].T.dot(C[a,:])
     CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a.copy()
 
-    grad = CC_a.dot(Xm).dot(CC_b) - np.outer(ym[a].dot(C[a,:]), y[b].dot(C[b,:]))
+    grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf[a].dot(C[a,:]), yp[b].dot(C[b,:]))
 
     return grad
 
@@ -459,7 +459,7 @@ def g_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
             ab = np.intersect1d(a,b)
 
             PiC = Pi.dot(C[ab,:].T)
-            for s in range(ab.size):
+            for s in range(len(ab)):
                 g[ab[s]] = R[ab[s]]+C[ab[s],:].dot(PiC[:,s])-cov_y[ab[s],ab[s]]
     R -= 0.01 * g
 
@@ -480,7 +480,7 @@ def s_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
             ab = np.intersect1d(a,b)
 
             PiC = Pi.dot(C[ab,:].T)
-            for s in range(ab.size):
+            for s in range(len(ab)):
                 R[ab[s]] = cov_y[ab[s], ab[s]] - C[ab[s],:].dot(PiC[:,s])
             R[ab] = np.maximum(R[ab], 0)
 
@@ -614,8 +614,8 @@ def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
 
         M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
 
-        if a.size * b.size * n**2 > 10e6: # size of variable Mab (see below)
-            for s in range(b.size):
+        if len(a) * len(b) * n**2 > 10e6: # size of variable Mab (see below)
+            for s in range(len(b)):
                 Mab = np.kron(C[b[s],:], C[a,:]).T
                 if not Qs[0] is None:
                     tmpQ = Qs[0][a,b[s]].copy()
@@ -627,7 +627,7 @@ def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
             Mab = np.kron(C[b,:], C[a,:]).T
             if not Qs[0] is None:
                 tmpQ = Qs[0][np.ix_(a,b)].copy()
-                tmpQ[idx_R, np.arange(b.size)] -= R[b]
+                tmpQ[idx_R, np.arange(len(b))] -= R[b]
                 c[:,0] += Mab.dot(tmpQ.T.reshape(-1,))
             for m_ in range(1,k+l):
                 c[:,m_] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) 
@@ -745,7 +745,7 @@ def f_l2_block(C,AmPi,Q,idx_grp,co_obs):
                  Q[np.ix_(a[idx_i],b[idx_j])]).reshape(-1,)
             return v.dot(v)
 
-        err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
+        err += chunking_blocks(f, a, b, 1000)/(2*len(a)*len(b))
 
     return err
 
@@ -764,11 +764,11 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs):
                      Q[np.ix_(a[idx_i],b[idx_j])])
                 if i == j:
                     idx_R = np.where(np.in1d(a[idx_i],b[idx_j]))[0]
-                    v[idx_R, np.arange(idx_R.size)] += R[a[idx_j][idx_R]]
+                    v[idx_R, np.arange(len(idx_R))] += R[a[idx_j][idx_R]]
                 v = v.reshape(-1,)
                 return v.dot(v)
 
-            err += chunking_blocks(f, a, b, 1000)/(2*a.size*b.size)
+            err += chunking_blocks(f, a, b, 1000)/(2*len(a)*len(b))
 
     return err
 
