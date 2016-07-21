@@ -144,7 +144,7 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None,linear=True):
     if linear:
         assert n == A.shape[1] and n == Pi.shape[0] and n == Pi.shape[1]
     else:
-        assert n*n == A.shape[0] and k+l-1 <= A.shape[1]
+        assert (k+l)*n == A.shape[0] and n == A.shape[1]
         
     assert (Om is None) or (Om.shape == (p,p))
     if not Om is None:
@@ -158,7 +158,7 @@ def yy_Hankel_cov_mat(C,A,Pi,k,l,Om=None,linear=True):
         if linear:
             AmPi = np.linalg.matrix_power(A,kl_+1).dot(Pi) 
         else:
-            AmPi = A[:,kl_+1].reshape(n,n)
+            AmPi = A[(kl_+1)*n:(kl_+2)*n, :]
 
         lamK = C.dot(AmPi).dot(C.T)
         

@@ -177,39 +177,22 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None)
     if batch_size is None:
 
         def batch_draw():
-            return idx_grp, co_obs    
-        def g_sis_C(C, X, R, a, b, i, lag_range=None):
-            return g_C(C, X, R, a, b, lag_range)
-        def g_sis_X(C, X, R, a, b, i, lag_range=None):
-            return np.nan
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a, b)
-
-    elif batch_size == p:
-
-        def batch_draw():
-            b = np.empty(p, dtype=np.uint8)
-            start = 0
-            for idx in range(len(idx_grp)):
-                end = start + idx_grp[idx].size
-                b[start:end] = idx
-                start = end
-            a = np.hstack(idx_grp)
-            idx_perm = np.random.permutation(np.arange(p))
-            return a[idx_perm], b[idx_perm]
-        def g_sis_C(C, X, R, a, b, i, lag_range=None):
-            a,b = (co_obs[b[i]],), (np.array((a[i],)),)
-            return g_C(C, X, R, a, b, lag_range)
-        def g_sis_X(C, X, R, a, b, i, lag_range=None):
-            return np.nan
+            ts = (np.random.permutation(np.arange(T - (k+l) )) , )
+            ms = (np.random.randint(1, k+l, size= T - (k+l) ) , )   # excluding m = 0
+            return ts, ms
+        def g_sis_C(C, X, R, ts, ms, i):
+            return g_C(C, X, R, ts[i], ms[i])
+        def g_sis_X(C, X, R, ts, ms, i):
+            return g_X(C, X, R, ts[i], ms[i])
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
+
 
     elif batch_size == 2:
 
         def batch_draw():
             ts = np.random.permutation(np.arange(T - (k+l) ))
-            ms = np.random.randint(1, k+l, size=(len(ts),))
+            ms = np.random.randint(1, k+l, size=(len(ts),))         # excluding m = 0
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, (ts[i],), (ms[i],))
@@ -218,20 +201,22 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None)
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
 
-    elif batch_size == 1:
 
-        is_,js_ = np.where(Om)
+    elif batch_size > 2:
+
         def batch_draw():
-            idx = np.random.permutation(len(is_))
-            return is_[idx], js_[idx]       
-        def g_sis_C(C, X, R, a, b, i, lag_range=None):
-            return g_C(C, X, R, 
-                       (np.array((a[i],)),),(np.array((b[i],)),),
-                       lag_range)
-        def g_sis_X(C, X, R, a, b, i, lag_range=None):
-            return np.nan
+            ts = np.random.permutation(np.arange(T - (k+l) ))
+            ms = np.random.randint(1, k+l, size=(len(ts),))         # excluding m = 0
+            return ([ts[i*batch_size:(i+1)*batch_size] for i in range(len(ts)//batch_size)], 
+                    [ms[i*batch_size:(i+1)*batch_size] for i in range(len(ms)//batch_size)])
+        def g_sis_C(C, X, R, ts, ms, i):
+            return g_C(C, X, R, ts[i], ms[i])
+        def g_sis_X(C, X, R, ts, ms, i):
+            return g_X(C, X, R, ts[i], ms[i])
         def g_sis_R(R, C, X0, a, b, i):
             return g_R(R, C, X0, a[i], None)
+
+
 
     return batch_draw, g_sis_C, g_sis_X, g_sis_R
 
@@ -305,7 +290,7 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
                 fun[t_iter] = f(C,X,R)
 
         if np.mod(t_iter,max_iter//10) == 0:
-            print('finished %', 100*t_iter/max_iter)
+            print('finished %', 100*t_iter/max_iter+10)
             print('f = ', fun[t_iter])
             corrs[:,ct_iter] = track_corrs(C, A, Pi, X) 
             ct_iter += 1
@@ -313,7 +298,7 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
         t_iter += 1
 
     # final round over R (we before only updated R_ii just-in-time)
-    R = s_R(R, C, X[:,0].reshape(n,n))
+    R = s_R(R, C, X[:n,:].reshape(n,n))
 
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X)
 
@@ -338,13 +323,7 @@ def set_adam_pars(batch_size,p,n,kl,b1,b2,e):
     if batch_size is None:
         print('doing batch gradients - switching to plain gradient descent')
         b1, b2, e, v_0 = 0, 1.0, 0, np.ones((p+kl*n,n))
-    elif batch_size == 1:
-        print('using size-1 mini-batches')
-        v_0 = np.zeros((p+kl*n,n))
-    elif batch_size == p:
-        print('using size-p mini-batches (coviarance columms)')
-        v_0 = np.zeros((p+kl*n,n))
-    elif batch_size == 2:
+    elif batch_size >= 2:
         print('subsampling in time!')
         v_0 = np.zeros((p+kl*n,n))        
     else: 
@@ -361,7 +340,9 @@ def set_adam_init(pars_0, p, n, kl):
 
 def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
-    if batch_size == 2:
+    if batch_size >= 2:
+        zip_size = len(a)
+    elif batch_size == None:
         zip_size = len(a)
 
     return int(np.min((zip_size, max_zip_size)))      
@@ -516,8 +497,8 @@ def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
         cvxopt.solvers.options['show_progress'] = False
         X1,X2 = np.zeros((n, n*(k+l-1))), np.zeros((n, n*(k+l-1)))
         for m in range(k+l-1):
-            X1[:,m*n:(m+1)*n] = X[:,m].reshape(n,n)
-            X2[:,m*n:(m+1)*n] = X[:,m+1].reshape(n,n)
+            X1[:,m*n:(m+1)*n] = X[m*n:(m+1)*n, :].reshape(n,n)
+            X2[:,m*n:(m+1)*n] = X[(m+1)*n:(m+2)*n, :].reshape(n,n)
             
         P = cvxopt.matrix( np.kron(np.eye(n), X1.dot(X1.T)), tc='d')
         q = cvxopt.matrix( - (X2.dot(X1.T)).reshape(n**2,), tc='d')
@@ -574,9 +555,9 @@ def linearise_latent_covs(A, X, Pi=None, X1=None, linearity='True'):
     klm1 = X.shape[1]
 
     if linearity=='True':
-        X[:,0] = Pi.reshape(-1,)
+        X[:n, :] = Pi.reshape(-1,)
         for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
-            X[:,m] = np.linalg.matrix_power(A,m).dot(Pi).reshape(-1,)
+            X[m*n:(m+1)*n, :] = np.linalg.matrix_power(A,m).dot(Pi).reshape(-1,)
 
 
     elif linearity=='first_order':
@@ -584,11 +565,10 @@ def linearise_latent_covs(A, X, Pi=None, X1=None, linearity='True'):
             X1 = np.zeros((n, n*(klm1-1)))
             for m in range(klm1-1):
                 X1[:,m*n:(m+1)*n] = X[:,m].reshape(n,n)
-
         AX1 = A.dot(X1)
-        X[:,0] = X1[:,:n].reshape(-1,)
+        X[:n, :] = X1[:,:n].reshape(-1,)
         for m in range(1,klm1): # leave X[:,0] = cov(x_{t+1},x_t) unchanged!
-            X[:,m] = AX1[:,(m-1)*n:m*n].reshape(-1,)
+            X[m*n:(m+1)*n, :] = AX1[:,(m-1)*n:m*n].reshape(-1,)
 
     elif linearity=='False':
         pass 
@@ -715,9 +695,9 @@ def f_l2_Hankel_nl(C,X,R,k,l,Qs,idx_grp,co_obs):
     "returns overall l2 Hankel reconstruction error"
 
     p,n = C.shape
-    err = f_l2_inst(C,X[:,0].reshape(n,n),R,Qs[0],idx_grp,co_obs)
+    err = f_l2_inst(C,X[:n, :],R,Qs[0],idx_grp,co_obs)
     for m in range(1,k+l):
-        err += f_l2_block(C,X[:,m].reshape(n,n),Qs[m],idx_grp,co_obs)
+        err += f_l2_block(C,X[m*n:(m+1)*n, :],Qs[m],idx_grp,co_obs)
             
     return err/(k*l)
 
@@ -1101,7 +1081,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         if m == 0:
             H_est += np.diag(pars_est['R'])
     else:
-        H_est = pars_est['C'].dot(pars_est['X'][:,m].reshape(n,n).dot(pars_est['C'].T)) 
+        H_est = pars_est['C'].dot(pars_est['X'][m*n:(m+1)*n, :].dot(pars_est['C'].T)) 
         if m == 0:
             H_est += np.diag(pars_est['R'])
     if plot_mats():
