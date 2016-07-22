@@ -28,7 +28,7 @@ def run_bad(k,l,n,y,Qs,
     else:
         p = Qs_full[1].shape[0] if Qs_full[0] is None else Qs_full[0].shape[0] 
 
-    T = y.shape[1] if not y is None else np.inf
+    T = y.shape[0] if not y is None else np.inf
 
     if isinstance(init, dict):
         assert 'C' in init.keys()
@@ -109,48 +109,17 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None,
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
 
-    if linearity == 'True':
-        linear_A = True
-        linearise_X = False
-        def g_C(C, X, R, ts, ms):
-            return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
-                                        linear=True,W=None)
-    elif linearity == 'first_order':
-        linear_A = True
-        linearise_X = True
-        def g_C(C, X, R, ts, ms):
-            return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
-                                        linear=False,W=None)
-
-    elif linearity == 'False':
-        linear_A = False
-        linearise_X = False
-        def g_C(C, X, R, ts, ms):
-            return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
-                                        linear=False,W=None)
+    def g_C(C, X, R, ts, ms):
+        return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False,W=None)
 
     def g_X(C, X, R, ts, ms):
         return g_X_l2_Hankel_fully_obs(C,X,R,y,ts,ms)
 
-
-    def g_A(C,R,idx_grp,co_obs,A=None):
-        return s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
-            linear=linear_A,linearise_X=linearise_X,stable=stable,A_old=A,
-            verbose=verbose)
-
-    if batch_size == None:
-        def g_R(R, C, Pi, a, b):
-            return s_R_l2_Hankel_bad_sis_block(R,C,Pi,Qs[0], a, b)
-    else:
-        def g_R(R, C, Pi, a, b=None):
-            return s_R_l2_Hankel_bad_sis(R,C,Pi,Qs[0], a)
+    def g_R(C, X0, R, ts, ms):
+        return g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms)
 
     def s_R(R,C,Pi):
         return s_R_l2_Hankel_bad_sis_block(R,C,Pi,Qs[0], idx_grp, co_obs)
-
-    def g_Pi(X,A,idx_grp,co_obs,Pi=None):
-        return s_Pi_l2_Hankel_bad_sis(X,A,k,l,Qs,Pi,
-            verbose=verbose,sym_psd=sym_psd)
 
     if linearity == 'True':
         def f(C,A,Pi,R):                        
@@ -164,12 +133,12 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None,
             linearity=linearity)
 
     # setting up the stochastic batch selection:
-    batch_draw, g_sis_C, g_sis_X,g_sis_R = l2_sis_draw(p, T, k, l, batch_size, 
+    batch_draw, g_sit_C, g_sit_X,g_sit_R = l2_sis_draw(p, T, k, l, batch_size, 
                                             idx_grp, co_obs, 
                                             g_C=g_C, g_X=g_X, g_R=g_R, Om=Om)
 
 
-    return f,g_sis_C,g_sis_X,g_sis_R,s_R,batch_draw,track_corrs
+    return f,g_sit_C,g_sit_X,g_sit_R,s_R,batch_draw,track_corrs
 
 def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None):
     "returns sequence of indices for sets of neuron pairs for SGD"
@@ -178,45 +147,43 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None)
 
         def batch_draw():
             ts = (np.random.permutation(np.arange(T - (k+l) )) , )
-            ms = (np.random.randint(1, k+l, size= T - (k+l) ) , )   # excluding m = 0
+            ms = (np.random.randint(0, k+l, size= T - (k+l) ) , )   
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, ts[i], ms[i])
         def g_sis_X(C, X, R, ts, ms, i):
             return g_X(C, X, R, ts[i], ms[i])
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a[i], None)
+        def g_sis_R(C, X0, R, ts, ms, i):
+            return g_R(C, X0, R, ts[i], ms[i])
 
 
-    elif batch_size == 2:
+    elif batch_size == 1:
 
         def batch_draw():
             ts = np.random.permutation(np.arange(T - (k+l) ))
-            ms = np.random.randint(1, k+l, size=(len(ts),))         # excluding m = 0
+            ms = np.random.randint(0, k+l, size=(len(ts),))         
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, (ts[i],), (ms[i],))
         def g_sis_X(C, X, R, ts, ms, i):
             return g_X(C, X, R, (ts[i],), (ms[i],))
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a[i], None)
+        def g_sis_R(C, X0, R, ts, ms, i):
+            return g_R(C, X0, R, (ts[i],), (ms[i],))
 
 
-    elif batch_size > 2:
+    elif batch_size > 1:
 
         def batch_draw():
             ts = np.random.permutation(np.arange(T - (k+l) ))
-            ms = np.random.randint(1, k+l, size=(len(ts),))         # excluding m = 0
+            ms = np.random.randint(0, k+l, size=(len(ts),))         
             return ([ts[i*batch_size:(i+1)*batch_size] for i in range(len(ts)//batch_size)], 
                     [ms[i*batch_size:(i+1)*batch_size] for i in range(len(ms)//batch_size)])
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, ts[i], ms[i])
         def g_sis_X(C, X, R, ts, ms, i):
             return g_X(C, X, R, ts[i], ms[i])
-        def g_sis_R(R, C, X0, a, b, i):
-            return g_R(R, C, X0, a[i], None)
-
-
+        def g_sis_R(C, X, R, ts, ms, i):
+            return g_R(C, X, R, ts[i], ms[i])
 
     return batch_draw, g_sis_C, g_sis_X, g_sis_R
 
@@ -238,8 +205,8 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
 
     # setting up Adam
     b1,b2,e,v_0 = set_adam_pars(batch_size,p,n,kl,b1,b2,e)
-    t_iter, t, t_zip = 0, 0, 0
-    ct_iter, corrs  = 0, np.zeros((2, 11))
+    t_iter, t, ct_iter = 0, 0, 0 
+    corrs  = np.zeros((2, 11))
     m, v = np.zeros((p+kl*n,n)), v_0.copy()
 
     def zip_range(zip_size):
@@ -256,15 +223,15 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
 
         # updating C: full SGD pass over data
         C_old = C.copy()
-        a, b = batch_draw()        
-        zip_size = get_zip_size(batch_size, p, a, max_zip_size)
+        ts, ms = batch_draw()        
+        zip_size = get_zip_size(batch_size, p, ts, max_zip_size)
         for idx_zip in zip_range(zip_size):
             t += 1
 
             # get data point(s) and corresponding gradients: 
 
-            grad = np.vstack((g_C(C,X,R,a,b, idx_zip),
-                              g_X(C,X,R,a,b, idx_zip)))
+            grad = np.vstack((g_C(C,X,R,ts,ms,idx_zip),
+                              g_X(C,X,R,ts,ms,idx_zip)))
 
             m = (b1 * m + (1-b1)* grad)     
             v = (b2 * v + (1-b2)*(grad**2)) 
@@ -277,8 +244,7 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
             else:
                 vh = v
 
-            #if 0 in kl_:
-            #    R = g_R(R,C,X[:,0].reshape(n,n), a, b, idx_zip)
+            R -= alpha * g_R(C, X[:n, :], R, ts, ms, idx_zip)
 
             C -= alpha * mh[:p,:]/(np.sqrt(vh[:p,:]) + e)
             X -= alpha * mh[p:,:]/(np.sqrt(vh[p:,:]) + e)
@@ -298,7 +264,7 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
         t_iter += 1
 
     # final round over R (we before only updated R_ii just-in-time)
-    R = s_R(R, C, X[:n,:].reshape(n,n))
+    #R = s_R(R, C, X[:n,:].reshape(n,n))
 
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X)
 
@@ -308,9 +274,9 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
     if linearity=='True': 
         pars_out['A'], pars_out['Pi'] = A, Pi
     elif linearity=='first_order':
-        pars_out['A'], pars_out['Pi'] = A, np.zeros((n,n))
+        pars_out['A'], pars_out['Pi'] = A, np.nan * np.ones((n,n))
     if linearity=='False': 
-        pars_out['A'], pars_out['Pi'] = np.zeros((n,n)), np.zeros((n,n))
+        pars_out['A'], pars_out['Pi'] = np.nan*np.ones((n,n)), np.nan*np.ones((n,n))
 
     return pars_out, (fun,corrs)    
 
@@ -323,13 +289,14 @@ def set_adam_pars(batch_size,p,n,kl,b1,b2,e):
     if batch_size is None:
         print('doing batch gradients - switching to plain gradient descent')
         b1, b2, e, v_0 = 0, 1.0, 0, np.ones((p+kl*n,n))
-    elif batch_size >= 2:
+    elif batch_size >= 1:
         print('subsampling in time!')
         v_0 = np.zeros((p+kl*n,n))        
     else: 
         raise Exception('cannot handle selected batch size')
 
     return b1,b2,e,v_0
+
 def set_adam_init(pars_0, p, n, kl):
 
     C = pars_0['C'].copy()
@@ -340,11 +307,11 @@ def set_adam_init(pars_0, p, n, kl):
 
 def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
-    if batch_size >= 2:
+    if batch_size is None:
         zip_size = len(a)
-    elif batch_size == None:
+    elif batch_size >= 1:
         zip_size = len(a)
-
+    
     return int(np.min((zip_size, max_zip_size)))      
 
 
@@ -370,7 +337,7 @@ def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False, W=None):
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
         g_C_l2_Hankel_vector_pair(grad, C, X[m*n:(m+1)*n, :], R, 
-                                            a, b, y[:,t], y[:,t+m])    
+                                            a, b, y[t], y[t+m])    
             
     return grad / len(ts)
 
@@ -401,9 +368,10 @@ def g_X_l2_Hankel_fully_obs(C, X, R, y, ts, ms):
         b = get_observed(p, t+m)
 
         grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, X[m*n:(m+1)*n, :], R, 
-                                        a, b, y[:,t], y[:,t+m])
+                                        a, b, y[t], y[t+m])
 
     return grad / len(ts)
+
 
 def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
 
@@ -417,41 +385,23 @@ def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
 
 
 
-def g_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
+def g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms):
 
     p,n = C.shape
+    grad = np.zeros(p)
 
-    g = np.zeros(p)
-    if not cov_y is None:
-        g[a] = R[a] + C[a,:].dot(Pi.dot(C[a,:].T)) - cov_y[a, a]
+    assert len(ts) == len(ms)
 
-    R -= 0.01 * g
+    for (t,m) in zip(ts, ms):
+        a = get_observed(p, t)
+        b = get_observed(p, t+m)
+        ab = np.intersect1d(a,b)
 
-    return R
+        XCT = X0.dot(C[ab,:].T)
+        for s in range(len(ab)):
+            grad[ab[s]] += R[ab[s]]+C[ab[s],:].dot(XCT[:,s])-np.outer(y[t,ab[s]],y[t+m,ab[s]])
 
-def g_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
-
-    p,n = C.shape
-    g = np.zeros(p)
-
-    if not cov_y is None:
-        for i in range(len(idx_grp)):
-            a,b = idx_grp[i], co_obs[i]
-            ab = np.intersect1d(a,b)
-
-            PiC = Pi.dot(C[ab,:].T)
-            for s in range(len(ab)):
-                g[ab[s]] = R[ab[s]]+C[ab[s],:].dot(PiC[:,s])-cov_y[ab[s],ab[s]]
-    R -= 0.01 * g
-
-    return R
-
-def s_R_l2_Hankel_bad_sis(R, C, Pi, cov_y, a):
-
-    if not cov_y is None:
-        R[a] = np.maximum(cov_y[a,a] - C[a,:].dot(Pi).dot(C[a,:].T), 0)
-
-    return R
+    return grad / len(ts)
 
 def s_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
 
@@ -466,10 +416,6 @@ def s_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
             R[ab] = np.maximum(R[ab], 0)
 
     return R
-
-def id_R(R, C, Pi, cov_y, a):
-
-     return R
 
 
 
@@ -841,7 +787,6 @@ def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1
     else:
         print(Tmax)
         x,y,_ = sim_data(pars=pars_true, t_tot= Tmax ) 
-        x,y = x[:,:,0], y[:,:,0]
 
     Om_mask = np.asarray(Om, dtype=np.float)
     Om_mask[~Om] = np.nan
@@ -949,7 +894,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
                                        linearity = 'True', idx_grp = None, co_obs = None, 
                                        if_flip = False, m = 1):
 
-
+    print(m)
     p,n = pars_true['C'].shape
 
     def plot_mats(thresh=500):
@@ -968,19 +913,20 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         print('final squared error on observed parts:', 
             f(pars_est['C'],pars_est['X'],pars_est['R'])) 
 
-    H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=None)
-    H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
+    if plot_mats():
+        H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=None)
+        H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
 
-    H_obs = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om= Om)
-    H_obs[np.where(H_obs==0)] = np.nan
-    H_sti = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
+        H_obs = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om= Om)
+        H_obs[np.where(H_obs==0)] = np.nan
+        H_sti = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
 
-    if linearity=='True':
-        H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
-            pars_est['Pi'],k,l)
-    else:
-        H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['X'],
-            None,k,l,linear=False)
+        if linearity=='True':
+            H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
+                pars_est['Pi'],k,l)
+        else:
+            H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['X'],
+                None,k,l,linear=False)
 
     if plot_mats():
         if if_flip:
@@ -1093,6 +1039,9 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.title('rec. time-lagged covariance matrix')
         plt.subplot(3,3,9)
         plt.plot(H_true.reshape(-1,), H_est.reshape(-1,), 'k.')
+        if m == 0:
+            plt.hold(True)
+            plt.plot(np.diag(H_true), np.diag(H_est), 'r.')
         plt.title('true vs. reconstruction')
         plt.xlabel('H_kl true')
         plt.ylabel('H_kl rec.')

@@ -375,32 +375,32 @@ def gen_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
 
     # start with noise terms
     L = np.linalg.cholesky(pars['Q'])
-    x = np.random.normal(size=(n,T))
-    x = L.dot(x)
+    x = np.random.normal(size=(T,n))
+    x = x.dot(L.T)
 
     # step thourhg latent dynamics
-    x[:,0]  = pars['mu0'].copy() 
-    x[:,0] += np.linalg.cholesky(pars['V0']).dot(np.random.normal(size=n))
+    x[0,:]  = pars['mu0'].copy() 
+    x[0,:] += np.linalg.cholesky(pars['V0']).dot(np.random.normal(size=n))
     for t in range(1,T):
-        x[:,t] += pars['A'].dot(x[:,t-1])
+        x[t,:] += pars['A'].dot(x[t-1,:])
 
     # do emissions
     L = np.sqrt(pars['R'])
     if mmap:
-        y = np.memmap(data_path+'y', dtype=np.float, mode='w+', shape=(p,T))
+        y = np.memmap(data_path+'y', dtype=np.float, mode='w+', shape=(T,p))
     else:
-        y = np.random.normal(size=(p,T))
+        y = np.random.normal(size=(T,p))
     for i in range(max_i):
         idx_i  = range(i*chunksize, (i+1)*chunksize)
-        y[idx_i,:]  = np.atleast_2d(L[idx_i]).T * y[idx_i,:]
-        y[idx_i,:] += pars['C'][idx_i,:].dot(x)
+        y[:,idx_i]  =  y[:,idx_i] * np.atleast_2d(L[idx_i])
+        y[:,idx_i] += x.dot(pars['C'][idx_i,:].T)
     idx_i = range((max_i+1)*chunksize, p)        
-    y[idx_i,:] = np.atleast_2d(L[idx_i]).T*y[idx_i,:]+pars['C'][idx_i,:].dot(x)
+    y[:,idx_i] = y[:,idx_i]*np.atleast_2d(L[idx_i])+x.dot(pars['C'][idx_i,:].T)
 
 
     if mmap:
         del y # releases RAM, forces flush to disk
-        y = np.memmap(data_path+'y', dtype=np.float, mode='r', shape=(p,T))
+        y = np.memmap(data_path+'y', dtype=np.float, mode='r', shape=(T,p))
 
     return x, y
 
