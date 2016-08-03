@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import warnings
 from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
+from text import progprint_xrange
 
 ###########################################################################
 # Utility (general)
@@ -371,7 +372,13 @@ def gen_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
 
     p,n = pars['C'].shape
     chunksize = p if chunksize is None else chunksize
-    max_i = p//chunksize
+    max_i = int(np.ceil(p/chunksize))
+
+    def chunk_range(max_i):
+        if p > 1000:
+            return progprint_xrange(max_i, perline=100)
+        else:
+            return range(max_i)
 
     # start with noise terms
     L = np.linalg.cholesky(pars['Q'])
@@ -389,15 +396,15 @@ def gen_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
     if mmap:
         y = np.memmap(data_path+'y', dtype=np.float, mode='w+', shape=(T,p))
     else:
-        y = np.random.normal(size=(T,p))
-    for i in range(max_i):
-        idx_i  = range(i*chunksize, (i+1)*chunksize)
-        y[:,idx_i]  =  y[:,idx_i] * np.atleast_2d(L[idx_i])
-        y[:,idx_i] += x.dot(pars['C'][idx_i,:].T)
-    idx_i = range((max_i+1)*chunksize, p)        
-    y[:,idx_i] = y[:,idx_i]*np.atleast_2d(L[idx_i])+x.dot(pars['C'][idx_i,:].T)
+        y = np.empty(shape=(T,p))
 
-
+    for i in chunk_range(max_i):
+        idx_i = range(i*chunksize, np.minimum((i+1)*chunksize, p)) 
+        y[:,idx_i] = np.random.normal(size=(T, len(idx_i)))*np.atleast_2d(L[idx_i]) \
+                    + x.dot(pars['C'][idx_i,:].T)
+        if mmap:
+            del y # releases RAM, forces flush to disk
+            y = np.memmap(data_path+'y', dtype=np.float, mode='r+', shape=(T,p))
     if mmap:
         del y # releases RAM, forces flush to disk
         y = np.memmap(data_path+'y', dtype=np.float, mode='r', shape=(T,p))

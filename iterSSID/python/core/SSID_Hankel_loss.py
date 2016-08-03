@@ -21,18 +21,12 @@ def run_bad(k,l,n,y,Qs,
             linearity='False',stable=False,init='SSID',
             alpha=0.001, b1=0.9, b2=0.99, e=1e-8, 
             max_iter=100, max_zip_size=np.inf, batch_size=1,
-            verbose=False, Qs_full=None, sym_psd=True, lag_range = None):
+            verbose=False, sym_psd=True, mmap=False, data_path=None):
 
-    if not Om is None:
-        p = Om.shape[0]
-    else:
-        p = Qs_full[1].shape[0] if Qs_full[0] is None else Qs_full[0].shape[0] 
-
-    T = y.shape[0] if not y is None else np.inf
+    T,p = y.shape 
 
     if isinstance(init, dict):
         assert 'C' in init.keys()
-
         pars_init = init.copy()
 
     elif init =='SSID':
@@ -61,12 +55,13 @@ def run_bad(k,l,n,y,Qs,
 
     f_i, g_C, g_X, g_R, s_R, batch_draw, track_corrs = l2_bad_sis_setup(
                                            k=k,l=l,n=n,T=T,
-                                           y=y,Qs=Qs,Qs_full=Qs_full,Om=Om,
+                                           y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
                                            idx_grp=idx_grp,obs_idx=obs_idx,
                                            linearity=linearity,stable=stable,
                                            verbose=verbose,sym_psd=sym_psd,
-                                           batch_size=batch_size)
+                                           batch_size=batch_size,
+                                           mmap=mmap, data_path=data_path)
     print('starting descent')    
     def converged(theta_old, theta, e, t):
         return True if t >= max_iter else False
@@ -78,7 +73,6 @@ def run_bad(k,l,n,y,Qs,
                                         max_iter=max_iter,converged=converged,
                                         Om=Om,idx_grp=idx_grp,co_obs=co_obs,
                                         batch_size=batch_size,
-                                        lag_range=lag_range,
                                         track_corrs=track_corrs)
 
     return pars_init, pars_est, traces
@@ -87,15 +81,13 @@ def run_bad(k,l,n,y,Qs,
 
 # decorations
 
-def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None, idx_a=None, idx_b=None,
+def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,idx_a=None, idx_b=None,
                         linearity='True', stable=False, sym_psd=True, W=None,
-                        verbose=False, batch_size=None):
+                        verbose=False, batch_size=None, 
+                        mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
-    if not Om is None:
-        p = Om.shape[0]
-    else:
-        p = Qs_full[1].shape[0] if Qs_full[0] is None else Qs_full[0].shape[0]
+    T,p = y.shape
 
     def co_observed(x, i):
         for idx in obs_idx:
@@ -129,9 +121,9 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,Qs_full=None, idx_a=None, i
         def f(C,X,R):
             return f_l2_Hankel_nl(C,X,None,R,k,l,Qs,idx_grp,co_obs,idx_a,idx_b)
 
-    def track_corrs(C, A, Pi, X) :
-         return track_correlations(Qs_full, p, n, k, l, Om, C, A, Pi, X, 
-                        idx_a, idx_b, linearity='False')
+    def track_corrs(C, A, Pi, X, R) :
+         return track_correlations(Qs, p, n, k, l, Om, C, A, Pi, X, R,  
+                        idx_a, idx_b, 'False', mmap, data_path)
 
     # setting up the stochastic batch selection:
     batch_draw, g_sit_C, g_sit_X,g_sit_R = l2_sis_draw(p, T, k, l, batch_size, 
@@ -194,7 +186,7 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None)
 
 def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
                 alpha,b1,b2,e,max_iter,
-                converged,batch_size,lag_range,max_zip_size,
+                converged,batch_size,max_zip_size,
                 Om,idx_grp,co_obs,linearity='False'):
 
 
@@ -207,7 +199,7 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
     # setting up Adam
     b1,b2,e,v_0 = set_adam_pars(batch_size,p,n,kl,b1,b2,e)
     t_iter, t, ct_iter = 0, 0, 0 
-    corrs  = np.zeros((2, 11))
+    corrs  = np.zeros((kl, 12))
     m, v = np.zeros((p+kl*n,n)), v_0.copy()
     mR, vR = np.zeros(p), np.zeros(p)
 
@@ -219,6 +211,9 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
 
     # trace function values
     fun = np.empty(max_iter)    
+
+    corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
+    ct_iter += 1
 
     C_old = np.inf * np.ones((p,n))
     while not converged(C_old, C, e, t_iter):
@@ -272,16 +267,15 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter+10)
             print('f = ', fun[t_iter])
-            corrs[:,ct_iter] = track_corrs(C, A, Pi, X) 
+            corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
             ct_iter += 1
-            print('R', R)
 
         t_iter += 1
 
     # final round over R (we before only updated R_ii just-in-time)
     #R = s_R(R, C, X[:n,:].reshape(n,n))
 
-    corrs[:,ct_iter] = track_corrs(C, A, Pi, X)
+    corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R)
 
     print('total iterations: ', t)
 
@@ -731,196 +725,35 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b):
 ###########################################################################
 
 
-def track_correlations(Qs_full, p, n, k, l, Om, C, A, Pi, X, 
-    idx_a=None, idx_b=None, linearity='False'):
+def track_correlations(Qs, p, n, k, l, Om, C, A, Pi, X, R,
+    idx_a=None, idx_b=None, linearity='False', mmap = False, data_path=None):
 
-    corrs = np.nan * np.ones(2)
+    corrs = np.nan * np.ones(k+l)
 
-    if not Qs_full is None:
+    if not Qs is None:
 
         idx_a = np.arange(p) if idx_a is None else idx_a
         idx_b = idx_a if idx_b is None else idx_b
         assert (len(idx_a), len(idx_b)) == Qs[0].shape
         for m in range(0,k+l): 
-            Qrec = pars['C'][idx_a,:].dot(pars['X'][m*n:(m+1)*n, :]).dot(pars['C'][idx_b,:].T) 
-            Qrec = Qrec + np.diag(pars['R'])[np.ix_(idx_a,idx_b)] if m==0 else Qrec
+            Qrec = C[idx_a,:].dot(X[m*n:(m+1)*n, :]).dot(C[idx_b,:].T) 
+            Qrec = Qrec + np.diag(R)[np.ix_(idx_a,idx_b)] if m==0 else Qrec
             
             if mmap:
                 Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, mode='r', shape=(pa,pb))
             else:
-                Q = Qs_full[m]
+                Q = Qs[m]
                 
-            print(Q[np.ix_(idx_a,idx_b)].reshape(-1), Qrec.reshape(-1), '.')
-            if m == 0:
-                plt.hold(True)
-                idx_ab = np.intersect1d(idx_a,idx_b)
-            print( ('m = ' + str(m) + ', corr = ' + 
-            str(np.corrcoef( Qrec.reshape(-1), Qs[m].reshape(-1) )[0,1])) )
+            corrs[m] = np.corrcoef( Qrec.reshape(-1), Q.reshape(-1) )[0,1]
             
             if mmap:
                 del Q                
 
     return corrs
 
-def test_run(p,n,Ts=(np.inf,),k=None,l=None,batch_size=None,sub_pops=None,reps=1,
-             nr=None, eig_m_r=0.8, eig_M_r=0.99, eig_m_c=0.8, eig_M_c=0.99,
-             a=0.001, b1=0.9, b2=0.99, e=1e-8, max_iter_nl = 100,
-             linearity=False, stable=False,init='default',save_file=None,
-             verbose=False,get_subpop_stats=None, draw_sys=None, sim_data=None):
-
-    # finish setting defaults:
-    nr = n//2 if nr is None else nr
-    if k is None and l is None:
-        k,l = n,n
-    batch_size = p if batch_size is None else batch_size
-    # default subpops: fully observed
-    sub_pops = (np.arange(0,p), np.arange(0,p)) if sub_pops is None else sub_pops
-
-    Ts = np.array(Ts)
-    calc_stats = True if np.max(Ts) == np.inf else False    
-    draw_data  = True if np.any(np.isfinite(Ts)) else False
-    Tmax = int(np.max(Ts[np.isfinite(Ts)]))
-    if np.max(Ts) != np.inf:
-        Ts = np.sort(Ts)
-    else: 
-        Ts = np.hstack((np.inf, np.sort(Ts[np.isfinite(Ts)])))
-
-    if get_subpop_stats is None:
-        raise Exception(('ehem. Will need to properly install modules in the future. ',
-                'For now, code requires utility.get_subpop_stats as provided input'))
-    if draw_sys is None:
-        raise Exception(('ehem. Will need to properly install modules in the future. ',
-                'For now, code requires utility.draw_sys as provided input'))
-    if sim_data is None:
-        raise Exception(('ehem. Will need to properly install modules in the future. ',
-                'For now, code requires ssm_scripts.sim_data as provided input'))
-
-    if save_file is None:
-        save_file = 'p' + str(p) + 'n' + str(n) + 'r' + str(len(sub_pops))
-        save_file = save_file + 'k' + str(k) + 'l' + str(l)
-
-
-    # draw data, run simulation
-
-    obs_idx, idx_grp, co_obs, overlaps, overlap_grp, idx_overlap, Om, Ovw, Ovc = \
-        get_subpop_stats(sub_pops=sub_pops, p=p, verbose=False)
-
-    # draw system matrices    
-    ev_r = np.linspace(eig_m_r, eig_M_r, nr)
-    ev_c = np.exp(2 * 1j * np.pi * np.random.uniform(size= (n - nr)//2))
-    ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
-
-    pars_true, Qs, Qs_full = draw_sys(p=p,n=n,k=k,l=l,Om=Om, nr=nr, ev_r=ev_r,ev_c=ev_c,calc_stats=calc_stats)
-    pars_true['d'], pars_true['mu0'], pars_true['V0'] = np.zeros(p), np.zeros(n), pars_true['Pi'].copy()
-    if not draw_data:
-        x,y = np.zeros((n,0)), np.zeros((p,0))
-    else:
-        print(Tmax)
-        x,y,_ = sim_data(pars=pars_true, t_tot= Tmax ) 
-
-    Om_mask = np.asarray(Om, dtype=np.float)
-    Om_mask[~Om] = np.nan
-    #plt.imshow(Om_mask, interpolation='none')
-    #plt.show()
-
-    for T in Ts:        
-
-        T = int(T) if np.isfinite(T) else T
-        print('(p,n,T,k,l) = ', (p,n,T,k,l))
-        print('max_iter = ', max_iter_nl)
-        if p < 100:
-            print('sub_pops = ', sub_pops)
-        else:
-            print('# of sub_pops = ', len(sub_pops))
-
-        if np.isfinite(T):
-            for m in range(k+l):
-                #for i in range(len(idx_grp)):
-                    #slm = np.ix_(idx_grp[i],idx_grp[i])
-                    #slt = np.ix_(idx_grp[i], range(m,T+m-(k+l)))
-                    #slt = np.ix_(idx_grp[i], range(m,T-(k+l)]))
-                    #Qs_full[m][slm] = np.cov(y[slt], y[sls])[:p,p:]
-                    #Qs[m] = Qs_full[m] * Om_mask
-                Qs_full[m] = np.cov(y[:,m:T+m-(k+l)], y[:,:T-(k+l)])[:p,p:]
-                Qs[m] = Qs_full[m] * Om_mask
-                #print('Qs', np.mean(np.isfinite(Qs[m])))  
-                #print('Qs_full', np.mean(np.isfinite(Qs_full[m])))  
-        
-        linearity = 'False'
-        stable = True
-        pars_init, pars_est, traces = run_bad(k=k,l=l,n=n,Qs=Qs,Om=Om,Qs_full=Qs_full,
-                                              sub_pops=sub_pops,idx_grp=idx_grp,co_obs=co_obs,obs_idx=obs_idx,
-                                              linearity=linearity,stable=stable,init=init,
-                                              a=a,b1=b1,b2=b2,e=e,max_iter=max_iter_nl,batch_size=batch_size,
-                                              verbose=verbose)
-        os.chdir('../fits/nonlinear_cluster')
-
-        """
-        save_file_m = {'linearity': linearity,
-                       'A_true': pars_true['A'],
-                       'Pi_true' : pars_true['Pi'], 
-                       'C_true' : pars_true['C'],
-                       'A_0': pars_init['A'],
-                       'Pi_0': pars_init['Pi'],
-                       'C_0': pars_init['C'],
-                       'A_est': pars_est['A'],
-                       'Pi_est' :  pars_est['Pi'], 
-                       'C_est' :  pars_est['C'],
-                       'fs' : traces[0],
-                       'corrs' : traces[1],
-                       'p': p, 'n': n,
-                       'k': k, 'l': l, 
-                       'Ts': Ts,
-                       'a': a, 'b1': b1, 'b2': b2, 'e': e, 'max_iter_nl': max_iter_nl,
-                       'r': len(sub_pops),
-                       'sub_pops': sub_pops,
-                       'batch_size': batch_size,
-                       'y': y,
-                       'x': x,
-                       'Qs': Qs, 
-                       'Qs_full': Qs_full}
-
-        savemat(save_file,save_file_m) # does the actual saving
-        """
-        pars_true_vec = np.hstack((pars_true['A'].reshape(n*n,),
-                            pars_true['Pi'].reshape(n*n,),
-                            pars_true['C'].reshape(p*n,)))
-        pars_init_vec = np.hstack((pars_init['A'].reshape(n*n,),
-                            pars_init['Pi'].reshape(n*n,),
-                            pars_init['C'].reshape(p*n,)))
-        pars_est_vec  = np.hstack((pars_est['A'].reshape(n*n,),
-                            pars_est['Pi'].reshape(n*n,),
-                            pars_est['C'].reshape(p*n,)))
-
-        np.savez(save_file + 'T' + str(T), 
-                 y=y[:,:T] if np.isfinite(T) else None,
-                 x=x[:,:T] if np.isfinite(T) else None,
-                 Ts=Ts,
-                 T=T,
-                 Qs_full=Qs_full,
-                 Qs=Qs,
-                 linearity=linearity,
-                 pars_init=pars_init,
-                 pars_est =pars_est,
-                 pars_true=pars_true,         
-                 pars_0_vec=pars_init_vec,
-                 pars_true_vec=pars_true_vec, 
-                 pars_est_vec=pars_est_vec,
-                 traces=traces,
-                 p=p, n=n, k=k, l=l, 
-                 batch_size=batch_size,
-                 a=a, b1=b1, b2=b2, e=e, max_iter_nl=max_iter_nl, 
-                 sub_pops = sub_pops,
-                 r=len(sub_pops))  
-
-        os.chdir('../../dev')
-
-
-    options = {}
-
 
 def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs, 
-                                       Qs_full, Om, traces=None, idx_a=None, idx_b=None,
+                                       Om, traces=None, idx_a=None, idx_b=None,
                                        linearity = 'True', idx_grp = None, co_obs = None, 
                                        if_flip = False, m = 1):
 
@@ -947,12 +780,12 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
 
 
     if plot_mats():
-        H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=None)
+        H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=None)
         H_0    = yy_Hankel_cov_mat(pars_init['C'],pars_init['A'],pars_init['Pi'],k,l)
 
         H_obs = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om= Om)
         H_obs[np.where(H_obs==0)] = np.nan
-        H_sti = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
+        H_sti = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=~Om)
 
         if linearity=='True':
             H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],
@@ -984,7 +817,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
         plt.show()
     
     print('\n observed covariance entries')
-    H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=Om)
+    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=Om)
     if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
             k,l,Om=Om,linear=True)
@@ -1019,7 +852,7 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
                                       H_est[np.invert(np.isnan(H_est))])**2 ) )
 
     print('\n stitched covariance entries')
-    H_true = yy_Hankel_cov_mat_Qs(Qs_full,np.arange(p),k,l,n,Om=~Om)
+    H_true = yy_Hankel_cov_mat_Qs(Qs,np.arange(p),k,l,n,Om=~Om)
     if linearity=='True':
         H_est = yy_Hankel_cov_mat(pars_est['C'],pars_est['A'],pars_est['Pi'],
             k,l,Om=~Om,linear=True)
