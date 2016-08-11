@@ -542,7 +542,7 @@ def s_A_l2_Hankel_bad_sis(C,R,k,l,Qs,idx_grp,co_obs,
     if p > 1000:
         print('starting extraction of A')
     
-    X = s_X_l2_Hankel_fully_obs(C, R, Qs, k, l, idx_grp, co_obs)
+    X = s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs)
 
     A, X1 = A_old, None
 
@@ -645,16 +645,17 @@ def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
     for i in range(len(idx_grp)):
         a,b = idx_grp[i], co_obs[i]
         if not Qs[0] is None:
-            idx_R = np.where(np.in1d(a,b))[0]
-
+            ab = np.intersect1d(a,b)
+            idx_a = np.in1d(ab,a)
+            idx_b = np.in1d(ab,b)
         M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
 
         if a.size * b.size * n**2 > 10e6: # size of variable Mab (see below)
-            for s in range(b.size):
+            for s in range(ab.size):
                 Mab = np.kron(C[b[s],:], C[a,:]).T
                 if not Qs[0] is None:
                     tmpQ = Qs[0][a,b[s]].copy()
-                    tmpQ[idx_R[s]] -= R[b[s]]
+                    tmpQ[idx_a[s]] -= R[ab[s]]
                     c[:,0] += Mab.dot(tmpQ)
                 for m_ in range(1,k+l):
                     c[:,m_] += Mab.dot(Qs[m_][a,b[s]])
@@ -662,7 +663,7 @@ def s_X_l2_Hankel_vec(C, R, Qs, k, l, idx_grp, co_obs):
             Mab = np.kron(C[b,:], C[a,:]).T
             if not Qs[0] is None:
                 tmpQ = Qs[0][np.ix_(a,b)].copy()
-                tmpQ[idx_R, np.arange(b.size)] -= R[b]
+                tmpQ[idx_a, idx_b] -= R[ab]
                 c[:,0] += Mab.dot(tmpQ.T.reshape(-1,))
             for m_ in range(1,k+l):
                 c[:,m_] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) 
