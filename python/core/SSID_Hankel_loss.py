@@ -961,6 +961,34 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
             plt.legend(('observed', 'non-observed'))
             plt.show()
 
+def plot_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path):
+
+    p,n = pars['C'].shape
+    pa, pb = idx_a.size, idx_b.size
+    plt.figure(figsize=(20,10*np.ceil( (k+l)/2)))
+    for m in range(0,k+l): 
+        Qrec = pars['C'][idx_a,:].dot(pars['X'][m*n:(m+1)*n, :]).dot(pars['C'][idx_b,:].T) 
+        Qrec = Qrec + np.diag(pars['R'])[np.ix_(idx_a,idx_b)] if m==0 else Qrec
+        plt.subplot(np.ceil( (k+l)/2 ), 2, m+1, adjustable='box-forced')
+        if mmap:
+            Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, mode='r', shape=(pa,pb))
+        else:
+            Q = Qs[m]
+        plt.plot(Q.reshape(-1), Qrec.reshape(-1), '.')
+        plt.title( ('m = ' + str(m) + ', corr = ' + 
+        str(np.corrcoef( Qrec.reshape(-1), (Qs[m]).reshape(-1) )[0,1])))
+        if mmap:
+            del Q
+        plt.xlabel('true covs')
+        plt.ylabel('est. covs')
+    plt.show()
+    plt.figure(figsize=(20,10))
+    plt.plot(traces[0])
+    plt.xlabel('iteration count')
+    plt.ylabel('target loss')
+    plt.title('loss function vs. iterations')
+    plt.show()
+
 def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
     
     minVar    = 1e-5

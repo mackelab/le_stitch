@@ -290,6 +290,69 @@ def comp_model_covariances(pars, m, zero_lag=True,
 
     return Qs
 
+
+def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
+             mmap, chunksize, data_path):
+
+
+    ev_r = np.linspace(eig_m_r, eig_M_r, nr)
+    ev_c = np.exp(2 * 1j * np.pi * np.random.uniform(size= (n - nr)//2))
+    ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
+
+    pars_true,Qs,_ = gen_sys(p=p,n=n,k=k,l=l, nr=nr,ev_r=ev_r,ev_c=ev_c,
+                             calc_stats=T==np.inf,return_masked=False,
+                             mmap=mmap,chunksize=chunksize,data_path=data_path)
+    pars_true['d'], pars_true['mu0'] = np.zeros(p), np.zeros(n), 
+    pars_true['V0'] = pars_true['Pi'].copy()
+
+    pa, pb = np.min((p,1000)), np.min((p,1000))
+    idx_a = np.sort(np.random.choice(p, pa, replace=False))
+    idx_b = np.sort(np.random.choice(p, pb, replace=False))
+
+    if T == np.inf:
+        x,y = np.zeros((n,0)), np.zeros((p,0))
+    else:
+        print('computing empirical covariances')
+        x,y = draw_data(pars=pars_true, T=T, 
+                        mmap=mmap, chunksize=chunksize, data_path=data_path)
+        for m in range(k+l):
+            print('computing time-lagged covariance for lag ', str(m))
+            if mmap:
+                Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, 
+                              mode='w+', shape=(pa,pb))
+            else:
+                Q = np.empty((pa,pb))
+            Q[:] = np.cov(y[m:m-(k+l),idx_a].T, y[:-(k+l),idx_b].T)[:pa,pb:]     
+            if mmap:
+                del Q
+                Qs[m] = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, 
+                                  mode='r', shape=(pa,pb))
+            else:
+                Qs[m] = Q
+
+    return pars_true, x, y, Qs, idx_a, idx_b
+
+def gen_sys(p,n,k,l, nr=None, ev_r = None, ev_c = None, calc_stats=True,
+            return_masked=True, mmap=False, chunksize=None,data_path='../fits'):
+
+    pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
+    if calc_stats:
+        Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap, 
+            chunksize=chunksize,data_path=data_path)
+        if return_masked:
+            Qs = comp_model_covariances(pars_true, k+l, mmap=mmap, 
+                chunksize=chunksize,data_path=data_path) 
+        else: 
+            Qs = Qs_full
+    else:
+        Qs, Qs_full = [], []
+        for m in range(k+l):
+            Qs.append(None)
+            Qs_full.append(None)
+
+    return pars_true, Qs, Qs_full
+
+
 def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
     "draws parameters for an LDS"
 
@@ -346,28 +409,8 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
         
     return { 'A': A, 'B': B, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
 
-def draw_sys(p,n,k,l, nr=None, ev_r = None, ev_c = None, calc_stats=True,
-            return_masked=True, mmap=False, chunksize=None,data_path='../fits'):
 
-    pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
-    if calc_stats:
-        Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap, 
-            chunksize=chunksize,data_path=data_path)
-        if return_masked:
-            Qs = comp_model_covariances(pars_true, k+l, mmap=mmap, 
-                chunksize=chunksize,data_path=data_path) 
-        else: 
-            Qs = Qs_full
-    else:
-        Qs, Qs_full = [], []
-        for m in range(k+l):
-            Qs.append(None)
-            Qs_full.append(None)
-
-    return pars_true, Qs, Qs_full
-
-
-def gen_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
+def draw_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
     "cythonise me!"
 
     p,n = pars['C'].shape
