@@ -292,7 +292,7 @@ def comp_model_covariances(pars, m, zero_lag=True,
 
 
 def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
-             mmap, chunksize, data_path, pa=1000, pb=1000):
+             mmap, chunksize, data_path, pa=None, pb=None):
 
 
     ev_r = np.linspace(eig_m_r, eig_M_r, nr)
@@ -305,7 +305,8 @@ def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     pars_true['d'], pars_true['mu0'] = np.zeros(p), np.zeros(n), 
     pars_true['V0'] = pars_true['Pi'].copy()
 
-    pa, pb = np.min((p,1000)), np.min((p,1000))
+    pa = np.min((p,1000)) if pa is None else pa  
+    pb = np.min((p,1000)) if pb is None else pb  
     idx_a = np.sort(np.random.choice(p, pa, replace=False))
     idx_b = np.sort(np.random.choice(p, pb, replace=False))
 
@@ -322,7 +323,7 @@ def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
                               mode='w+', shape=(pa,pb))
             else:
                 Q = np.empty((pa,pb))
-            Q[:] = np.cov(y[m:m-(k+l),idx_a].T, y[:-(k+l),idx_b].T)[:pa,pb:]     
+            Q[:] = np.cov(y[m:m-(k+l),idx_a].T, y[:-(k+l),idx_b].T)[:pa,pa:]     
             if mmap:
                 del Q
                 Qs[m] = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, 

@@ -737,10 +737,15 @@ def track_correlations(Qs, p, n, k, l, Om, C, A, Pi, X, R,
 
         idx_a = np.arange(p) if idx_a is None else idx_a
         idx_b = idx_a if idx_b is None else idx_b
+        idx_ab = np.intersect1d(idx_a, idx_b)
+        idx_a_ab = np.where(np.in1d(idx_a, idx_ab))[0]
+        idx_b_ab = np.where(np.in1d(idx_b, idx_ab))[0]
+
         assert (len(idx_a), len(idx_b)) == Qs[0].shape
         for m in range(0,k+l): 
             Qrec = C[idx_a,:].dot(X[m*n:(m+1)*n, :]).dot(C[idx_b,:].T) 
-            Qrec = Qrec + np.diag(R)[np.ix_(idx_a,idx_b)] if m==0 else Qrec
+            if m==0:
+                Qrec[np.ix_(idx_a_ab, idx_b_ab)] += np.diag(R[idx_ab])
             
             if mmap:
                 Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, mode='r', shape=(pa,pb))
