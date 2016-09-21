@@ -1,9 +1,0 @@
-#!/bin/bash
-
-n=3
-rep=1
-sub_pops_type='fo'
-python -c 'import script_likes; script_likes.run_test_cluster(n=$n, rep=&rep, sub_pops_type=&sub_pops_type)
-
-
-
