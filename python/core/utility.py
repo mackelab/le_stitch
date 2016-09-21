@@ -292,7 +292,7 @@ def comp_model_covariances(pars, m, zero_lag=True,
 
 
 def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
-             mmap, chunksize, data_path):
+             mmap, chunksize, data_path, pa=1000, pb=1000):
 
 
     ev_r = np.linspace(eig_m_r, eig_M_r, nr)
@@ -578,12 +578,11 @@ def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
     "return masks for observed, overlapping and cross-overlapping matrix parts"
 
     p = np.max([np.max(sub_pops[i]) for i in range(len(sub_pops))]) + 1
-    
-    Om = np.zeros((p,p), dtype=bool)
-    for i in range(len(sub_pops)):
-        Om[np.ix_(sub_pops[i],sub_pops[i])] = True
 
     if p < 10000:
+        Om = np.zeros((p,p), dtype=bool)
+        for i in range(len(sub_pops)):
+            Om[np.ix_(sub_pops[i],sub_pops[i])] = True        
         Ovw = np.zeros((p,p), dtype=int)
         for i in range(len(sub_pops)):
             Ovw[np.ix_(sub_pops[i],sub_pops[i])] += 1
@@ -601,7 +600,7 @@ def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
                     idx_grp[overlap_grp[i]])] = False
 
     else:
-        Ovw, Ovc = None, None
+        Om, Ovw, Ovc = None, None, None
     
     return Om, Ovw, Ovc
 
