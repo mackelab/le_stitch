@@ -53,7 +53,7 @@ def run_bad(k,l,n,y,Qs,
              'R'  : np.zeros(p),
              'X'  : np.zeros(((k+l)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
-    f_i, g_C, g_X, g_R, s_R, batch_draw, track_corrs = l2_bad_sis_setup(
+    f_i,g_C,g_X,g_R,s_R,batch_draw,track_corrs = l2_bad_sis_setup(
                                            k=k,l=l,n=n,T=T,
                                            y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
@@ -102,14 +102,20 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,idx_a=None, idx_b=None,
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
 
+    def get_observed(p, t):
+        return range(p) # just sad right now         
+
     def g_C(C, X, R, ts, ms):
-        return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False,W=None)
+        return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
+            get_observed=get_observed,linear=False,W=None)
 
     def g_X(C, X, R, ts, ms):
-        return g_X_l2_Hankel_fully_obs(C,X,R,y,ts,ms)
+        return g_X_l2_Hankel_fully_obs(C,X,R,y,ts,ms,
+            get_observed=get_observed)
 
     def g_R(C, X0, R, ts, ms):
-        return g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms)
+        return g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms,
+            get_observed=get_observed)
 
     def s_R(R,C,Pi):
         return s_R_l2_Hankel_bad_sis_block(R,C,Pi,Qs[0], idx_grp, co_obs)
@@ -124,6 +130,7 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,idx_a=None, idx_b=None,
     def track_corrs(C, A, Pi, X, R) :
          return track_correlations(Qs, p, n, k, l, Om, C, A, Pi, X, R,  
                         idx_a, idx_b, 'False', mmap, data_path)
+
 
     # setting up the stochastic batch selection:
     batch_draw, g_sit_C, g_sit_X,g_sit_R = l2_sis_draw(p, T, k, l, batch_size, 
@@ -327,11 +334,7 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
-def get_observed(p, t):
-
-    return range(p) # just sad right now
-
-def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,linear=False, W=None):
+def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,get_observed,linear=False, W=None):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
     p,n = C.shape
@@ -364,7 +367,7 @@ def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, yp, yf):
 
 
 
-def g_X_l2_Hankel_fully_obs(C, X, R, y, ts, ms):
+def g_X_l2_Hankel_fully_obs(C, X, R, y, ts, ms, get_observed):
     "solves min || C X C.T - Q || for X in the fully observed case."
 
     p,n = C.shape
@@ -394,7 +397,7 @@ def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
 
 
 
-def g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms):
+def g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms, get_observed):
 
     p,n = C.shape
     grad = np.zeros(p)
