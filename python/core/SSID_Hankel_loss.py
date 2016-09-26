@@ -966,14 +966,22 @@ def plot_outputs_l2_gradient_test(pars_true, pars_init, pars_est, k, l, Qs,
             plt.legend(('observed', 'non-observed'))
             plt.show()
 
+
+
+
+
 def plot_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path):
 
     p,n = pars['C'].shape
     pa, pb = idx_a.size, idx_b.size
+    idx_ab = np.intersect1d(idx_a, idx_b)
+    idx_a_ab = np.where(np.in1d(idx_a, idx_ab))[0]
+    idx_b_ab = np.where(np.in1d(idx_b, idx_ab))[0]
     plt.figure(figsize=(20,10*np.ceil( (k+l)/2)))
     for m in range(0,k+l): 
         Qrec = pars['C'][idx_a,:].dot(pars['X'][m*n:(m+1)*n, :]).dot(pars['C'][idx_b,:].T) 
-        Qrec = Qrec + np.diag(pars['R'])[np.ix_(idx_a,idx_b)] if m==0 else Qrec
+        if m == 0:
+            Qrec[np.ix_(idx_a_ab, idx_b_ab)] += np.diag(pars['R'][idx_ab])
         plt.subplot(np.ceil( (k+l)/2 ), 2, m+1, adjustable='box-forced')
         if mmap:
             Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, mode='r', shape=(pa,pb))
