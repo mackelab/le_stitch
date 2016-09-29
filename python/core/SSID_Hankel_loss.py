@@ -19,11 +19,13 @@ from utility import chunking_blocks, yy_Hankel_cov_mat, yy_Hankel_cov_mat_Qs
 def run_bad(k,l,n,y,Qs,
             Om,sub_pops,idx_grp,co_obs,obs_idx,idx_a=None,idx_b=None,
             linearity='False',stable=False,init='SSID',
-            alpha=0.001, b1=0.9, b2=0.99, e=1e-8, 
+            alpha=0.001, alpha_R = None, b1=0.9, b2=0.99, e=1e-8, 
             max_iter=100, max_zip_size=np.inf, batch_size=1,
             verbose=False, sym_psd=True, mmap=False, data_path=None):
 
     T,p = y.shape 
+
+    alpha_R = alpha if alpha_R is None else alpha_R
 
     if isinstance(init, dict):
         assert 'C' in init.keys()
@@ -68,7 +70,7 @@ def run_bad(k,l,n,y,Qs,
     pars_est, traces = adam_zip_bad_stable(f=f_i,g_C=g_C,g_X=g_X,
                                         g_R=g_R,s_R=s_R, batch_draw=batch_draw,
                                         pars_0=pars_init,linearity=linearity,
-                                        alpha=alpha,b1=b1,b2=b2,e=e,
+                                        alpha=alpha,b1=b1,b2=b2,e=e,alpha_R=alpha_R,
                                         max_zip_size=max_zip_size,
                                         max_iter=max_iter,converged=converged,
                                         Om=Om,idx_grp=idx_grp,co_obs=co_obs,
@@ -192,7 +194,7 @@ def l2_sis_draw(p, T, k, l, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None)
 # main optimiser
 
 def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
-                alpha,b1,b2,e,max_iter,
+                alpha,b1,b2,e,max_iter,alpha_R,
                 converged,batch_size,max_zip_size,
                 Om,idx_grp,co_obs,linearity='False'):
 
@@ -262,7 +264,7 @@ def adam_zip_bad_stable(f,g_C,g_X,g_R,s_R,batch_draw,track_corrs,pars_0,
                 vhR = vR / (1-b2**t)
             else:
                 vhR = vR
-            R -= alpha*10000 * mhR/(np.sqrt(vhR) + e)
+            R -= alpha_R * mhR/(np.sqrt(vhR) + e)
 
 
         if t_iter < max_iter:          # really expensive!
