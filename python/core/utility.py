@@ -400,7 +400,7 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
 
     # generate emission-related matrices C, R
 
-    C = np.random.normal(size=(p,n))
+    C = np.random.normal(size=(p,n)) / np.sqrt(n)
     R = np.sum(C*C.dot(Pi), axis=1) * (3+2*np.random.uniform(size=[p]))/4
 
     try:
