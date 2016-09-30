@@ -17,7 +17,9 @@ from utility import chunking_blocks, yy_Hankel_cov_mat, yy_Hankel_cov_mat_Qs
 ###########################################################################
 
 def run_bad(k,l,n,y,Qs,
-            Om,sub_pops,idx_grp,co_obs,obs_idx,idx_a=None,idx_b=None,
+            Om,sub_pops,idx_grp,co_obs,obs_idx,
+            obs_pops=None, obs_time=None,
+            idx_a=None,idx_b=None,
             linearity='False',stable=False,init='SSID',
             alpha=0.001, alpha_R = None, b1=0.9, b2=0.99, e=1e-8, 
             max_iter=100, max_zip_size=np.inf, batch_size=1,
@@ -60,6 +62,8 @@ def run_bad(k,l,n,y,Qs,
                                            y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
                                            idx_grp=idx_grp,obs_idx=obs_idx,
+                                           obs_pops=obs_pops, obs_time=obs_time,
+                                           sub_pops=sub_pops,
                                            linearity=linearity,stable=stable,
                                            verbose=verbose,sym_psd=sym_psd,
                                            batch_size=batch_size,
@@ -83,10 +87,10 @@ def run_bad(k,l,n,y,Qs,
 
 # decorations
 
-def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,idx_a=None, idx_b=None,
-                        linearity='True', stable=False, sym_psd=True, W=None,
-                        verbose=False, batch_size=None, 
-                        mmap=False, data_path=None):
+def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_time=None,
+                     sub_pops=None,idx_a=None, idx_b=None, linearity='True', 
+                     stable=False, sym_psd=True, W=None, verbose=False, 
+                     batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
     T,p = y.shape
@@ -104,8 +108,14 @@ def l2_bad_sis_setup(k,l,T,n,y,Qs,Om,idx_grp,obs_idx,idx_a=None, idx_b=None,
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
 
-    def get_observed(p, t):
-        return range(p) # just sad right now         
+    if obs_time is None or obs_pops is None or sub_pops is None:
+        def get_observed(p, t):
+            return range(p) 
+    else:
+        def get_observed(p, t):
+            i = obs_pops[np.digitize(t, obs_time)]
+            return sub_pops[i]
+
 
     def g_C(C, X, R, ts, ms):
         return g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,
@@ -345,8 +355,8 @@ def g_C_l2_Hankel_bad_sit(C,X,R,y,ts,ms,get_observed,linear=False, W=None):
     assert len(ts) == len(ms)
 
     for (t,m) in zip(ts, ms):
-        a = get_observed(p, t)
-        b = get_observed(p, t+m)
+        a = get_observed(p, t+m)
+        b = get_observed(p, t)
         #if len(b) > n:
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
@@ -407,16 +417,14 @@ def g_R_l2_Hankel_bad_sis_block(C, X0, R, y, ts, ms, get_observed):
     assert len(ts) == len(ms)
 
     for (t,m) in zip(ts, ms):
-        if m == 0:
-            a = get_observed(p, t+m)
-            b = get_observed(p, t)
-            ab = np.intersect1d(a,b)
+        a = get_observed(p, t)
+        XCT = X0.dot(C[a,:].T)
+        y2 = y[t,a]**2
 
-            XCT = X0.dot(C[ab,:].T)
-            for s in range(len(ab)):
-                grad[ab[s]] += R[ab[s]] + C[ab[s],:].dot(XCT[:,s]) - y[t,ab[s]]**2
+        for s in range(len(a)):
+            grad[a[s]] += R[a[s]] + C[a[s],:].dot(XCT[:,s]) - y2[s]
 
-    return grad / np.max( (1,np.sum(ts==0)) )
+    return grad / len(ts)
 
 def s_R_l2_Hankel_bad_sis_block(R, C, Pi, cov_y, idx_grp, co_obs):
 
