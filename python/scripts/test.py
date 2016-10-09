@@ -45,7 +45,17 @@ pars_true, x, y, Qs, idx_a, idx_b = gen_data(p,n,k,l,T, nr,
                                              data_path)
 
 pars_init='default'  
-
+np.savez(data_path + save_file, 
+         pars_init=pars_init,
+         pars_true=pars_true, 
+         pars_est=None,
+         sub_pops=sub_pops,
+         obs_pops=obs_pops,
+         obs_time=obs_time,
+         p=p,n=n,T=T,k=k,l=l,
+         idx_a=idx_a, idx_b=idx_b,
+         x=x)   
+del x
 
 # settings for fitting algorithm
 batch_size, max_zip_size, max_iter = 1, 100, 100
