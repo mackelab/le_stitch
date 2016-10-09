@@ -510,10 +510,7 @@ def get_obs_index_overlaps(idx_grp, sub_pops):
                       group is found
 
     """
-    if isinstance(sub_pops, (list,tuple)):
-        num_sub_pops = len(sub_pops) 
-    else: 
-        num_sub_pops = subs_pops.size
+    num_sub_pops = len(sub_pops) 
     num_idx_grps = len(idx_grp)
 
     idx_overlap = []
