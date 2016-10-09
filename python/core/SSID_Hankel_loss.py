@@ -1012,6 +1012,34 @@ def plot_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path):
     plt.title('loss function vs. iterations')
     plt.show()
 
+
+def print_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path):
+
+    p,n = pars['C'].shape
+    pa, pb = idx_a.size, idx_b.size
+    idx_ab = np.intersect1d(idx_a, idx_b)
+    idx_a_ab = np.where(np.in1d(idx_a, idx_ab))[0]
+    idx_b_ab = np.where(np.in1d(idx_b, idx_ab))[0]
+    for m in range(0,k+l): 
+        Qrec = pars['C'][idx_a,:].dot(pars['X'][m*n:(m+1)*n, :]).dot(pars['C'][idx_b,:].T) 
+        if m == 0:
+            Qrec[np.ix_(idx_a_ab, idx_b_ab)] += np.diag(pars['R'][idx_ab])
+        if mmap:
+            Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, mode='r', shape=(pa,pb))
+        else:
+            Q = Qs[m]
+        print('m = ' + str(m) + ', corr = ' + 
+        str(np.corrcoef( Qrec.reshape(-1), (Qs[m]).reshape(-1) )[0,1]))
+        if mmap:
+            del Q
+    plt.show()
+    plt.figure(figsize=(20,10))
+    plt.plot(traces[0])
+    plt.xlabel('iteration count')
+    plt.ylabel('target loss')
+    plt.title('loss function vs. iterations')
+    plt.show()
+
 def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
     
     minVar    = 1e-5
