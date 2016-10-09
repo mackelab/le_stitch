@@ -22,7 +22,7 @@ a, b1, b2, e = 0.01, 0.9, 0.99, 1e-8
 linearity, stable, sym_psd = 'False', False, False
 
 # I/O matter
-mmap, chunksize = False, np.min((p,2000))
+mmap, chunksize = True, np.min((p,2000))
 data_path, save_file = '/groups/turaga/home/speisera/_guest/python/fits', 'test'
 verbose=True
 
@@ -35,7 +35,7 @@ obs_idx, idx_grp, co_obs, _, _, _, Om, _, _ = \
     get_subpop_stats(sub_pops=sub_pops, p=p, verbose=False)
 
 # draw system matrices 
-print('(p,n,k+l,T) = ', (p,n,k+l,T), '\n')
+print('\n (p,n,k+l,T) = ', (p,n,k+l,T), '\n')
 nr = 0 # number of real eigenvalues
 eig_m_r, eig_M_r, eig_m_c, eig_M_c = 0.8, 0.99, 0.8, 0.99
 pars_true, x, y, Qs, idx_a, idx_b = gen_data(p,n,k,l,T, nr,
