@@ -23,7 +23,7 @@ linearity, stable, sym_psd = 'False', False, False
 
 # I/O matter
 mmap, chunksize = True, np.min((p,2000))
-data_path, save_file = '/groups/turaga/home/speisera/_guest/python/fits', 'test'
+data_path, save_file = '/groups/turaga/home/speisera/_guest/python/fits/', 'test'
 verbose=True
 
 # create subpopulations
