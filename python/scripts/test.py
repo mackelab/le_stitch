@@ -15,6 +15,7 @@ from SSID_Hankel_loss import run_bad, print_slim, plot_outputs_l2_gradient_test
 
 # define problem size
 p, n, k, l, T = 10e8, 20, 3, 3, 5000
+print('\n (p,n,k+l,T) = ', (p,n,k+l,T), '\n')
 
 # settings for fitting algorithm
 batch_size, max_zip_size, max_iter = 1, 1, 100
@@ -27,15 +28,14 @@ data_path, save_file = '/groups/turaga/home/speisera/_guest/python/fits/', 'test
 verbose=True
 
 # create subpopulations
-sub_pops = (np.arange(0,p), np.arange(0,p))
-obs_pops = np.array([0,1])
-obs_time = np.array([T//2, T])
+sub_pops = (np.arange(p),)
+obs_pops = np.array([0])
+obs_time = np.array([T])
 
 obs_idx, idx_grp, co_obs, _, _, _, Om, _, _ = \
     get_subpop_stats(sub_pops=sub_pops, p=p, verbose=False)
 
 # draw system matrices 
-print('\n (p,n,k+l,T) = ', (p,n,k+l,T), '\n')
 nr = 0 # number of real eigenvalues
 eig_m_r, eig_M_r, eig_m_c, eig_M_c = 0.8, 0.99, 0.8, 0.99
 pars_true, x, y, Qs, idx_a, idx_b = gen_data(p,n,k,l,T, nr,
