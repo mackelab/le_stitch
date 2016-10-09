@@ -6,7 +6,8 @@ import scipy as sp
 import glob, os, psutil, time
 
 import sys, os
-sys.path.append('/home/mackelab/Desktop/Projects/Stitching/code/le_stitch/python/core')
+sys.path.append('/groups/turaga/home/speisera/_guest/python/core')
+
 from utility import get_subpop_stats, gen_data
 from SSID_Hankel_loss import run_bad, plot_slim, plot_outputs_l2_gradient_test
 
@@ -22,7 +23,7 @@ linearity, stable, sym_psd = 'False', False, False
 
 # I/O matter
 mmap, chunksize = False, np.min((p,2000))
-data_path, save_file = '../fits/', 'test'
+data_path, save_file = '/groups/turaga/home/speisera/_guest/python/fits', 'test'
 verbose=True
 
 # create subpopulations
