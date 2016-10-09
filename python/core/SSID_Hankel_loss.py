@@ -677,7 +677,7 @@ def f_l2_Hankel_nl(C,X,Pi,R,k,l,Qs,idx_grp,co_obs,idx_a=None,idx_b=None):
     for m in range(1,k+l):
         err += f_l2_block(C,X[m*n:(m+1)*n, :],Qs[m],idx_grp,co_obs,idx_a,idx_b)
             
-    return err/(k*l)
+    return err/(k+l)
 
 def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs,idx_a=None,idx_b=None):
     "returns overall l2 Hankel reconstruction error"
@@ -692,7 +692,7 @@ def f_l2_Hankel_ln(C,A,Pi,R,k,l,Qs,idx_grp,co_obs,idx_a=None,idx_b=None):
         APi = np.linalg.matrix_power(A, m).dot(Pi)  
         err += f_l2_block(C,APi,Qs[m],idx_grp,co_obs,idx_a,idx_b)
             
-    return err/(k*l)    
+    return err/(k+l)    
     
 def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b):
     "Hankel reconstruction error on an individual Hankel block"
