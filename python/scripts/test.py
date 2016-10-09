@@ -14,7 +14,7 @@ from SSID_Hankel_loss import run_bad, print_slim, plot_outputs_l2_gradient_test
 #np.random.seed(0)
 
 # define problem size
-p, n, k, l, T = 10e8, 20, 3, 3, 5000
+p, n, k, l, T = int(10e8), 20, 3, 3, 5000
 print('\n (p,n,k+l,T) = ', (p,n,k+l,T), '\n')
 
 # settings for fitting algorithm
