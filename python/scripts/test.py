@@ -14,10 +14,10 @@ from SSID_Hankel_loss import run_bad, print_slim, plot_outputs_l2_gradient_test
 #np.random.seed(0)
 
 # define problem size
-p, n, k, l, T = 100, 10, 2, 2, 100
+p, n, k, l, T = 10e8, 20, 3, 3, 5000
 
 # settings for fitting algorithm
-batch_size, max_zip_size, max_iter = 1, 100, 1000
+batch_size, max_zip_size, max_iter = 1, 1, 100
 a, b1, b2, e = 0.01, 0.9, 0.99, 1e-8
 linearity, stable, sym_psd = 'False', False, False
 
