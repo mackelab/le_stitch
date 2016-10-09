@@ -1032,13 +1032,6 @@ def print_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path):
         str(np.corrcoef( Qrec.reshape(-1), (Qs[m]).reshape(-1) )[0,1]))
         if mmap:
             del Q
-    plt.show()
-    plt.figure(figsize=(20,10))
-    plt.plot(traces[0])
-    plt.xlabel('iteration count')
-    plt.ylabel('target loss')
-    plt.title('loss function vs. iterations')
-    plt.show()
 
 def ssidSVD(SIGfp,SIGyy,n, pi_method='proper'):
     
