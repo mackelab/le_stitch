@@ -67,4 +67,4 @@ print(psutil.virtual_memory())
 print(psutil.swap_memory())
 
 print('\n final correlations est. vs. true covs \n')
-print_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path)
+print_slim(Qs,k,l,pars_est,idx_a,idx_b,traces,mmap,data_path)
