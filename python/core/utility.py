@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sp
+from scipy import stats
 import matplotlib.pyplot as plt
 import warnings
 from scipy.linalg import solve_discrete_lyapunov as dlyap
@@ -395,7 +396,7 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
 
     # generate innovation noise covariance matrix Q
 
-    Q = sp.stats.wishart(n, np.eye(n)).rvs()/n
+    Q = stats.wishart(n, np.eye(n)).rvs()/n
     Pi = sp.linalg.solve_discrete_lyapunov(A, Q)
 
     # generate emission-related matrices C, R
