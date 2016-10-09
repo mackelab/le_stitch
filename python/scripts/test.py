@@ -9,7 +9,7 @@ import sys, os
 sys.path.append('/groups/turaga/home/speisera/_guest/python/core')
 
 from utility import get_subpop_stats, gen_data
-from SSID_Hankel_loss import run_bad, plot_slim, plot_outputs_l2_gradient_test
+from SSID_Hankel_loss import run_bad, print_slim, plot_outputs_l2_gradient_test
 
 #np.random.seed(0)
 
@@ -65,3 +65,6 @@ print('fitting time was ', time.time() - t, 's')
 print('\n')
 print(psutil.virtual_memory())
 print(psutil.swap_memory())
+
+print('\n final correlations est. vs. true covs \n')
+print_slim(Qs,k,l,pars,idx_a,idx_b,traces,mmap,data_path)
