@@ -104,12 +104,12 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
             return sub_pops[i]
 
 
-    def g_C(C, X, R, ts, ms):
-        return g_C_l2_Hankel_bad_sit(C,X,R,y,lag_range,ts,ms,
+    def g_C(C, X, R, ts, m):
+        return g_C_l2_Hankel_bad_sit(C,X,R,y,lag_range,ts,m,
             get_observed=get_observed,linear=False,W=None)
 
-    def g_X(C, X, R, ts, ms):
-        return g_X_l2_Hankel_fully_obs(C,X,R,y,lag_range,ts,ms,
+    def g_X(C, X, R, ts, m):
+        return g_X_l2_Hankel_fully_obs(C,X,R,y,lag_range,ts,m,
             get_observed=get_observed)
 
     def g_R(C, X0, R, ts):
@@ -165,9 +165,9 @@ def l2_sis_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=
             ms = np.random.randint(0, kl, size=(len(ts),))         
             return ts, ms
         def g_sis_C(C, X, R, ts, ms, i):
-            return g_C(C, X, R, (ts[i],), (ms[i],))
+            return g_C(C, X, R, (ts[i],), ms[i])
         def g_sis_X(C, X, R, ts, ms, i):
-            return g_X(C, X, R, (ts[i],), (ms[i],))
+            return g_X(C, X, R, (ts[i],), ms[i])
         def g_sis_R(C, X0, R, ts, i):
             return g_R(C, X0, R, (ts[i],))
 
@@ -176,9 +176,10 @@ def l2_sis_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=
 
         def batch_draw():
             ts = np.random.permutation(np.arange(T - (kl_) ))
-            ms = np.random.randint(0, kl, size=(len(ts),))         
-            return ([ts[i*batch_size:(i+1)*batch_size] for i in range(len(ts)//batch_size)], 
-                    [ms[i*batch_size:(i+1)*batch_size] for i in range(len(ms)//batch_size)])
+            ms = np.random.randint(0,kl,size=len(ts)//batch_size) # one lag per gradient!
+            return ([ts[i*batch_size:(i+1)*batch_size] for i in range(len(ts)//batch_size)],
+                     ms)
+
         def g_sis_C(C, X, R, ts, ms, i):
             return g_C(C, X, R, ts[i], ms[i])
         def g_sis_X(C, X, R, ts, ms, i):
@@ -335,16 +336,14 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
-def g_C_l2_Hankel_bad_sit(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
+def g_C_l2_Hankel_bad_sit(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
     p,n = C.shape
     grad = np.zeros((p,n))
 
-    assert len(ts) == len(ms)
-
-    for (t,m) in zip(ts, ms):
-        m_ = lag_range[m]
+    m_ = lag_range[m]
+    for t in ts:
         a = get_observed(p, t+m_)
         b = get_observed(p, t)
         #if len(b) > n:
@@ -369,16 +368,14 @@ def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, yp, yf):
 
 
 
-def g_X_l2_Hankel_fully_obs(C, X, R, y, lag_range, ts, ms, get_observed):
+def g_X_l2_Hankel_fully_obs(C, X, R, y, lag_range, ts, m, get_observed):
     "solves min || C X C.T - Q || for X in the fully observed case."
 
     p,n = C.shape
     grad = np.zeros(X.shape)
 
-    assert len(ts) == len(ms)
-
-    for (t,m) in zip(ts, ms):
-        m_ = lag_range[m]
+    m_ = lag_range[m]
+    for t in ts:
         a = get_observed(p, t+m_)
         b = get_observed(p, t)
 
