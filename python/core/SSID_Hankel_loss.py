@@ -13,7 +13,7 @@ from utility import chunking_blocks, yy_Hankel_cov_mat, yy_Hankel_cov_mat_Qs
 
 
 ###########################################################################
-# block coordinate descent: following gradients w.r.t. C, cov(x_{t+m}, x_t)
+# stochastic gradient descent: gradients w.r.t. C, R, cov(x_{t+m},x_t)
 ###########################################################################
 
 def run_bad(lag_range,n,y,Qs,
@@ -69,7 +69,7 @@ def run_bad(lag_range,n,y,Qs,
                                            verbose=verbose,
                                            mmap=mmap, data_path=data_path)
     print('starting descent')    
-    def converged(theta_old, theta, e, t):
+    def converged(t):
         return True if t >= max_iter else False
     pars_est, traces = adam_zip_bad(f=f,g_C=g_C,g_X=g_X,g_R=g_R,pars_0=pars_init,
                                     alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
@@ -113,7 +113,6 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
         def get_observed(p, t):
             i = obs_pops[np.digitize(t, obs_time)]
             return sub_pops[i]
-
 
     def g_C(C, X, R, ts, m):
         return g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,
@@ -231,11 +230,8 @@ def adam_zip_bad(f,g_C,g_X,g_R,pars_0,
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
     ct_iter += 1
 
-    C_old = np.inf * np.ones((p,n))
-    while not converged(C_old, C, e_C, t_iter):
+    while not converged(t_iter):
 
-        # updating C: full SGD pass over data
-        C_old = C.copy()
         ts, ms = batch_draw()        
         zip_size = get_zip_size(batch_size, p, ts, max_zip_size)
         for idx_zip in zip_range(zip_size):
@@ -342,18 +338,18 @@ def g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
     grad = np.zeros((p,n))
 
     m_ = lag_range[m]
+    Xm = X[m*n:(m+1)*n, :]
     for t in ts:
         a = get_observed(p, t+m_)
         b = get_observed(p, t)
         #if len(b) > n:
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
-        g_C_l2_Hankel_vector_pair(grad, C, X[m*n:(m+1)*n, :], R, 
-                                            a, b, y[t], y[t+m_])    
+        g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, y[t], y[t+m_])    
             
     return grad / len(ts)
 
-def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, yp, yf):
+def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, yp, yf):
 
     CX  = C[b,:].dot(Xm)
     CXT = C[b,:].dot(Xm.T) # = CX if m == 0 ...
@@ -361,7 +357,7 @@ def g_C_l2_Hankel_vector_pair(grad, C, Xm, R, a, b, yp, yf):
     grad[a,:] += C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
                - (np.outer(yp[a],yf[b].dot(CX)) + np.outer(yf[a], yp[b].dot(CXT)))
     
-    if yf is yp: # i.e, if m = 0
+    if m_ == 0:
         ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
         grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
 
@@ -373,11 +369,12 @@ def g_X_l2_Hankel_sgd(C, X, R, y, lag_range, ts, m, get_observed):
     grad = np.zeros(X.shape)
 
     m_ = lag_range[m]
+    Xm = X[m*n:(m+1)*n, :]
     for t in ts:
         a = get_observed(p, t+m_)
         b = get_observed(p, t)
 
-        grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, X[m*n:(m+1)*n, :], R, 
+        grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
                                         a, b, y[t], y[t+m_])
 
     return grad / len(ts)
