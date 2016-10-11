@@ -222,10 +222,11 @@ def chunking_blocks(f, a, b, max_size):
             
     return out
 
-def comp_model_covariances(pars, m, zero_lag=True, 
+def comp_model_covariances(pars, lag_range, 
     mmap=False, chunksize=None, data_path='../fits/'):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
+    kl = len(lag_range)
     p = pars['C'].shape[0]
     
     chunksize = p if chunksize is None else chunksize
@@ -234,74 +235,48 @@ def comp_model_covariances(pars, m, zero_lag=True,
     assert np.allclose(max_i * chunksize, p) 
         
     Qs = [None]
-    if zero_lag and 'R' in pars.keys():
-
+    for m in kl:
+        m_ = lag_range[m]
         if mmap:
-            Qs[0] = np.memmap(data_path+'Qs_'+str(0), 
-                dtype=np.float, mode='w+', shape=(p,p))      
-            print('computing time-lagged covariance for lag m = 0')      
-        else:
-            Qs[0] = np.empty((p,p))
-
-        for i in range(max_i):
-            idx_i  = range(i*chunksize, (i+1)*chunksize)
-            for j in range(i+1):
-                idx_j = range(j*chunksize, (j+1)*chunksize)
-                Qs[0][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( \
-                    pars['Pi'] ).dot(pars['C'][idx_j,:].T)
-                if j != i:
-                    Qs[0][np.ix_(idx_j,idx_i)] = Qs[0][np.ix_(idx_i,idx_j)].T
-                if mmap:
-                    del Qs[0]           
-                    Qs = [np.memmap(data_path+'Qs_'+str(0), dtype=np.float, 
-                        mode='r+', shape=(p,p)) ]
-
-
-        Qs[0][range(p),range(p)] += pars['R']
-
-        if mmap:
-            del Qs[0]           
-            Qs = [np.memmap(data_path+'Qs_'+str(0), dtype=np.float, 
-                mode='r', shape=(p,p)) ]
-
-    for kl_ in range(1,m):
-        if mmap:
-            Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, 
+            Qs.append(np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                 mode='w+', shape=(p,p)))
-            print('computing time-lagged covariance for lag m =', str(kl_))      
+            print('computing time-lagged covariance for lag m =', str(m))      
         else:
             Qs.append(np.empty((p,p)))
 
-        Akl = np.linalg.matrix_power(pars['A'], kl_)
+        APi = np.linalg.matrix_power(pars['A'], m_).dot(pars['Pi'])
         for i in range(max_i):
             idx_i  = range(i*chunksize, (i+1)*chunksize)
             for j in range(max_i):
                 idx_j = range(j*chunksize, (j+1)*chunksize)
-                Qs[kl_][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( \
-                    np.linalg.matrix_power(pars['A'],kl_).dot( \
-                        pars['Pi']) ).dot(pars['C'][idx_j,:].T) 
+                Qs[m][np.ix_(idx_i,idx_j)] = pars['C'][idx_i,:].dot( \
+                    APi ).dot(pars['C'][idx_j,:].T) 
                 if mmap:
-                    del Qs[kl_]
-                    Qs.append(np.memmap(data_path+'Qs_'+str(kl_), 
+                    del Qs[m]
+                    Qs.append(np.memmap(data_path+'Qs_'+str(m_), 
                         dtype=np.float, mode='r+', shape=(p,p)))
         if mmap:
-            del Qs[kl_]
-            Qs.append(np.memmap(data_path+'Qs_'+str(kl_), dtype=np.float, 
+            del Qs[m]
+            Qs.append(np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                 mode='r', shape=(p,p)))
+
+        if lag_range[m] == 0:
+            Qs[m][range(p),range(p)] += pars['R']
 
     return Qs
 
 
-def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
-             mmap, chunksize, data_path, pa=None, pb=None):
+def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
+             mmap, chunksize, data_path, pa=None, pb=None, snr=(.75, 1.25)):
 
-
+    kl = len(lag_range)
+    kl_ = np.max(lag_range)+1
     ev_r = np.linspace(eig_m_r, eig_M_r, nr)
     ev_c = np.exp(2 * 1j * np.pi * np.random.uniform(size= (n - nr)//2))
     ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
 
-    pars_true,Qs,_ = gen_sys(p=p,n=n,k=k,l=l, nr=nr,ev_r=ev_r,ev_c=ev_c,
-                             calc_stats=T==np.inf,return_masked=False,
+    pars_true,Qs,_ = gen_sys(p=p,n=n,lag_range=lag_range, nr=nr,ev_r=ev_r,ev_c=ev_c,
+                             snr=snr, calc_stats=T==np.inf,return_masked=False,
                              mmap=mmap,chunksize=chunksize,data_path=data_path)
     pars_true['d'], pars_true['mu0'] = np.zeros(p), np.zeros(n), 
     pars_true['V0'] = pars_true['Pi'].copy()
@@ -317,45 +292,48 @@ def gen_data(p,n,k,l,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
         print('computing empirical covariances')
         x,y = draw_data(pars=pars_true, T=T, 
                         mmap=mmap, chunksize=chunksize, data_path=data_path)
-        for m in range(k+l):
-            print('computing time-lagged covariance for lag ', str(m))
+        for m in range(kl):
+            m_ = lag_range[m]
+            print('computing time-lagged covariance for lag ', str(m_))
             if mmap:
-                Q = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, 
+                Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                               mode='w+', shape=(pa,pb))
             else:
                 Q = np.empty((pa,pb))
-            Q[:] = np.cov(y[m:m-(k+l),idx_a].T, y[:-(k+l),idx_b].T)[:pa,pa:]     
+            Q[:] = np.cov(y[m_:m_-kl_,idx_a].T, y[:-kl_,idx_b].T)[:pa,pa:]     
             if mmap:
                 del Q
-                Qs[m] = np.memmap(data_path+'Qs_'+str(m), dtype=np.float, 
+                Qs[m] = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                                   mode='r', shape=(pa,pb))
             else:
                 Qs[m] = Q
 
     return pars_true, x, y, Qs, idx_a, idx_b
 
-def gen_sys(p,n,k,l, nr=None, ev_r = None, ev_c = None, calc_stats=True,
-            return_masked=True, mmap=False, chunksize=None,data_path='../fits'):
+def gen_sys(p,n,lag_range,nr=None,ev_r=None,ev_c=None,snr=(.75, 1.25),
+            calc_stats=True,return_masked=True, 
+            mmap=False, chunksize=None,data_path='../fits'):
 
-    pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c)
+    kl = len(lag_range)
+    pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c, snr=snr)
     if calc_stats:
-        Qs_full = comp_model_covariances(pars_true, k+l, mmap=mmap, 
+        Qs_full = comp_model_covariances(pars_true, lag_range, mmap=mmap, 
             chunksize=chunksize,data_path=data_path)
         if return_masked:
-            Qs = comp_model_covariances(pars_true, k+l, mmap=mmap, 
+            Qs = comp_model_covariances(pars_true, lag_range, mmap=mmap, 
                 chunksize=chunksize,data_path=data_path) 
         else: 
             Qs = Qs_full
     else:
         Qs, Qs_full = [], []
-        for m in range(k+l):
+        for m in range(kl):
             Qs.append(None)
             Qs_full.append(None)
 
     return pars_true, Qs, Qs_full
 
 
-def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
+def gen_pars(p,n, nr=None, ev_r = None, ev_c = None, snr = (.75, 1.25)):
     "draws parameters for an LDS"
 
     # generate dynamics matrix A
@@ -402,7 +380,8 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None):
     # generate emission-related matrices C, R
 
     C = np.random.normal(size=(p,n)) / np.sqrt(n)
-    R = np.sum(C*C.dot(Pi), axis=1) * (3+2*np.random.uniform(size=[p]))/4
+    R = np.sum(C*C.dot(Pi), axis=1) * np.random.uniform(size=p, 
+                                            low=snr[0], high=snr[1])
 
     try:
         B = np.linalg.cholesky(Pi)
