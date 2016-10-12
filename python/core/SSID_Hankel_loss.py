@@ -345,7 +345,7 @@ def g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
         #if len(b) > n:
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
-        g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, y[t], y[t+m_])    
+        g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, y[t,b], y[t+m_,a])    
             
     return grad / len(ts)
 
@@ -355,8 +355,11 @@ def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, yp, yf):
     CXT = C[b,:].dot(Xm.T) # = CX if m == 0 ...
 
     grad[a,:] += C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
-               - (np.outer(yp[a],yf[b].dot(CX)) + np.outer(yf[a], yp[b].dot(CXT)))
+               - (np.outer(yp,yf.dot(CX)) + np.outer(yf, yp.dot(CXT)))
     
+    #print('C')
+    #print(yf)
+    #print(yp)
     if m_ == 0:
         ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
         grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
@@ -375,9 +378,11 @@ def g_X_l2_Hankel_sgd(C, X, R, y, lag_range, ts, m, get_observed):
         b = get_observed(p, t)
 
         grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
-                                        a, b, y[t], y[t+m_])
+                                        a, b, y[t,b], y[t+m_,a])
 
-    return grad / len(ts)
+    grad[m*n:(m+1)*n,:] /= len(ts)
+
+    return grad 
 
 
 def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
@@ -386,7 +391,10 @@ def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
     CC_a = C[a,:].T.dot(C[a,:])
     CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a.copy()
 
-    grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf[a].dot(C[a,:]), yp[b].dot(C[b,:]))
+    #print('X')
+    #print(yf)
+    #print(yp)
+    grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf.dot(C[a,:]), yp.dot(C[b,:]))
 
     return grad
 
@@ -398,12 +406,14 @@ def g_R_l2_Hankel_sgd(C, X0, R, y, ts, get_observed):
     grad = np.zeros(p)
 
     for t in ts:
-        a = get_observed(p, t)
-        XCT = X0.dot(C[a,:].T)
-        y2 = y[t,a]**2
+        b = get_observed(p, t)
+        XCT = X0.dot(C[b,:].T)
+        #print('R')
+        #print(y[t,b])
+        y2 = y[t,b]**2
 
-        for s in range(len(a)):
-            grad[a[s]] += R[a[s]] + C[a[s],:].dot(XCT[:,s]) - y2[s]
+        for s in range(len(b)):
+            grad[b[s]] += R[b[s]] + C[b[s],:].dot(XCT[:,s]) - y2[s]
 
     return grad / len(ts)
 
