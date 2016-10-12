@@ -2,7 +2,7 @@ import numpy as np
 import bz2
 
 import os
-os.chdir('~/code/python/core')
+os.chdir('../core') 
 from text import progprint_xrange
 
 data_path = '/nobackup/turaga/jane/for_m/dOMR0_20150414_112406/'
@@ -19,8 +19,9 @@ for z in range(nz):
     y = np.memmap(results_path+'y_z'+("%02d" % z), dtype=np.float16, mode='w+', shape=(T,pz))
 
 
-for idx_t in progprint_xrange(len(Ts), perline=10):
+for idx_t in range(len(Ts)):
 
+    print(str(idx_t) + '/' + str(len(Ts)))
     
     t = Ts[idx_t]
 
