@@ -22,9 +22,7 @@ for idx_t in range(len(Ts)):
     t = Ts[idx_t]
 
     filename = data_path + 'TM' + ("%05d" % t) + '_CM0_CHN00.stack'
-
-    dfile = bz2.BZ2File(filename,compresslevel=1)
-    stack = np.frombuffer(dfile.read(), dtype=np.float16).reshape(nz,nx,ny)
+    stack = np.fromfile(data_path + filename, dtype=np.float16)
 
     for z in range(nz):
         
@@ -33,3 +31,4 @@ for idx_t in range(len(Ts)):
         del y # releases RAM, forces flush to disk
         
     del stack
+    
