@@ -12,7 +12,7 @@ nz, nx, ny = 41, 1024, 2048 # a word of caution: x,y,z in phicsal
 pz = nx * ny                #
 
 for z in range(nz):
-    y = np.memmap(results_path+'y_z'+("%02d" % z), dtype=np.float16, mode='w+', shape=(T,pz))
+    y = np.memmap(results_path+'y_z'+("%02d" % z), dtype=np.float32, mode='w+', shape=(T,pz))
 
 
 for idx_t in range(len(Ts)):
@@ -22,12 +22,12 @@ for idx_t in range(len(Ts)):
     t = Ts[idx_t]
 
     filename = data_path + 'TM' + ("%05d" % t) + '_CM0_CHN00.stack'
-    stack = np.fromfile(data_path + filename, dtype=np.float16)
+    stack = np.fromfile(filename, dtype=np.float16).reshape(nz, nx, ny)
 
     for z in range(nz):
         
-        y = np.memmap(results_path+'y_z'+("%02d" % z), dtype=np.float16, mode='r+', shape=(T,pz))        
-        y[idx_t,:] = stack[z,:,:].reshape(-1)
+        y = np.memmap(results_path+'y_z'+("%02d" % z), dtype=np.float32, mode='r+', shape=(T,pz))        
+        y[idx_t,:] = stack[z,:,:].reshape(-1).astype(np.float32)
         del y # releases RAM, forces flush to disk
         
     del stack
