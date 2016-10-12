@@ -21,7 +21,7 @@ for idx_t in range(len(Ts)):
     
     t = Ts[idx_t]
 
-    filename = data_path + 'TM' + ("%05d" % t) + '_CM0_CHN00.stack.bz2'
+    filename = data_path + 'TM' + ("%05d" % t) + '_CM0_CHN00.stack'
 
     dfile = bz2.BZ2File(filename,compresslevel=1)
     stack = np.frombuffer(dfile.read(), dtype=np.float16).reshape(nz,nx,ny)
