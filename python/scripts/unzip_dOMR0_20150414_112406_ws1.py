@@ -1,10 +1,6 @@
 import numpy as np
 import bz2
 
-import os
-os.chdir('../core') 
-from text import progprint_xrange
-
 data_path = '/nobackup/turaga/jane/for_m/dOMR0_20150414_112406/'
 #data_path = '/home/mackelab/data/dOMR0_20150414_112406/'
 results_path = '~/data/dOMR0_20150414_112406/raw/'
