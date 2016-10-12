@@ -3,7 +3,7 @@ import bz2
 
 data_path = '/nobackup/turaga/jane/for_m/dOMR0_20150414_112406/'
 #data_path = '/home/mackelab/data/dOMR0_20150414_112406/'
-results_path = '~/data/dOMR0_20150414_112406/raw/'
+results_path = '/groups/turaga/home/nonnenmacherm/data/dOMR0_20150414_112406/raw/'
 
 T = 1200  # number of frames
 Ts = np.arange(0, T, 1) 
