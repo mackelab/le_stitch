@@ -284,15 +284,6 @@ def adam_zip_bad(f,g_C,g_X,g_R,pars_0,
 
     return pars_out, (fun,corrs)    
 
-
-
-# setup
-
-    b1_C,b2_C,e_C,vC, b1_R,b2_R,e_R,vR, b1_X,b2_X,e_X,vX  \
-    = set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C, 
-                                    b1_R,b2_R,e_R, 
-                                    b1_X,b2_X,e_X)
-
 def set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C, 
                                     b1_R,b2_R,e_R, 
                                     b1_X,b2_X,e_X):
@@ -357,9 +348,7 @@ def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, yp, yf):
     grad[a,:] += C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
                - (np.outer(yp,yf.dot(CX)) + np.outer(yf, yp.dot(CXT)))
     
-    #print('C')
-    #print(yf)
-    #print(yp)
+
     if m_ == 0:
         ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
         grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
@@ -391,9 +380,6 @@ def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
     CC_a = C[a,:].T.dot(C[a,:])
     CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a.copy()
 
-    #print('X')
-    #print(yf)
-    #print(yp)
     grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf.dot(C[a,:]), yp.dot(C[b,:]))
 
     return grad
@@ -408,8 +394,6 @@ def g_R_l2_Hankel_sgd(C, X0, R, y, ts, get_observed):
     for t in ts:
         b = get_observed(p, t)
         XCT = X0.dot(C[b,:].T)
-        #print('R')
-        #print(y[t,b])
         y2 = y[t,b]**2
 
         for s in range(len(b)):
