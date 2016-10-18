@@ -150,7 +150,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=
 
         def batch_draw():
             ts = (np.random.permutation(np.arange(T - (kl_) )) , )
-            ms = (np.random.randint(0, kl, size= T - (kl_) ) , )   
+            ms = (np.random.randint(0, kl), )   
             return ts, ms
         def g_C_sgd(C, X, R, ts, ms, i):
             return g_C(C, X, R, ts[i], ms[i])
@@ -230,6 +230,19 @@ def adam_zip_bad(f,g_C,g_X,g_R,pars_0,
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
     ct_iter += 1
 
+    def adamize(m, v, b1, b2):
+        if b1 != 1.:                    
+            m = m / (1-b1**t)
+        else:
+            m = m.copy()
+        if b2 != 1.:
+            v = v / (1-b2**t)
+        else:
+            v = v.copy()
+
+        return m,v
+
+
     while not converged(t_iter):
 
         ts, ms = batch_draw()        
@@ -239,25 +252,23 @@ def adam_zip_bad(f,g_C,g_X,g_R,pars_0,
 
             # get data point(s) and corresponding gradients: 
 
+
             grad = g_C(C,X,R,ts,ms,idx_zip)
             mC = (b1_C * mC + (1-b1_C)* grad)     
             vC = (b2_C * vC + (1-b2_C)*(grad**2)) 
-            mh = mC / (1-b1_C**t)
-            vh = vC / (1-b2_C**t)
+            mh,vh = adamize(mC,vC,b1_C,b2_C)
             C -= alpha_C * mh/(np.sqrt(vh) + e_C)
 
             grad = g_X(C,X,R,ts,ms,idx_zip)
             mX = (b1_X * mX + (1-b1_X)* grad)     
             vX = (b2_X * vX + (1-b2_X)*(grad**2)) 
-            mh = mX / (1-b1_X**t)
-            vh = vX / (1-b2_X**t)
+            mh,vh = adamize(mX,vX,b1_X,b2_X)
             X -= alpha_X * mh/(np.sqrt(vh) + e_X)
 
             grad = g_R(C, X[:n, :], R, ts, idx_zip)
             mR = (b1_R * mR + (1-b1_R)* grad)     
             vR = (b2_R * vR + (1-b2_R)*(grad**2)) 
-            mh = mR / (1-b1_R**t)
-            vh = vR / (1-b2_R**t)
+            mh,vh = adamize(mR,vR,b1_R,b2_R)
             R -= alpha_R * mh/(np.sqrt(vh) + e_R)
 
 
@@ -337,21 +348,21 @@ def g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
         g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, y[t,b], y[t+m_,a])    
-            
     return grad / len(ts)
 
 def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, yp, yf):
 
-    CX  = C[b,:].dot(Xm)
-    CXT = C[b,:].dot(Xm.T) # = CX if m == 0 ...
+    CC_a = C[a,:].T.dot(C[a,:])
+    CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a
 
-    grad[a,:] += C[a,:].dot(CX.T.dot(CX) + CXT.T.dot(CXT)) \
-               - (np.outer(yp,yf.dot(CX)) + np.outer(yf, yp.dot(CXT)))
+
+    grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
+    grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) - np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
     
 
-    if m_ == 0:
-        ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
-        grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
+    #if m_ == 0:
+    #    ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
+    #    grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
 
 
 
@@ -378,7 +389,7 @@ def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
 
     # if |a|, |b| < n, we actually first want to compute CXC' rather than the C'C !
     CC_a = C[a,:].T.dot(C[a,:])
-    CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a.copy()
+    CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a
 
     grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf.dot(C[a,:]), yp.dot(C[b,:]))
 
