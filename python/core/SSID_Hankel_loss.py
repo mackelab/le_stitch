@@ -58,7 +58,7 @@ def run_bad(lag_range,n,y,Qs,
              'R'  : np.zeros(p),
              'X'  : np.zeros(((kl)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
-    f,g_C,g_X,g_R,batch_draw,track_corrs = l2_bad_sis_setup(
+    f,g,batch_draw,track_corrs = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
                                            y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
@@ -71,7 +71,7 @@ def run_bad(lag_range,n,y,Qs,
     print('starting descent')    
     def converged(t):
         return True if t >= max_iter else False
-    pars_est, traces = adam_zip_bad(f=f,g_C=g_C,g_X=g_X,g_R=g_R,pars_0=pars_init,
+    pars_est, traces = adam_zip_bad(f=f,g=g,pars_0=pars_init,
                                     alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
                                     alpha_R=alpha_R,b1_R=b1_R,b2_R=b2_R,e_R=e_R,
                                     alpha_X=alpha_X,b1_X=b1_X,b2_X=b2_X,e_X=e_X,
@@ -114,17 +114,9 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
             i = obs_pops[np.digitize(t, obs_time)]
             return sub_pops[i]
 
-    def g_C(C, X, R, ts, m):
-        return g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,
-            get_observed=get_observed,linear=False,W=None)
-
-    def g_X(C, X, R, ts, m):
-        return g_X_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,
-            get_observed=get_observed)
-
-    def g_R(C, X0, R, ts):
-        return g_R_l2_Hankel_sgd(C, X0, R, y, ts,
-            get_observed=get_observed)
+    def g(C, X, R, ts, m):
+        return  g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,
+            get_observed=get_observed,linear=False, W=None)
 
     def f(C,X,R):
         return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b)
@@ -135,13 +127,12 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
 
 
     # setting up the stochastic batch selection:
-    batch_draw, g_C_sgd, g_X_sgd,g_R_sgd = l2_sgd_draw(p, T, lag_range, batch_size, 
-                                            idx_grp, co_obs, 
-                                            g_C=g_C, g_X=g_X, g_R=g_R, Om=Om)
+    batch_draw, g_sgd = l2_sgd_draw(p, T, lag_range, batch_size, 
+                                    idx_grp, co_obs, g)
 
-    return f,g_C_sgd,g_X_sgd,g_R_sgd,batch_draw,track_corrs
+    return f,g_sgd,batch_draw,track_corrs
 
-def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=None):
+def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g, Om=None):
     "returns sequence of indices for sets of neuron pairs for SGD"
 
     kl = len(lag_range)
@@ -152,12 +143,8 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=
             ts = (np.random.permutation(np.arange(T - (kl_) )) , )
             ms = (np.random.randint(0, kl), )   
             return ts, ms
-        def g_C_sgd(C, X, R, ts, ms, i):
-            return g_C(C, X, R, ts[i], ms[i])
-        def g_X_sgd(C, X, R, ts, ms, i):
-            return g_X(C, X, R, ts[i], ms[i])
-        def g_R_sgd(C, X0, R, ts, i):
-            return g_R(C, X0, R, ts[i])
+        def g_sgd(C, X, R, ts, ms, i):
+            return g(C, X, R, ts[i], ms[i])
 
 
     elif batch_size == 1:
@@ -166,12 +153,8 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=
             ts = np.random.permutation(np.arange(T - (kl_) ))
             ms = np.random.randint(0, kl, size=(len(ts),))         
             return ts, ms
-        def g_C_sgd(C, X, R, ts, ms, i):
-            return g_C(C, X, R, (ts[i],), ms[i])
-        def g_X_sgd(C, X, R, ts, ms, i):
-            return g_X(C, X, R, (ts[i],), ms[i])
-        def g_R_sgd(C, X0, R, ts, i):
-            return g_R(C, X0, R, (ts[i],))
+        def g_sgd(C, X, R, ts, ms, i):
+            return g(C, X, R, (ts[i],), ms[i])
 
 
     elif batch_size > 1:
@@ -182,20 +165,16 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g_C, g_X, g_R, Om=
             return ([ts[i*batch_size:(i+1)*batch_size] for i in range(len(ts)//batch_size)],
                      ms)
 
-        def g_C_sgd(C, X, R, ts, ms, i):
-            return g_C(C, X, R, ts[i], ms[i])
-        def g_X_sgd(C, X, R, ts, ms, i):
-            return g_X(C, X, R, ts[i], ms[i])
-        def g_R_sgd(C, X, R, ts, i):
-            return g_R(C, X, R, ts[i])
+        def g_sgd(C, X, R, ts, ms, i):
+            return g(C, X, R, ts[i], ms[i])
 
-    return batch_draw, g_C_sgd, g_X_sgd, g_R_sgd
+    return batch_draw, g_sgd
 
 
 
 # main optimiser
 
-def adam_zip_bad(f,g_C,g_X,g_R,pars_0,
+def adam_zip_bad(f,g,pars_0,
                 alpha_C,b1_C,b2_C,e_C,
                 alpha_R,b1_R,b2_R,e_R,
                 alpha_X,b1_X,b2_X,e_X,
@@ -253,21 +232,20 @@ def adam_zip_bad(f,g_C,g_X,g_R,pars_0,
             # get data point(s) and corresponding gradients: 
 
 
-            grad = g_C(C,X,R,ts,ms,idx_zip)
-            mC = (b1_C * mC + (1-b1_C)* grad)     
-            vC = (b2_C * vC + (1-b2_C)*(grad**2)) 
+            grad_C,grad_X,grad_R = g(C,X,R,ts,ms,idx_zip)
+
+            mC = (b1_C * mC + (1-b1_C)* grad_C)     
+            vC = (b2_C * vC + (1-b2_C)*(grad_C**2)) 
             mh,vh = adamize(mC,vC,b1_C,b2_C)
             C -= alpha_C * mh/(np.sqrt(vh) + e_C)
 
-            grad = g_X(C,X,R,ts,ms,idx_zip)
-            mX = (b1_X * mX + (1-b1_X)* grad)     
-            vX = (b2_X * vX + (1-b2_X)*(grad**2)) 
+            mX = (b1_X * mX + (1-b1_X)* grad_X)     
+            vX = (b2_X * vX + (1-b2_X)*(grad_X**2)) 
             mh,vh = adamize(mX,vX,b1_X,b2_X)
             X -= alpha_X * mh/(np.sqrt(vh) + e_X)
 
-            grad = g_R(C, X[:n, :], R, ts, idx_zip)
-            mR = (b1_R * mR + (1-b1_R)* grad)     
-            vR = (b2_R * vR + (1-b2_R)*(grad**2)) 
+            mR = (b1_R * mR + (1-b1_R)* grad_R)     
+            vR = (b2_R * vR + (1-b2_R)*(grad_R**2)) 
             mh,vh = adamize(mR,vR,b1_R,b2_R)
             R -= alpha_R * mh/(np.sqrt(vh) + e_R)
 
@@ -333,6 +311,38 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
+
+
+def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
+    p,n = C.shape
+    grad_C = np.zeros((p,n))
+    grad_X = np.zeros(X.shape)
+    grad_R = np.zeros(p)
+
+    m_ = lag_range[m]
+    Xm = X[m*n:(m+1)*n, :]
+    X0 = X[:n,:]
+    for t in ts:
+        a = get_observed(p, t+m_)
+        b = get_observed(p, t)
+
+        CC_a = C[a,:].T.dot(C[a,:])
+        CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
+
+        g_C_l2_Hankel_vector_pair(grad_C, m_, C, Xm, R, a, b, CC_a, CC_b, y[t,b], y[t+m_,a])    
+        grad_X[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
+                                        a, b, CC_a, CC_b, y[t,b], y[t+m_,a])
+
+        XCT = X0.dot(C[b,:].T)
+        y2 = y[t,b]**2
+        for s in range(len(b)):
+            grad_R[b[s]] += R[b[s]] + C[b[s],:].dot(XCT[:,s]) - y2[s]
+    grad_C /= len(ts)
+    grad_X[m*n:(m+1)*n,:] /= len(ts)
+    grad_R /= len(ts)
+
+    return grad_C, grad_X, grad_R
+
 def g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
     "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
 
@@ -347,24 +357,22 @@ def g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
         #if len(b) > n:
         #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
         #                    'Outcomment this if annoyed'))
-        g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, y[t,b], y[t+m_,a])    
+
+        CC_a = C[a,:].T.dot(C[a,:])
+        CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
+
+        g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, y[t,b], y[t+m_,a])    
     return grad / len(ts)
 
-def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, yp, yf):
+def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, yp, yf):
 
-    CC_a = C[a,:].T.dot(C[a,:])
-    CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a
+    if m_ == 0:
+        grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   + R[b].reshape(-1,1)*C[b,:] - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
+        grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) + R[a].reshape(-1,1)*C[a,:]- np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
 
-
-    grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
-    grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) - np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
-    
-
-    #if m_ == 0:
-    #    ab = np.intersect1d(a,b) # returns sorted(unique( .. )), might be overkill here
-    #    grad[ab,:] += 2 * R[ab].reshape(-1,1) * C[ab,:].dot(Xm) # need better indexing here...
-
-
+    else:
+        grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
+        grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) - np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
 
 def g_X_l2_Hankel_sgd(C, X, R, y, lag_range, ts, m, get_observed):
 
@@ -377,19 +385,19 @@ def g_X_l2_Hankel_sgd(C, X, R, y, lag_range, ts, m, get_observed):
         a = get_observed(p, t+m_)
         b = get_observed(p, t)
 
+        # if |a|, |b| < n, we actually first want to compute CXC' rather than the C'C !
+        CC_a = C[a,:].T.dot(C[a,:])
+        CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a
+
         grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
-                                        a, b, y[t,b], y[t+m_,a])
+                                        a, b, CC_a, CC_b, y[t,b], y[t+m_,a])
 
     grad[m*n:(m+1)*n,:] /= len(ts)
 
     return grad 
 
 
-def g_X_l2_vector_pair(C, Xm, R, a, b, yp, yf):
-
-    # if |a|, |b| < n, we actually first want to compute CXC' rather than the C'C !
-    CC_a = C[a,:].T.dot(C[a,:])
-    CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a
+def g_X_l2_vector_pair(C, Xm, R, a, b, CC_a, CC_b, yp, yf):
 
     grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf.dot(C[a,:]), yp.dot(C[b,:]))
 
