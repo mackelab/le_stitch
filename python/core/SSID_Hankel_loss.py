@@ -18,7 +18,7 @@ from utility import chunking_blocks, yy_Hankel_cov_mat, yy_Hankel_cov_mat_Qs
 
 def run_bad(lag_range,n,y,Qs,
             Om,sub_pops,idx_grp,co_obs,obs_idx,
-            obs_pops=None, obs_time=None,
+            obs_pops=None, obs_time=None, W=None, 
             idx_a=None,idx_b=None,
             init='default',
             alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C = 1e-8, 
@@ -62,7 +62,7 @@ def run_bad(lag_range,n,y,Qs,
                                            lag_range=lag_range,n=n,T=T,
                                            y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
-                                           sub_pops=sub_pops,
+                                           sub_pops=sub_pops, W=W,
                                            obs_pops=obs_pops, obs_time=obs_time,
                                            idx_grp=idx_grp,obs_idx=obs_idx,
                                            batch_size=batch_size,
@@ -119,7 +119,8 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
             get_observed=get_observed,linear=False, W=None)
 
     def f(C,X,R):
-        return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b)
+        return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,
+                idx_a=idx_a,idx_b=idx_b,W=W)
 
     def track_corrs(C, A, Pi, X, R) :
          return track_correlations(Qs, p, n, lag_range, Om, C, A, Pi, X, R,  
@@ -318,6 +319,7 @@ def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
     grad_C = np.zeros((p,n))
     grad_X = np.zeros(X.shape)
     grad_R = np.zeros(p)
+    idx_ct = np.zeros(p,dtype=np.int32)
 
     m_ = lag_range[m]
     Xm = X[m*n:(m+1)*n, :]
@@ -325,6 +327,9 @@ def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
     for t in ts:
         a = get_observed(p, t+m_)
         b = get_observed(p, t)
+
+        idx_ct[a] += 1
+        idx_ct[b] += 1
 
         CC_a = C[a,:].T.dot(C[a,:])
         CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
@@ -337,32 +342,12 @@ def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
         y2 = y[t,b]**2
         for s in range(len(b)):
             grad_R[b[s]] += R[b[s]] + C[b[s],:].dot(XCT[:,s]) - y2[s]
-    grad_C /= len(ts)
+
+    idx_ct = np.maximum(idx_ct, 1)
+    grad_C = grad_C / idx_ct.reshape(-1,1)
     grad_X[m*n:(m+1)*n,:] /= len(ts)
-    grad_R /= len(ts)
-
+    grad_R = grad_R / idx_ct
     return grad_C, grad_X, grad_R
-
-def g_C_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
-    "returns l2 Hankel reconstr. stochastic gradient w.r.t. C"
-
-    p,n = C.shape
-    grad = np.zeros((p,n))
-
-    m_ = lag_range[m]
-    Xm = X[m*n:(m+1)*n, :]
-    for t in ts:
-        a = get_observed(p, t+m_)
-        b = get_observed(p, t)
-        #if len(b) > n:
-        #    raise Exception(('Warning, code was written for |b| <= n, but provided |b| > n.'
-        #                    'Outcomment this if annoyed'))
-
-        CC_a = C[a,:].T.dot(C[a,:])
-        CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
-
-        g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, y[t,b], y[t+m_,a])    
-    return grad / len(ts)
 
 def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, yp, yf):
 
@@ -374,36 +359,12 @@ def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, yp, yf):
         grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
         grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) - np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
 
-def g_X_l2_Hankel_sgd(C, X, R, y, lag_range, ts, m, get_observed):
-
-    p,n = C.shape
-    grad = np.zeros(X.shape)
-
-    m_ = lag_range[m]
-    Xm = X[m*n:(m+1)*n, :]
-    for t in ts:
-        a = get_observed(p, t+m_)
-        b = get_observed(p, t)
-
-        # if |a|, |b| < n, we actually first want to compute CXC' rather than the C'C !
-        CC_a = C[a,:].T.dot(C[a,:])
-        CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a
-
-        grad[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
-                                        a, b, CC_a, CC_b, y[t,b], y[t+m_,a])
-
-    grad[m*n:(m+1)*n,:] /= len(ts)
-
-    return grad 
-
 
 def g_X_l2_vector_pair(C, Xm, R, a, b, CC_a, CC_b, yp, yf):
 
     grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf.dot(C[a,:]), yp.dot(C[b,:]))
 
     return grad
-
-
 
 def g_R_l2_Hankel_sgd(C, X0, R, y, ts, get_observed):
 
@@ -517,7 +478,8 @@ def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
     return 0.
 
 
-def f_l2_Hankel_nl(C,X,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a=None,idx_b=None):
+def f_l2_Hankel_nl(C,X,Pi,R,lag_range,Qs,idx_grp,co_obs,
+                   idx_a=None,idx_b=None,W=None):
     "returns overall l2 Hankel reconstruction error"
 
     kl = len(lag_range)
@@ -528,11 +490,11 @@ def f_l2_Hankel_nl(C,X,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a=None,idx_b=None):
 
     err = f_l2_inst(C,X[:n, :],R,Qs[0],idx_grp,co_obs,idx_a,idx_b)
     for m in range(1,kl):
-        err += f_l2_block(C,X[m*n:(m+1)*n, :],Qs[m],idx_grp,co_obs,idx_a,idx_b)
+        err += f_l2_block(C,X[m*n:(m+1)*n, :],Qs[m],idx_grp,co_obs,idx_a,idx_b,W)
             
     return err/(kl)
     
-def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b):
+def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
     "Hankel reconstruction error on an individual Hankel block"
 
     err = 0.
@@ -544,13 +506,13 @@ def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b):
         b_Q = np.in1d(idx_b, co_obs[i])
 
         v = (C[a,:].dot(AmPi).dot(C[b,:].T) - Q[np.ix_(a_Q,b_Q)])
-        v = v.reshape(-1,)
+        v = v.reshape(-1,) if  W is None else W.reshape(-1,) * v.reshape(-1,)
 
         err += v.dot(v)
 
     return err
 
-def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b):
+def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
     "reconstruction error on the instantaneous covariance"
 
     err = 0.
@@ -563,9 +525,9 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b):
             b_Q = np.in1d(idx_b, co_obs[i])
 
             v = (C[a,:].dot(Pi).dot(C[b,:].T) - Q[np.ix_(a_Q,b_Q)])
-            idx_R = np.where(np.in1d(a,b))[0]
-            v[idx_R, np.arange(len(idx_R))] += R[a[idx_R]]
-            v = v.reshape(-1,)
+            idx_R = np.where(np.in1d(b,a))[0]
+            v[np.arange(len(idx_R)), idx_R] += R[a]
+            v = v.reshape(-1,) if  W is None else W.reshape(-1,)*v.reshape(-1,)
 
             err += v.dot(v)
 
