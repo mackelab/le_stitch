@@ -21,7 +21,7 @@ def run_bad(lag_range,n,y,Qs,
             obs_pops=None, obs_time=None, W=None, 
             idx_a=None,idx_b=None,
             init='default',
-            alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C = 1e-8, 
+            alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C=1e-8, 
             alpha_R=None, b1_R=None, b2_R=None, e_R=None, 
             alpha_X=None, b1_X=None, b2_X=None, e_X=None, 
             max_iter=100, max_zip_size=np.inf, batch_size=1,
@@ -58,7 +58,7 @@ def run_bad(lag_range,n,y,Qs,
              'R'  : np.zeros(p),
              'X'  : np.zeros(((kl)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
-    f,g,batch_draw,track_corrs = l2_bad_sis_setup(
+    f,g,batch_draw,track_corrs,converged = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
                                            y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
@@ -67,10 +67,9 @@ def run_bad(lag_range,n,y,Qs,
                                            idx_grp=idx_grp,obs_idx=obs_idx,
                                            batch_size=batch_size,
                                            verbose=verbose,
-                                           mmap=mmap, data_path=data_path)
+                                           mmap=mmap, data_path=data_path,
+                                           max_iter=max_iter)
     print('starting descent')    
-    def converged(t):
-        return True if t >= max_iter else False
     pars_est, traces = adam_zip_bad(f=f,g=g,pars_0=pars_init,
                                     alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
                                     alpha_R=alpha_R,b1_R=b1_R,b2_R=b2_R,e_R=e_R,
@@ -87,7 +86,7 @@ def run_bad(lag_range,n,y,Qs,
 
 def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_time=None,
                      sub_pops=None,idx_a=None, idx_b=None, W=None, verbose=False, 
-                     batch_size=None, mmap=False, data_path=None):
+                     max_iter=np.inf, batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
     T,p = y.shape
@@ -131,7 +130,23 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
     batch_draw, g_sgd = l2_sgd_draw(p, T, lag_range, batch_size, 
                                     idx_grp, co_obs, g)
 
-    return f,g_sgd,batch_draw,track_corrs
+    # set convergence criterion 
+    if batch_size is None:
+        print('bach sizes, stopping if loss < 0.99999 previous loss')
+        def converged(t, fun):
+            if t>= max_iter:
+                return True
+            elif t > 99 and fun[t-1] > 0.99999 * np.min(fun[t-100:t-1]):
+                print(fun[t-1]  / np.min(fun[t-4:t-1]))
+                return True
+            else:
+                return False
+
+    else:
+        def converged(t, fun):
+            return True if t >= max_iter else False
+
+    return f,g_sgd,batch_draw,track_corrs,converged
 
 def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g, Om=None):
     "returns sequence of indices for sets of neuron pairs for SGD"
@@ -142,7 +157,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g, Om=None):
 
         def batch_draw():
             ts = (np.random.permutation(np.arange(T - (kl_) )) , )
-            ms = (np.random.randint(0, kl), )   
+            ms = (lag_range, )   
             return ts, ms
         def g_sgd(C, X, R, ts, ms, i):
             return g(C, X, R, ts[i], ms[i])
@@ -155,7 +170,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g, Om=None):
             ms = np.random.randint(0, kl, size=(len(ts),))         
             return ts, ms
         def g_sgd(C, X, R, ts, ms, i):
-            return g(C, X, R, (ts[i],), ms[i])
+            return g(C, X, R, (ts[i],), (ms[i],))
 
 
     elif batch_size > 1:
@@ -167,7 +182,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g, Om=None):
                      ms)
 
         def g_sgd(C, X, R, ts, ms, i):
-            return g(C, X, R, ts[i], ms[i])
+            return g(C, X, R, ts[i], (ms[i],))
 
     return batch_draw, g_sgd
 
@@ -223,7 +238,7 @@ def adam_zip_bad(f,g,pars_0,
         return m,v
 
 
-    while not converged(t_iter):
+    while not converged(t_iter, fun):
 
         ts, ms = batch_draw()        
         zip_size = get_zip_size(batch_size, p, ts, max_zip_size)
@@ -266,6 +281,7 @@ def adam_zip_bad(f,g,pars_0,
     #R = s_R(R, C, X[:n,:].reshape(n,n))
 
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R)
+    fun = fun[:t_iter]
 
     print('total iterations: ', t)
 
@@ -314,39 +330,41 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
 
 
-def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,get_observed,linear=False, W=None):
+def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
     p,n = C.shape
     grad_C = np.zeros((p,n))
     grad_X = np.zeros(X.shape)
     grad_R = np.zeros(p)
     idx_ct = np.zeros(p,dtype=np.int32)
 
-    m_ = lag_range[m]
-    Xm = X[m*n:(m+1)*n, :]
-    X0 = X[:n,:]
-    for t in ts:
-        a = get_observed(p, t+m_)
-        b = get_observed(p, t)
+    for m in ms:
+        m_ = lag_range[m]
+        Xm = X[m*n:(m+1)*n, :]
+        X0 = X[:n,:]
+        for t in ts:
+            a = get_observed(p, t+m_)
+            b = get_observed(p, t)
 
-        idx_ct[a] += 1
-        idx_ct[b] += 1
+            idx_ct[a] += 1
+            idx_ct[b] += 1
 
-        CC_a = C[a,:].T.dot(C[a,:])
-        CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
+            CC_a = C[a,:].T.dot(C[a,:])
+            CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
 
-        g_C_l2_Hankel_vector_pair(grad_C, m_, C, Xm, R, a, b, CC_a, CC_b, y[t,b], y[t+m_,a])    
-        grad_X[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
-                                        a, b, CC_a, CC_b, y[t,b], y[t+m_,a])
+            g_C_l2_Hankel_vector_pair(grad_C, m_, C, Xm, R, a, b, CC_a, CC_b, y[t,b], y[t+m_,a])    
+            grad_X[m*n:(m+1)*n,:] += g_X_l2_vector_pair(C, Xm, R, 
+                                            a, b, CC_a, CC_b, y[t,b], y[t+m_,a])
 
-        XCT = X0.dot(C[b,:].T)
-        y2 = y[t,b]**2
-        for s in range(len(b)):
-            grad_R[b[s]] += R[b[s]] + C[b[s],:].dot(XCT[:,s]) - y2[s]
+            XCT = X0.dot(C[b,:].T)
+            y2 = y[t,b]**2
+            for s in range(len(b)):
+                grad_R[b[s]] += R[b[s]] + C[b[s],:].dot(XCT[:,s]) - y2[s]
 
-    idx_ct = np.maximum(idx_ct, 1)
+        idx_ct = np.maximum(idx_ct, 1)
+        grad_X[m*n:(m+1)*n,:] /= len(ts)
     grad_C = grad_C / idx_ct.reshape(-1,1)
-    grad_X[m*n:(m+1)*n,:] /= len(ts)
     grad_R = grad_R / idx_ct
+
     return grad_C, grad_X, grad_R
 
 def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, yp, yf):
