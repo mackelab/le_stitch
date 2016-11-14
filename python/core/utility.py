@@ -377,6 +377,9 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None, snr = (.75, 1.25)):
     Q = stats.wishart(n, np.eye(n)).rvs()/n
     Pi = sp.linalg.solve_discrete_lyapunov(A, Q)
 
+    Pi = Pi / np.max(np.diag(Pi))
+    Q = Pi - A.dot(Pi).dot(A.T)
+
     # generate emission-related matrices C, R
 
     C = np.random.normal(size=(p,n)) / np.sqrt(n)
