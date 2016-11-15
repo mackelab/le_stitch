@@ -24,7 +24,8 @@ def run_bad(lag_range,n,y,Qs,
             alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C=1e-8, 
             alpha_R=None, b1_R=None, b2_R=None, e_R=None, 
             alpha_X=None, b1_X=None, b2_X=None, e_X=None, 
-            max_iter=100, max_zip_size=np.inf, batch_size=1,
+            max_iter=100, max_zip_size=np.inf, eps_conv=0.99999,
+            batch_size=1,
             verbose=False, mmap=False, data_path=None):
 
     alpha_R = alpha_C if alpha_R is None else alpha_R
@@ -68,7 +69,7 @@ def run_bad(lag_range,n,y,Qs,
                                            batch_size=batch_size,
                                            verbose=verbose,
                                            mmap=mmap, data_path=data_path,
-                                           max_iter=max_iter)
+                                           max_iter=max_iter, eps_conv=eps_conv)
     print('starting descent')    
     pars_est, traces = adam_zip_bad(f=f,g=g,pars_0=pars_init,
                                     alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
@@ -86,7 +87,8 @@ def run_bad(lag_range,n,y,Qs,
 
 def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_time=None,
                      sub_pops=None,idx_a=None, idx_b=None, W=None, verbose=False, 
-                     max_iter=np.inf, batch_size=None, mmap=False, data_path=None):
+                     max_iter=np.inf, eps_conv=0.99999,
+                     batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
     T,p = y.shape
@@ -132,11 +134,11 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
 
     # set convergence criterion 
     if batch_size is None:
-        print('bach sizes, stopping if loss < 0.99999 previous loss')
+        print('bach sizes, stopping if loss < ' + str(eps_conv) + ' previous loss')
         def converged(t, fun):
             if t>= max_iter:
                 return True
-            elif t > 99 and fun[t-1] > 0.99999 * np.min(fun[t-100:t-1]):
+            elif t > 99 and fun[t-1] > eps_conv * np.min(fun[t-100:t-1]):
                 print(fun[t-1]  / np.min(fun[t-4:t-1]))
                 return True
             else:
