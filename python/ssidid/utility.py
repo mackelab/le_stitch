@@ -2,10 +2,7 @@ import numpy as np
 import scipy as sp
 from scipy import stats
 import matplotlib.pyplot as plt
-import warnings
-from scipy.linalg import solve_discrete_lyapunov as dlyap
 from numpy.lib.stride_tricks import as_strided
-from text import progprint_xrange
 
 ###########################################################################
 # Utility (general)
@@ -223,7 +220,7 @@ def chunking_blocks(f, a, b, max_size):
     return out
 
 def comp_model_covariances(pars, lag_range, 
-    mmap=False, chunksize=None, data_path='../fits/'):
+    mmap=False, chunksize=None, data_path='../fits/', verbose=False):
     "returns list of time-lagged covariances cov(y_t+m, y_t) m = 1, ..., k+l-1"
     
     kl = len(lag_range)
@@ -240,7 +237,8 @@ def comp_model_covariances(pars, lag_range,
         if mmap:
             Qs.append(np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                 mode='w+', shape=(p,p)))
-            print('computing time-lagged covariance for lag m =', str(m))      
+            if verbose: 
+                print('computing time-lagged covariance for lag m =', str(m))      
         else:
             Qs.append(np.empty((p,p)))
 
@@ -267,7 +265,8 @@ def comp_model_covariances(pars, lag_range,
 
 
 def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
-             mmap, chunksize, data_path, pa=None, pb=None, snr=(.75, 1.25)):
+             mmap, chunksize, data_path, pa=None, pb=None, snr=(.75, 1.25),
+             verbose=False):
 
     kl = len(lag_range)
     kl_ = np.max(lag_range)+1
@@ -289,12 +288,14 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     if T == np.inf:
         x,y = np.zeros((n,0)), np.zeros((p,0))
     else:
-        print('computing empirical covariances')
+        if verbose:
+            print('computing empirical covariances')
         x,y = draw_data(pars=pars_true, T=T, 
                         mmap=mmap, chunksize=chunksize, data_path=data_path)
         for m in range(kl):
             m_ = lag_range[m]
-            print('computing time-lagged covariance for lag ', str(m_))
+            if verbose:
+                print('computing time-lagged covariance for lag ', str(m_))
             if mmap:
                 Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                               mode='w+', shape=(pa,pb))

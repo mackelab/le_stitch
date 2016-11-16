@@ -1,16 +1,6 @@
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
-import warnings
-#import control
-from scipy.linalg import solve_discrete_lyapunov as dlyap
-from numpy.lib.stride_tricks import as_strided
-from text import progprint_xrange
-import cvxopt
-import SDLS
-import os
-from utility import chunking_blocks, yy_Hankel_cov_mat, yy_Hankel_cov_mat_Qs
-
 
 ###########################################################################
 # stochastic gradient descent: gradients w.r.t. C, R, cov(x_{t+m},x_t)
@@ -67,17 +57,18 @@ def run_bad(lag_range,n,y,Qs,
                                            obs_pops=obs_pops, obs_time=obs_time,
                                            idx_grp=idx_grp,obs_idx=obs_idx,
                                            batch_size=batch_size,
-                                           verbose=verbose,
                                            mmap=mmap, data_path=data_path,
                                            max_iter=max_iter, eps_conv=eps_conv)
-    print('starting descent')    
+    if verbose:
+        print('starting descent')    
     pars_est, traces = adam_zip_bad(f=f,g=g,pars_0=pars_init,
                                     alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
                                     alpha_R=alpha_R,b1_R=b1_R,b2_R=b2_R,e_R=e_R,
                                     alpha_X=alpha_X,b1_X=b1_X,b2_X=b2_X,e_X=e_X,
                                     batch_draw=batch_draw,converged=converged,
                                     track_corrs=track_corrs,max_iter=max_iter,
-                                    max_zip_size=max_zip_size,batch_size=batch_size)
+                                    max_zip_size=max_zip_size,batch_size=batch_size,
+                                    verbose=verbose)
 
     return pars_init, pars_est, traces
 
@@ -86,7 +77,7 @@ def run_bad(lag_range,n,y,Qs,
 # decorations
 
 def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_time=None,
-                     sub_pops=None,idx_a=None, idx_b=None, W=None, verbose=False, 
+                     sub_pops=None,idx_a=None, idx_b=None, W=None,  
                      max_iter=np.inf, eps_conv=0.99999,
                      batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
@@ -134,12 +125,12 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
 
     # set convergence criterion 
     if batch_size is None:
-        print('bach sizes, stopping if loss < ' + str(eps_conv) + ' previous loss')
+        #print('bach sizes, stopping if loss < ' + str(eps_conv) + ' previous loss')
         def converged(t, fun):
             if t>= max_iter:
                 return True
             elif t > 99 and fun[t-1] > eps_conv * np.min(fun[t-100:t-1]):
-                print(fun[t-1]  / np.min(fun[t-4:t-1]))
+                #print(fun[t-1]  / np.min(fun[t-4:t-1]))
                 return True
             else:
                 return False
@@ -197,7 +188,8 @@ def adam_zip_bad(f,g,pars_0,
                 alpha_R,b1_R,b2_R,e_R,
                 alpha_X,b1_X,b2_X,e_X,
                 batch_draw,track_corrs,converged,
-                max_iter,batch_size,max_zip_size):
+                max_iter,batch_size,max_zip_size,
+                verbose):
 
 
     # initialise pars
@@ -272,8 +264,9 @@ def adam_zip_bad(f,g,pars_0,
             fun[t_iter] = f(C,X,R)
 
         if np.mod(t_iter,max_iter//10) == 0:
-            print('finished %', 100*t_iter/max_iter+10)
-            print('f = ', fun[t_iter])
+            if verbose:
+                print('finished %', 100*t_iter/max_iter+10)
+                print('f = ', fun[t_iter])
             corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
             ct_iter += 1
 
@@ -285,7 +278,8 @@ def adam_zip_bad(f,g,pars_0,
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R)
     fun = fun[:t_iter]
 
-    print('total iterations: ', t)
+    if verbose:
+        print('total iterations: ', t)
 
     pars_out = {'C' : C, 'X': X, 'R' : R }
     pars_out['A'], pars_out['Pi'] = np.nan*np.ones((n,n)), np.nan*np.ones((n,n))
@@ -297,12 +291,11 @@ def set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C,
                                     b1_X,b2_X,e_X):
 
     if batch_size is None:
-        print('doing batch gradients - switching to plain gradient descent')
+        print('using batch gradients - switching to plain gradient descent')
         b1_C, b2_C, e_C, v_0_C = 0, 1.0, 0, np.ones((p,n))
         b1_R, b2_R, e_R, v_0_R = 0, 1.0, 0, np.ones(p)
         b1_X, b2_X, e_X, v_0_X = 0, 1.0, 0, np.ones((kl*n,n))
     elif batch_size >= 1:
-        print('subsampling in time!')
         v_0_C, v_0_R, v_0_X = np.zeros((p,n)),np.ones(p),np.ones((kl*n,n))
     else: 
         raise Exception('cannot handle selected batch size')
