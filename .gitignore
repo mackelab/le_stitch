@@ -40,4 +40,15 @@ Thumbs.db
 ############
 fits/
 python/core/__pycache__/
+python/dev/old/large/
+python/dev/old/.ipynb_checkpoints/
 python/dev/.ipynb_checkpoints/
+python/.ipynb_checkpoints/
+python/build/
+python/dist/
+python/figs/
+python/ssidid/__pycache__/
+python/third_party/
+python/le_stitch.egg-info/
+
+
