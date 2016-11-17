@@ -244,20 +244,9 @@ def adam_zip_bad(f,g,pars_0,
 
             grad_C,grad_X,grad_R = g(C,X,R,ts,ms,idx_zip)
 
-            mC = (b1_C * mC + (1-b1_C)* grad_C)     
-            vC = (b2_C * vC + (1-b2_C)*(grad_C**2)) 
-            mh,vh = adamize(mC,vC,b1_C,b2_C)
-            C -= alpha_C * mh/(np.sqrt(vh) + e_C)
-
-            mX = (b1_X * mX + (1-b1_X)* grad_X)     
-            vX = (b2_X * vX + (1-b2_X)*(grad_X**2)) 
-            mh,vh = adamize(mX,vX,b1_X,b2_X)
-            X -= alpha_X * mh/(np.sqrt(vh) + e_X)
-
-            mR = (b1_R * mR + (1-b1_R)* grad_R)     
-            vR = (b2_R * vR + (1-b2_R)*(grad_R**2)) 
-            mh,vh = adamize(mR,vR,b1_R,b2_R)
-            R -= alpha_R * mh/(np.sqrt(vh) + e_R)
+            C, mC, vC = adam(C,grad_C,mC,vC,alpha_C,b1_C,b2_C,e_C)
+            X, mX, vX = adam(X,grad_X,mX,vX,alpha_X,b1_X,b2_X,e_X)
+            R, mR, vR = adam(R,grad_R,mR,vR,alpha_R,b1_R,b2_R,e_R)
 
 
         if t_iter < max_iter:          # really expensive!
@@ -301,6 +290,15 @@ def set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C,
         raise Exception('cannot handle selected batch size')
 
     return b1_C,b2_C,e_C,v_0_C, b1_R,b2_R,e_R,v_0_R, b1_X,b2_X,e_X,v_0_X
+
+
+def adam(w,g,m,v,a,b1,b2,e):
+    m = (b1 * m + (1-b1) * g)
+    v = (b2 * v + (1-b2) * g**2)
+    mh,vh = adamize(m,v,b1,b2)
+    w -= a * mh / (np.sqrt(vh) + e)
+
+    return w, m, v
 
 def set_adam_init(pars_0, p, n, kl):
 
