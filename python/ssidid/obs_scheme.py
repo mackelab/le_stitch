@@ -24,8 +24,7 @@ class ObservationScheme(object):
 		self.num_obstime = self._obs_time.size
 
 		self.check_obs_scheme()
-		self.obs_idx, self.idx_grp = self._get_obs_index_groups()
-
+		self.comp_subpop_stats()
 
 	@staticmethod
 	def _argcheck_sub_pops(sub_pops):
@@ -125,33 +124,73 @@ class ObservationScheme(object):
 			assert np.all(self._mask.shape == (self._T,self._p))
 
 
+	def comp_subpop_stats(self):
+		"computes a collection of helpful index sets for the stitching context"
+
+		sub_pops = self._sub_pops
+		obs_pops = self._obs_pops
+
+		if obs_pops is None:
+		    obs_pops = tuple(range(self.num_subpops))
+		self.obs_idx, self.idx_grp = self._get_obs_index_groups()
+		self.overlaps, self.overlap_grp, self.idx_overlap = self._get_obs_index_overlaps()
+
+		def co_observed(x, i):
+			for idx in self.obs_idx:
+				if x in idx and i in idx:
+					return True
+			return False        
+
+		num_idx_grps, self.co_obs = len(self.idx_grp), []
+		for i in range(num_idx_grps):    
+			self.co_obs.append([self.idx_grp[x] for x in np.arange(len(self.idx_grp)) \
+				if co_observed(x,i)])
+			self.co_obs[i] = np.sort(np.hstack(self.co_obs[i]))
+		    
+
 	def _get_obs_index_groups(self):
-		" Computes index groups for given observation scheme. "
 
-		J = np.zeros((self._p, self.num_subpops), dtype=bool) 
+	    J = np.zeros((self._p, self.num_subpops))  
+	    for i in range(self.num_subpops):   
+	        if self._sub_pops[i].size > 0:  
+	            J[self._sub_pops[i],i] = 1   
 
-		def any_observed(x):
-			return x.size > 0
+	    twoexp = np.power(2,np.arange(self.num_subpops)) 
+	    hsh = np.sum(J*twoexp,1)                        
 
-		for i in np.where(map(any_observed, self._sub_pops))[0]:
-			J[self._sub_pops[i],i] = 1
+	    lbls = np.unique(hsh) 
+	                                     
+	    idx_grp = [] # list of arrays that define the index groups
+	    for i in range(lbls.size):
+	        idx_grp.append(np.where(hsh==lbls[i])[0])
 
-		twoexp = np.power(2,np.arange(self.num_subpops))
-		hsh = np.sum(J*twoexp,1)                     
+	    obs_idx = [] # list of arrays giving the index groups observed at each
+	                 # given time interval
+	    for i in range(len(self._obs_pops)):
+	        obs_idx.append([])
+	        for j in np.unique(hsh[np.where(J[:,self._obs_pops[i]]==1)]):
+	            obs_idx[i].append(np.where(lbls==j)[0][0])            
 
-		lbls = np.unique(hsh)
+	    return obs_idx, idx_grp
 
-		idx_grp = []
-		for i in range(lbls.size):
-			idx_grp.append(np.where(hsh==lbls[i])[0])
+	def _get_obs_index_overlaps(self):
+		num_idx_grps = len(self.idx_grp)
 
-		obs_idx = []
-		for i in range(self.num_obstime):
-			obs_idx.append([])
-			for j in np.unique(hsh[np.where(J[:,self._obs_pops[i]]==1)]):
-				obs_idx[i].append(np.where(lbls==j)[0][0])            
+		idx_overlap = []
+		idx = np.zeros(num_idx_grps, dtype=int)
+		for j in range(num_idx_grps):
+			idx_overlap.append([])
+			for i in range(self.num_subpops):
+				if np.any(np.intersect1d(self._sub_pops[i], self.idx_grp[j])):
+					idx[j] += 1
+					idx_overlap[j].append(i)
+			idx_overlap[j] = np.array(idx_overlap[j])
 
-		return tuple(obs_idx), tuple(idx_grp)
+		overlaps = [self.idx_grp[i] for i in np.where(idx>1)[0]]
+		overlap_grp = [i for i in np.where(idx>1)[0]]
+		idx_overlap = [idx_overlap[i] for i in np.where(idx>1)[0]]
+
+		return overlaps, overlap_grp, idx_overlap	    
 
 	def set_schedule(self, obs_pops, obs_time):
 		self._obs_pops = self._argcheck_obs_pops(obs_pops)
@@ -165,15 +204,25 @@ class ObservationScheme(object):
 	@sub_pops.setter
 	def sub_pops(self, sub_pops):
 		self._sub_pops = self._argcheck_sub_pops(sub_pops)
+		self.num_pops = len(self._sub_pops)
 		self.check_obs_scheme()
+		self.comp_subpop_stats()
 
 	@property
 	def obs_pops(self):
 		return self._obs_pops
 
+	@obs_pops.setter
+	def obs_pops(self, obs_pops):
+		self._obs_pops = self._argcheck_obs_pops(obs_pops)
+
 	@property
 	def obs_time(self):
 		return self._obs_time
+
+	@obs_time.setter
+	def obs_time(self, obs_time):
+		self._obs_time = self._argcheck_obs_time(obs_time)
 
 	@property
 	def T(self):
