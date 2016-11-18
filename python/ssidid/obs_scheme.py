@@ -8,11 +8,14 @@ class ObservationScheme(object):
 				obs_pops=None, 
 				obs_time=None,
 				obs_idx=None,
-				idx_grp=None):
+				idx_grp=None,
+				mask=None):
 
 		self._sub_pops = (np.arange(p),) if sub_pops is None else self._argcheck_sub_pops(sub_pops)
 		self._obs_pops = np.array((0,)) if obs_pops is None else self._argcheck_obs_pops(obs_pops)
 		self._obs_time = np.array((T,)) if obs_time is None else self._argcheck_obs_time(obs_time)
+
+		self._mask = self._argcheck_mask(mask)
 
 		self._p = p
 		self._T = T
@@ -27,13 +30,12 @@ class ObservationScheme(object):
 	@staticmethod
 	def _argcheck_sub_pops(sub_pops):
 
-		assert isinstance(sub_pops, tuple)
+		assert len(sub_pops) > 0
 
 		for pop in sub_pops:
 			assert isinstance(pop, np.ndarray)
 
 		return sub_pops
-
 
 	@staticmethod
 	def _argcheck_obs_pops(obs_pops):
@@ -48,6 +50,15 @@ class ObservationScheme(object):
 
 		return np.asarray(obs_time)
 
+	def _argcheck_mask(self, mask):
+
+		if mask is None:
+			pass
+		else:
+			assert np.all(mask.shape == (self._T,self._p))
+			mask = np.nan_to_num(mask).astype(dtype=bool)
+
+		return mask
 
 	def check_obs_scheme(self):
 		" Checks the internal validity of provided observation schemes "
@@ -110,6 +121,9 @@ class ObservationScheme(object):
 							'Given subpopulation indices are '),
 							idx_pops)
 
+		if not self._mask is None:
+			assert np.all(self._mask.shape == (self._T,self._p))
+
 
 	def _get_obs_index_groups(self):
 		" Computes index groups for given observation scheme. "
@@ -169,6 +183,14 @@ class ObservationScheme(object):
 	def T(self,T):
 		self._T = T
 		self.check_obs_scheme()
+
+	@property
+	def mask(self):
+		return self._mask
+
+	@mask.setter
+	def mask(self, mask):
+		self._mask = self._argcheck_mask(mask)
 
 	@property
 	def p(self):

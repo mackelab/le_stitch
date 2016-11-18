@@ -7,8 +7,7 @@ import matplotlib.pyplot as plt
 ###########################################################################
 
 def run_bad(lag_range,n,y,Qs,
-            Om,sub_pops,idx_grp,co_obs,obs_idx,
-            obs_pops=None, obs_time=None, W=None, 
+            obs_scheme, W=None, 
             idx_a=None,idx_b=None,
             init='default',
             alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C=1e-8, 
@@ -51,11 +50,9 @@ def run_bad(lag_range,n,y,Qs,
 
     f,g,batch_draw,track_corrs,converged = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
-                                           y=y,Qs=Qs,Om=Om,
+                                           y=y,Qs=Qs,
                                            idx_a=idx_a, idx_b=idx_b,
-                                           sub_pops=sub_pops, W=W,
-                                           obs_pops=obs_pops, obs_time=obs_time,
-                                           idx_grp=idx_grp,obs_idx=obs_idx,
+                                           obs_scheme=obs_scheme, W=W,
                                            batch_size=batch_size,
                                            mmap=mmap, data_path=data_path,
                                            max_iter=max_iter, eps_conv=eps_conv)
@@ -76,11 +73,16 @@ def run_bad(lag_range,n,y,Qs,
 
 # decorations
 
-def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_time=None,
-                     sub_pops=None,idx_a=None, idx_b=None, W=None,  
+def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=None,
                      max_iter=np.inf, eps_conv=0.99999,
                      batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
+
+    sub_pops= obs_scheme.sub_pops
+    idx_grp = obs_scheme.idx_grp
+    obs_idx = obs_scheme.obs_idx
+    obs_pops= obs_scheme.obs_pops
+    obs_time= obs_scheme.obs_time
 
     T,p = y.shape
     kl = len(lag_range)
@@ -98,11 +100,14 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
             if co_observed(x,i)])
         co_obs[i] = np.sort(np.hstack(co_obs[i]))
 
-    if obs_time is None or obs_pops is None or sub_pops is None:
-        def get_observed(p, t):
+    if not obs_scheme.mask is None:
+        def get_observed(t):
+            return np.where(obs_scheme.mask[t,:])[0]
+    elif obs_time is None or obs_pops is None or sub_pops is None:
+        def get_observed(t):
             return range(p) 
     else:
-        def get_observed(p, t):
+        def get_observed(t):
             i = obs_pops[np.digitize(t, obs_time)]
             return sub_pops[i]
 
@@ -115,13 +120,12 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
                 idx_a=idx_a,idx_b=idx_b,W=W)
 
     def track_corrs(C, A, Pi, X, R) :
-         return track_correlations(Qs, p, n, lag_range, Om, C, A, Pi, X, R,  
+         return track_correlations(Qs, p, n, lag_range, C, A, Pi, X, R,  
                         idx_a, idx_b, mmap, data_path)
 
 
     # setting up the stochastic batch selection:
-    batch_draw, g_sgd = l2_sgd_draw(p, T, lag_range, batch_size, 
-                                    idx_grp, co_obs, g)
+    batch_draw, g_sgd = l2_sgd_draw(p, T, lag_range, batch_size, g)
 
     # set convergence criterion 
     if batch_size is None:
@@ -141,7 +145,7 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,idx_grp,obs_idx,obs_pops=None, obs_ti
 
     return f,g_sgd,batch_draw,track_corrs,converged
 
-def l2_sgd_draw(p, T, lag_range, batch_size, idx_grp, co_obs, g, Om=None):
+def l2_sgd_draw(p, T, lag_range, batch_size, g):
     "returns sequence of indices for sets of neuron pairs for SGD"
 
     kl = len(lag_range)
@@ -219,19 +223,6 @@ def adam_zip_bad(f,g,pars_0,
     corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
     ct_iter += 1
 
-    def adamize(m, v, b1, b2):
-        if b1 != 1.:                    
-            m = m / (1-b1**t)
-        else:
-            m = m.copy()
-        if b2 != 1.:
-            v = v / (1-b2**t)
-        else:
-            v = v.copy()
-
-        return m,v
-
-
     while not converged(t_iter, fun):
 
         ts, ms = batch_draw()        
@@ -244,9 +235,9 @@ def adam_zip_bad(f,g,pars_0,
 
             grad_C,grad_X,grad_R = g(C,X,R,ts,ms,idx_zip)
 
-            C, mC, vC = adam(C,grad_C,mC,vC,alpha_C,b1_C,b2_C,e_C)
-            X, mX, vX = adam(X,grad_X,mX,vX,alpha_X,b1_X,b2_X,e_X)
-            R, mR, vR = adam(R,grad_R,mR,vR,alpha_R,b1_R,b2_R,e_R)
+            C, mC, vC = adam(C,grad_C,mC,vC,alpha_C,b1_C,b2_C,e_C,t_iter+1)
+            X, mX, vX = adam(X,grad_X,mX,vX,alpha_X,b1_X,b2_X,e_X,t_iter+1)
+            R, mR, vR = adam(R,grad_R,mR,vR,alpha_R,b1_R,b2_R,e_R,t_iter+1)
 
 
         if t_iter < max_iter:          # really expensive!
@@ -292,13 +283,27 @@ def set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C,
     return b1_C,b2_C,e_C,v_0_C, b1_R,b2_R,e_R,v_0_R, b1_X,b2_X,e_X,v_0_X
 
 
-def adam(w,g,m,v,a,b1,b2,e):
+def adam(w,g,m,v,a,b1,b2,e,t):
     m = (b1 * m + (1-b1) * g)
     v = (b2 * v + (1-b2) * g**2)
-    mh,vh = adamize(m,v,b1,b2)
+    mh,vh = adamize(m,v,b1,b2,t)
     w -= a * mh / (np.sqrt(vh) + e)
 
     return w, m, v
+
+def adamize(m, v, b1, b2,t):
+    if b1 != 1.:                    
+        m = m / (1-b1**t)
+    else:
+        m = m.copy()
+    if b2 != 1.:
+        v = v / (1-b2**t)
+    else:
+        v = v.copy()
+
+    return m,v
+
+
 
 def set_adam_init(pars_0, p, n, kl):
 
@@ -335,8 +340,8 @@ def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
         Xm = X[m*n:(m+1)*n, :]
         X0 = X[:n,:]
         for t in ts:
-            a = get_observed(p, t+m_)
-            b = get_observed(p, t)
+            a = get_observed(t+m_)
+            b = get_observed(t)
 
             idx_ct[a] += 1
             idx_ct[b] += 1
@@ -383,7 +388,7 @@ def g_R_l2_Hankel_sgd(C, X0, R, y, ts, get_observed):
     grad = np.zeros(p)
 
     for t in ts:
-        b = get_observed(p, t)
+        b = get_observed(t)
         XCT = X0.dot(C[b,:].T)
         y2 = y[t,b]**2
 
@@ -549,7 +554,7 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
 ###########################################################################
 
 
-def track_correlations(Qs, p, n, lag_range, Om, C, A, Pi, X, R,
+def track_correlations(Qs, p, n, lag_range, C, A, Pi, X, R,
     idx_a=None, idx_b=None, mmap = False, data_path=None):
 
     kl = len(lag_range)
