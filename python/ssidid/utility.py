@@ -266,7 +266,7 @@ def comp_model_covariances(pars, lag_range,
 
 def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
              mmap, chunksize, data_path, pa=None, pb=None, snr=(.75, 1.25),
-             verbose=False):
+             verbose=False, whiten=False):
 
     kl = len(lag_range)
     kl_ = np.max(lag_range)+1
@@ -276,7 +276,8 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
 
     pars_true,Qs,_ = gen_sys(p=p,n=n,lag_range=lag_range, nr=nr,ev_r=ev_r,ev_c=ev_c,
                              snr=snr, calc_stats=T==np.inf,return_masked=False,
-                             mmap=mmap,chunksize=chunksize,data_path=data_path)
+                             mmap=mmap,chunksize=chunksize,data_path=data_path,
+                             whiten=whiten)
     pars_true['d'], pars_true['mu0'] = np.zeros(p), np.zeros(n), 
     pars_true['V0'] = pars_true['Pi'].copy()
 
@@ -312,11 +313,11 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     return pars_true, x, y, Qs, idx_a, idx_b
 
 def gen_sys(p,n,lag_range,nr=None,ev_r=None,ev_c=None,snr=(.75, 1.25),
-            calc_stats=True,return_masked=True, 
+            calc_stats=True,return_masked=True, whiten=False,
             mmap=False, chunksize=None,data_path='../fits'):
 
     kl = len(lag_range)
-    pars_true = gen_pars(p,n, nr=nr, ev_r = ev_r, ev_c = ev_c, snr=snr)
+    pars_true = gen_pars(p,n,nr=nr,ev_r=ev_r,ev_c=ev_c,snr=snr,whiten=whiten)
     if calc_stats:
         Qs_full = comp_model_covariances(pars_true, lag_range, mmap=mmap, 
             chunksize=chunksize,data_path=data_path)
@@ -334,7 +335,8 @@ def gen_sys(p,n,lag_range,nr=None,ev_r=None,ev_c=None,snr=(.75, 1.25),
     return pars_true, Qs, Qs_full
 
 
-def gen_pars(p,n, nr=None, ev_r = None, ev_c = None, snr = (.75, 1.25)):
+def gen_pars(p,n, nr=None, ev_r = None, ev_c = None, 
+             snr = (.75, 1.25), whiten=False):
     "draws parameters for an LDS"
 
     # generate dynamics matrix A
@@ -375,17 +377,22 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None, snr = (.75, 1.25)):
 
     # generate innovation noise covariance matrix Q
 
-    Q = np.atleast_2d(stats.wishart(n, np.eye(n)).rvs()/n)
+    Q = np.atleast_2d(stats.wishart(5*n, np.eye(n)).rvs()/n)
     Pi = np.atleast_2d(sp.linalg.solve_discrete_lyapunov(A, Q))
 
-    Pi = Pi / np.max(np.diag(Pi))
-    Q = Pi - A.dot(Pi).dot(A.T)
+    L = np.linalg.cholesky(Pi)
+    Linv = np.linalg.inv(L)
+    A, Q = Linv.dot(A).dot(L), Linv.dot(Q).dot(Linv.T)
+    Pi = np.atleast_2d(sp.linalg.solve_discrete_lyapunov(A, Q))
 
     # generate emission-related matrices C, R
 
     C = np.random.normal(size=(p,n)) / np.sqrt(n)
-    R = np.sum(C*C.dot(Pi), axis=1) * np.random.uniform(size=p, 
-                                            low=snr[0], high=snr[1])
+    NSR = np.random.uniform(size=p, low=snr[0], high=snr[1]) # 1/SNR
+    if whiten:
+        C /= np.atleast_2d(np.sqrt(np.sum(C*C.dot(Pi), axis=1) * (1 + NSR))).T
+
+    R = np.sum(C*C.dot(Pi), axis=1) * NSR
 
     try:
         B = np.linalg.cholesky(Pi)
