@@ -15,7 +15,7 @@ def run_bad(lag_range,n,y,Qs,
             alpha_X=None, b1_X=None, b2_X=None, e_X=None, 
             max_iter=100, max_zip_size=np.inf, eps_conv=0.99999,
             batch_size=1,
-            verbose=False, mmap=False, data_path=None):
+            verbose=False, mmap=False, data_path=None, pars_track=None):
 
     alpha_R = alpha_C if alpha_R is None else alpha_R
     alpha_X = alpha_C if alpha_X is None else alpha_X
@@ -65,7 +65,7 @@ def run_bad(lag_range,n,y,Qs,
                                     batch_draw=batch_draw,converged=converged,
                                     track_corrs=track_corrs,max_iter=max_iter,
                                     max_zip_size=max_zip_size,batch_size=batch_size,
-                                    verbose=verbose)
+                                    verbose=verbose,pars_track=pars_track)
 
     return pars_init, pars_est, traces
 
@@ -193,7 +193,7 @@ def adam_zip_bad(f,g,pars_0,
                 alpha_X,b1_X,b2_X,e_X,
                 batch_draw,track_corrs,converged,
                 max_iter,batch_size,max_zip_size,
-                verbose):
+                verbose,pars_track):
 
 
     # initialise pars
@@ -242,6 +242,8 @@ def adam_zip_bad(f,g,pars_0,
 
         if t_iter < max_iter:          # really expensive!
             fun[t_iter] = f(C,X,R)
+            if not pars_track is None:
+                pars_track(C,X,R,t_iter)
 
         if np.mod(t_iter,max_iter//10) == 0:
             if verbose:
