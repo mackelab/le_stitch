@@ -297,6 +297,7 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
             print('computing empirical covariances')
         x,y = draw_data(pars=pars_true, T=T, 
                         mmap=mmap, chunksize=chunksize, data_path=data_path)
+        y -= y.mean(axis=0)
         for m in range(kl):
             m_ = lag_range[m]
             if verbose:
@@ -305,8 +306,8 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
                 Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
                               mode='w+', shape=(pa,pb))
             else:
-                Q = np.empty((pa,pb))
-            Q[:] = np.cov(y[m_:m_-kl_,idx_a].T, y[:-kl_,idx_b].T)[:pa,pa:]     
+                Q = np.empty((pa,pb))                          
+            Q[:] = y[m_:m_-kl_,idx_a].T.dot(y[:-kl_,idx_b]) / (T-kl_-1)     
             if mmap:
                 del Q
                 Qs[m] = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, 
