@@ -113,11 +113,11 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
 
     def g(C, X, R, ts, m):
         return  g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,
-            get_observed=get_observed,linear=False, W=None)
+            get_observed=get_observed,linear=False, W=W)
 
     def f(C,X,R):
         return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,
-                idx_a=idx_a,idx_b=idx_b,W=W)
+                idx_a=idx_a,idx_b=idx_b,W=None)
 
     def track_corrs(C, A, Pi, X, R) :
          return track_correlations(Qs, p, n, lag_range, C, A, Pi, X, R,  
@@ -328,106 +328,66 @@ def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
-
-
 def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
-    p,n = C.shape
-    grad_C = np.zeros((p,n))
-    grad_X = np.zeros(X.shape)
-    grad_R = np.zeros(p)
-    idx_ct = np.zeros((p,2),dtype=np.int32)
 
-    #print('ts', ts)
-    #print('ms', ms)
+    p,n = C.shape
+    grad_C = np.zeros_like(C)
+    grad_X = np.zeros_like(X)
+    grad_R = np.zeros_like(R)
 
     for m in ms:
-        #print('- m', m)
         m_ = lag_range[m]
-        Xm = X[m*n:(m+1)*n, :].copy()
+        Xm = X[m*n:(m+1)*n, :]
+        grad_Xm = grad_X[m*n:(m+1)*n, :]
         for t in ts:
             a = get_observed(t+m_)
             b = get_observed(t)
             anb = np.intersect1d(a,b)
 
-            C___ = C.dot(Xm)   # mad-
-            C_tr = C.dot(Xm.T) # ness
-            grad_C[a,:] += C[a,:].dot( C_tr[b,:].T.dot(C_tr[b,:]) ) - np.outer(y[t+m_,a],y[t,b].dot(C_tr[b,:]))
-            grad_C[b,:] += C[b,:].dot( C___[a,:].T.dot(C___[a,:]) ) - np.outer(y[t,b],y[t+m_,a].dot(C___[a,:]))
-            if m_==0:
-                grad_C[anb,:] += R[anb].reshape(-1,1)*(C___[anb,:] + C_tr[anb,:])  
+            g_C_l2_vector_pair(grad_C,  m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair(grad_Xm, m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
 
-
-            CC_a = C[a,:].T.dot(C[a,:])
-            CC_b = C[b,:].T.dot(C[b,:]) if not a is b else CC_a    
-            grad_X[m*n:(m+1)*n,:] += CC_a.dot(Xm).dot(CC_b) - np.outer(y[t+m_,a].dot(C[a,:]), y[t,b].dot(C[b,:]))
-            if m_ == 0:
-                grad_X[m*n:(m+1)*n,:] += C[anb,:].T.dot(R[anb].reshape(-1,1) * C[anb,:])
-
-            if m_==0:
-                grad_R[b] += R[b] + np.sum(C[b,:] * C[b,:].dot(Xm.T),axis=1) - y[t,b]**2
-
-            #idx_ct[a,0] += 1
-            #idx_ct[b,0] += 1
-            #idx_ct[np.union1d(a,b),1] += 1            
-            # correction for variables not observed both at t+m_ and t  
-            #a_ = np.setdiff1d(a,b)
-            #b_ = np.setdiff1d(b,a)
-            #if a_.size > 0:
-            #    grad_C[a_,:] -= (np.sum(C[a_,:]*C_tr[a_,:],axis=1) - y[t+m,a_]*y[t,a_]).reshape(-1,1) * C_tr[a_,:]
-            #if b_.size > 0:
-            #    grad_C[b_,:] -= (np.sum(C[b_,:]*C___[b_,:],axis=1) - y[t+m,b_]*y[t,b_]).reshape(-1,1) * C___[b_,:]
-            # if m_==0:
-                #XCT = X0.dot(C[a,:].T)
-                #y2 = yf**2
-                #for s in range(len(a)):
-                #    grad_R[a[s]] += R[a[s]] + C[a[s],:].dot(XCT[:,s]) - y2[s]
-            #g_C_l2_Hankel_vector_pair(grad_C, m_, C, Xm, R, a, b, ab, CC_a, CC_b, yp, yf)    
-            #grad_X[m*n:(m+1)*n,:] += g_X_l2_vector_pair(m_, C, Xm, R, 
-            #                                a, b, anb, CC_a, CC_b, yp, yf)
-
-
-        idx_ct = np.maximum(idx_ct, 1)
-    #print('idx_ct', idx_ct)
-    grad_X /= len(ts)
-    grad_C /= len(ts)
-    grad_R /= len(ts)
+        if m_==0:
+            g_R_l2_Hankel_sgd(grad_R, C, Xm, R, y, ts, get_observed, W[m])
 
     return grad_C, grad_X, grad_R
 
-def g_C_l2_Hankel_vector_pair(grad, m_, C, Xm, R, a, b, CC_a, CC_b, yp, yf):
+def g_C_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
 
+    C___ = C.dot(Xm)   # mad-
+    C_tr = C.dot(Xm.T) # ness        
+        
+    for k in a:
+        WC = C_tr[b,:] * Wm[k,b].reshape(-1,1)
+        grad[k,:] += C[k,:].dot( C_tr[b,:].T.dot(WC) ) 
+        grad[k,:] -= yf[k] * yp[b].dot(WC)
+        
+    for k in b:
+        WC = C___[a,:] * Wm[a,k].reshape(-1,1)
+        grad[k,:] += C[k,:].dot( C___[a,:].T.dot(WC) ) 
+        grad[k,:] -= yp[k] * yf[a].dot(WC)
+        
+    if m_ == 0:      
+        grad[anb,:] += (R[anb]*Wm[anb,anb]).reshape(-1,1)*(C___[anb,:] + C_tr[anb,:])
+                            
+def g_X_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
+
+    for k in a:        
+        S_k = C[b,:].T.dot(C[b,:] * Wm[k,b].reshape(-1,1))
+        grad += np.outer(C[k,:], C[k,:]).dot(Xm).dot(S_k)
+        
+        S_k = yp[b].dot(C[b,:] * Wm[k,b].reshape(-1,1))
+        grad -= np.outer(yf[k] * C[k,:], S_k)
+        
     if m_ == 0:
-        grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   + R[b].reshape(-1,1)*C[b,:] - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
-        grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) + R[a].reshape(-1,1)*C[a,:] - np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
+        grad += C[anb,:].T.dot( (R[anb] * Wm[anb,anb]).reshape(-1,1)*C[anb,:]) 
 
-    else:
-        grad[a,:] += ( C[a,:].dot(Xm.dot(CC_b))   - np.outer(yf, yp.dot(C[b,:])) ).dot(Xm.T)
-        grad[b,:] += ( C[b,:].dot(Xm.T.dot(CC_a)) - np.outer(yp, yf.dot(C[a,:])) ).dot(Xm)
-
-
-def g_X_l2_vector_pair(m_, C, Xm, R, a, b, anb, CC_a, CC_b, yp, yf):
-
-    grad = CC_a.dot(Xm).dot(CC_b) - np.outer(yf.dot(C[a,:]), yp.dot(C[b,:]))
-
-    if m_ == 0:
-        grad += C[anb,:].T.dot(R[anb].reshape(-1,1) * C[anb,:])
-
-    return grad
-
-def g_R_l2_Hankel_sgd(C, X0, R, y, ts, get_observed):
-
-    p,n = C.shape
-    grad = np.zeros(p)
+def g_R_l2_Hankel_sgd(grad, C, X0, R, y, ts, get_observed, W0):
 
     for t in ts:
-        b = get_observed(t)
-        XCT = X0.dot(C[b,:].T)
-        y2 = y[t,b]**2
+        b = get_observed(t)         
+        grad[b] += (R[b] + np.sum(C[b,:] * C[b,:].dot(X0.T),axis=1) - y[t,b]**2) * W0[b,b]
 
-        for s in range(len(b)):
-            grad[b[s]] += R[b[s]] + C[b[s],:].dot(XCT[:,s]) - y2[s]
-
-    return grad / len(ts)
 
 # solving some parameters with others fixed (mostly only in fully observed case)
 
