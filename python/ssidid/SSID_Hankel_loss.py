@@ -86,6 +86,7 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
 
     T,p = y.shape
     kl = len(lag_range)
+    kl_ = np.max(lag_range)+1
 
     def co_observed(x, i):
         for idx in obs_idx:
@@ -116,8 +117,13 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
             get_observed=get_observed,linear=False, W=W)
 
     def f(C,X,R):
-        return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,
-                idx_a=idx_a,idx_b=idx_b,W=None)
+        return f_l2_Hankel_nl(C,X,R, y, lag_range=lag_range, ms=range(kl), 
+            get_observed=get_observed, 
+            idx_a=idx_a, idx_b=idx_b, W=W, ts = np.arange(T-kl_))
+
+    #def f(C,X,R):
+    #    return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,
+    #            idx_a=idx_a,idx_b=idx_b,W=None)
 
     def track_corrs(C, A, Pi, X, R) :
          return track_correlations(Qs, p, n, lag_range, C, A, Pi, X, R,  
@@ -486,6 +492,30 @@ def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
     return 0.
 
 
+
+def f_l2_Hankel_nl(C,X,R, y,lag_range,ms,get_observed, idx_a, idx_b, W, ts = None):
+
+    p,n = C.shape
+    idx_a = np.arange(p) if idx_a is None else idx_a
+    idx_b = idx_a if idx_b is None else idx_b
+
+    S  = [np.zeros((p,p)) for m in range(len(lag_range))]
+    Om = [np.zeros((p,p), dtype=bool) for m in range(len(lag_range))]
+
+    for m in ms:
+        m_ = lag_range[m]
+        for t in ts:
+
+            a, b = get_observed(t+m_), get_observed(t)
+            a = np.intersect1d(a, idx_a)
+            b = np.intersect1d(b, idx_b)
+
+            S[ m][np.ix_(a, b)] += np.outer(y[t+m_,a], y[t,b])
+            Om[m][np.ix_(a, b)] = True
+
+    return 0.5*np.sum([np.sum( (C.dot(X[m*n:(m+1)*n,:]).dot(C.T) + (lag_range[m]==0)*np.diag(R) - S[m]*W[m])[Om[m]]**2) for m in ms])
+
+"""
 def f_l2_Hankel_nl(C,X,Pi,R,lag_range,Qs,idx_grp,co_obs,
                    idx_a=None,idx_b=None,W=None):
     "returns overall l2 Hankel reconstruction error"
@@ -501,7 +531,7 @@ def f_l2_Hankel_nl(C,X,Pi,R,lag_range,Qs,idx_grp,co_obs,
         err += f_l2_block(C,X[m*n:(m+1)*n, :],Qs[m],idx_grp,co_obs,idx_a,idx_b,W)
             
     return err/(kl)
-    
+"""    
 def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
     "Hankel reconstruction error on an individual Hankel block"
 
