@@ -275,7 +275,7 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     kl = len(lag_range)
     kl_ = np.max(lag_range)+1
     ev_r = np.linspace(eig_m_r, eig_M_r, nr)
-    ev_c = np.exp(2 * 1j * np.pi * np.random.vonmises(mu=0, kappa=100, size=nc_u))
+    ev_c = np.exp(2 * 1j * np.pi * np.random.vonmises(mu=0, kappa=1000, size=nc_u))
     ev_c = np.linspace(eig_m_c, eig_M_c, (n - nr)//2) * ev_c
 
     pars_true,Qs,_ = gen_sys(p=p,n=n,lag_range=lag_range, nr=nr,ev_r=ev_r,ev_c=ev_c,
@@ -365,7 +365,7 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None,
 
     # draw complex eigenvalues and eigenvectors
     if ev_c is None:
-        circs = np.exp(2 * 1j * np.pi * np.random.vonmises(mu=0, kappa=100, size=nc_u))
+        circs = np.exp(2 * 1j * np.pi * np.random.vonmises(mu=0, kappa=1000, size=nc_u))
         scales = np.linspace(0.5, 0.9, nc_u)
         ev_c_r, ev_c_c = scales * np.real(circs), scales * np.imag(circs)
     else:
