@@ -13,7 +13,7 @@ def run_bad(lag_range,n,y,Qs,
             alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C=1e-8, 
             alpha_R=None, b1_R=None, b2_R=None, e_R=None, 
             alpha_X=None, b1_X=None, b2_X=None, e_X=None, 
-            max_iter=100, max_zip_size=np.inf, eps_conv=0.99999,
+            max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
             batch_size=1,
             verbose=False, mmap=False, data_path=None, pars_track=None):
 
@@ -28,7 +28,6 @@ def run_bad(lag_range,n,y,Qs,
 
     e_R = e_C if e_R is None else e_R
     e_X = e_C if e_X is None else e_X
-
 
     T,p = y.shape 
     kl = len(lag_range)
@@ -58,17 +57,16 @@ def run_bad(lag_range,n,y,Qs,
                                            max_iter=max_iter, eps_conv=eps_conv)
     if verbose:
         print('starting descent')    
-    pars_est, traces = adam_zip_bad(f=f,g=g,pars_0=pars_init,
-                                    alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
-                                    alpha_R=alpha_R,b1_R=b1_R,b2_R=b2_R,e_R=e_R,
-                                    alpha_X=alpha_X,b1_X=b1_X,b2_X=b2_X,e_X=e_X,
-                                    batch_draw=batch_draw,converged=converged,
-                                    track_corrs=track_corrs,max_iter=max_iter,
-                                    max_zip_size=max_zip_size,batch_size=batch_size,
-                                    verbose=verbose,pars_track=pars_track)
+    pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,
+                                 alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
+                                 alpha_R=alpha_R,b1_R=b1_R,b2_R=b2_R,e_R=e_R,
+                                 alpha_X=alpha_X,b1_X=b1_X,b2_X=b2_X,e_X=e_X,
+                                 batch_draw=batch_draw,converged=converged,
+                                 track_corrs=track_corrs,max_iter=max_iter,
+                                 max_epoch_size=max_epoch_size,batch_size=batch_size,
+                                 verbose=verbose,pars_track=pars_track)
 
     return pars_init, pars_est, traces
-
 
 
 # decorations
@@ -113,7 +111,7 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
             return sub_pops[i]
 
     def g(C, X, R, ts, m):
-        return  g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,m,
+        return  g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,m,
             get_observed=get_observed,linear=False, W=W)
 
     def f(C,X,R):
@@ -193,35 +191,35 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
 
 # main optimiser
 
-def adam_zip_bad(f,g,pars_0,
-                alpha_C,b1_C,b2_C,e_C,
-                alpha_R,b1_R,b2_R,e_R,
-                alpha_X,b1_X,b2_X,e_X,
-                batch_draw,track_corrs,converged,
-                max_iter,batch_size,max_zip_size,
-                verbose,pars_track):
+def adam_main(f,g,pars_0,
+            alpha_C,b1_C,b2_C,e_C,
+            alpha_R,b1_R,b2_R,e_R,
+            alpha_X,b1_X,b2_X,e_X,
+            batch_draw,track_corrs,converged,
+            max_iter,batch_size,max_epoch_size,
+            verbose,pars_track):
 
 
     # initialise pars
     p, n = pars_0['C'].shape
     kl   = pars_0['X'].shape[0]//n
-    C,X,R = set_adam_init(pars_0, p, n, kl)
+    C,X,R = init_adam(pars_0, p, n, kl)
     A, Pi = None, None
 
     # setting up Adam
     b1_C,b2_C,e_C,vC, b1_R,b2_R,e_R,vR, b1_X,b2_X,e_X,vX \
-    = set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C, 
-                                      b1_R,b2_R,e_R, 
-                                      b1_X,b2_X,e_X)
+    = pars_adam(batch_size,p,n,kl,b1_C,b2_C,e_C, 
+                                  b1_R,b2_R,e_R, 
+                                  b1_X,b2_X,e_X)
     mC, mR, mX = np.zeros((p,n)), np.zeros(p), np.zeros((kl*n,n))
     t_iter, t, ct_iter = 0, 0, 0 
     corrs  = np.zeros((kl, 12))
 
-    def zip_range(zip_size):
+    def epoch_range(epoch_size):
         if p > 1000:
-            return progprint_xrange(zip_size, perline=100)
+            return progprint_xrange(epoch_size, perline=100)
         else:
-            return range(zip_size)
+            return range(epoch_size)
 
     # trace function values
     fun = np.empty(max_iter)    
@@ -232,18 +230,18 @@ def adam_zip_bad(f,g,pars_0,
     while not converged(t_iter, fun):
 
         ts, ms = batch_draw()        
-        zip_size = get_zip_size(batch_size, p, ts, max_zip_size)
-        for idx_zip in zip_range(zip_size):
+        epoch_size = get_epoch_size(batch_size, p, ts, max_epoch_size)
+        for idx_epoch in epoch_range(epoch_size):
             t += 1
 
             # get data point(s) and corresponding gradients: 
 
 
-            grad_C,grad_X,grad_R = g(C,X,R,ts,ms,idx_zip)
+            grad_C,grad_X,grad_R = g(C,X,R,ts,ms,idx_epoch)
 
-            C, mC, vC = adam(C,grad_C,mC,vC,alpha_C,b1_C,b2_C,e_C,t_iter+1)
-            X, mX, vX = adam(X,grad_X,mX,vX,alpha_X,b1_X,b2_X,e_X,t_iter+1)
-            R, mR, vR = adam(R,grad_R,mR,vR,alpha_R,b1_R,b2_R,e_R,t_iter+1)
+            C, mC, vC = adam_step(C,grad_C,mC,vC,alpha_C,b1_C,b2_C,e_C,t_iter+1)
+            X, mX, vX = adam_step(X,grad_X,mX,vX,alpha_X,b1_X,b2_X,e_X,t_iter+1)
+            R, mR, vR = adam_step(R,grad_R,mR,vR,alpha_R,b1_R,b2_R,e_R,t_iter+1)
 
 
         if t_iter < max_iter:          # really expensive!
@@ -274,7 +272,7 @@ def adam_zip_bad(f,g,pars_0,
 
     return pars_out, (fun,corrs)    
 
-def set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C, 
+def pars_adam(batch_size,p,n,kl,b1_C,b2_C,e_C, 
                                     b1_R,b2_R,e_R, 
                                     b1_X,b2_X,e_X):
 
@@ -291,29 +289,22 @@ def set_adam_pars(batch_size,p,n,kl,b1_C,b2_C,e_C,
     return b1_C,b2_C,e_C,v_0_C, b1_R,b2_R,e_R,v_0_R, b1_X,b2_X,e_X,v_0_X
 
 
-def adam(w,g,m,v,a,b1,b2,e,t):
+def adam_step(w,g,m,v,a,b1,b2,e,t):
     m = (b1 * m + (1-b1) * g)
     v = (b2 * v + (1-b2) * g**2)
-    mh,vh = adamize(m,v,b1,b2,t)
+    mh,vh = adam_norm(m,v,b1,b2,t)
     w -= a * mh / (np.sqrt(vh) + e)
 
     return w, m, v
 
-def adamize(m, v, b1, b2,t):
-    if b1 != 1.:                    
-        m = m / (1-b1**t)
-    else:
-        m = m.copy()
-    if b2 != 1.:
-        v = v / (1-b2**t)
-    else:
-        v = v.copy()
+def adam_norm(m, v, b1, b2,t):
+
+    m = m / (1-b1**t) if b1 != 1 else m.copy()
+    v = v / (1-b2**t) if b2 != 1 else v.copy()
 
     return m,v
 
-
-
-def set_adam_init(pars_0, p, n, kl):
+def init_adam(pars_0, p, n, kl):
 
     C = pars_0['C'].copy()
     R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
@@ -321,22 +312,21 @@ def set_adam_init(pars_0, p, n, kl):
 
     return C,X,R
 
-def get_zip_size(batch_size, p=None, a=None, max_zip_size=np.inf):
+def get_epoch_size(batch_size, p=None, a=None, max_epoch_size=np.inf):
 
     if batch_size is None:
-        zip_size = len(a)
+        epoch_size = len(a)
     elif batch_size >= 1:
-        zip_size = len(a)
+        epoch_size = len(a)
     
-    return int(np.min((zip_size, max_zip_size)))      
-
-
+    return int(np.min((epoch_size, max_epoch_size)))      
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
-def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
+def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
 
     p,n = C.shape
+
     grad_C = np.zeros_like(C)
     grad_X = np.zeros_like(X)
     grad_R = np.zeros_like(R)
@@ -358,6 +348,52 @@ def g_l2_Hankel_sgd(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
 
     return grad_C, grad_X, grad_R
 
+def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
+
+    p,n = C.shape
+    kl_ = np.max(lag_range)+1 # d/dA often (but not always) needs all powers A^m
+
+    grad_C = np.zeros_like(C)
+    grad_A = np.zeros_like(A)
+    grad_B = np.zeros_like(B)
+    grad_R = np.zeros_like(R)
+
+    Pi = B.dot(B.T)
+    Aexpm = np.zeros((kl_*n,n))
+    Aexpm[:n,:] = np.eye(n)
+    for m in range(1,kl_):
+        Aexpm[m*n:(m+1)*n,:] = A.dot(Aexpm[(m-1)*n:(m)*n,:])
+    grad_X = np.zeros_like(Aexpm, dtype=A.dtype)
+
+    for m in ms:
+
+        m_ = lag_range[m]
+        Xm = Aexpm[m*n:(m+1)*n,:].dot(Pi)
+
+        grad_Bm  = np.zeros_like(B)
+        grad_Xm = grad_X[m*n:(m+1)*n, :]
+
+        for t in ts:
+            a = get_observed(t+m_)
+            b = get_observed(t)
+            anb = np.intersect1d(a,b)
+
+            g_C_l2_vector_pair(grad_C,  m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_B_l2_vector_pair(grad_Bm, m_, C, Aexpm[m*n:(m+1)*n,:], Pi, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair(grad_Xm, m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+
+        grad_B += (grad_Bm + grad_Bm.T)
+
+        g_A_l2_block(grad_A, grad_Xm.dot(Pi), Aexpm,m) # grad_Xm.dot(Pi) possibly too costly
+
+        if m_==0:
+            g_R_l2_Hankel_sgd(grad_R, C, Xm, R, y, ts, get_observed, W[m])
+
+    grad_B = grad_B.dot(B)
+
+    return grad_C, grad_A, grad_B, grad_R
+
+
 def g_C_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
 
     C___ = C.dot(Xm)   # mad-
@@ -375,7 +411,28 @@ def g_C_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
         
     if m_ == 0:      
         grad[anb,:] += (R[anb]*Wm[anb,anb]).reshape(-1,1)*(C___[anb,:] + C_tr[anb,:])
-                            
+           
+
+def g_A_l2_block(grad, dXmPi, Aexpm, m):
+    "returns l2 Hankel reconstr. gradient w.r.t. A for a single Hankel block"
+
+    n = Aexpm.shape[1]
+
+    for q in range(m):
+        grad += Aexpm[q*n:(q+1)*n,:].T.dot(dXmPi.dot(Aexpm[(m-1-q)*n:(m-q)*n,:].T))
+
+def g_B_l2_vector_pair(grad, m_, C, Am, Pi, R, a, b, anb, yp, yf, Wm):
+
+    for k in a:        
+        CAm_k = C[k,:].dot(Am)
+        S_k = C[b,:].T.dot(C[b,:] * Wm[k,b].reshape(-1,1))
+        grad += np.outer(CAm_k, CAm_k).dot(Pi).dot(S_k)
+        S_k = yp[b].dot(C[b,:] * Wm[k,b].reshape(-1,1))
+        grad -= np.outer(yf[k] * CAm_k, S_k)
+
+    if m_ == 0:
+        grad += C[anb,:].dot(Am).T.dot( (R[anb] * Wm[anb,anb]).reshape(-1,1)*C[anb,:]) 
+
 def g_X_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
 
     for k in a:        
@@ -387,6 +444,7 @@ def g_X_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
         
     if m_ == 0:
         grad += C[anb,:].T.dot( (R[anb] * Wm[anb,anb]).reshape(-1,1)*C[anb,:]) 
+
 
 def g_R_l2_Hankel_sgd(grad, C, X0, R, y, ts, get_observed, W0):
 
@@ -491,8 +549,6 @@ def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
 
     return 0.
 
-
-
 def f_l2_Hankel_nl(C,X,R, y,lag_range,ms,get_observed, idx_a, idx_b, W, ts = None):
 
     p,n = C.shape
@@ -515,23 +571,7 @@ def f_l2_Hankel_nl(C,X,R, y,lag_range,ms,get_observed, idx_a, idx_b, W, ts = Non
 
     return 0.5*np.sum([np.sum( (C.dot(X[m*n:(m+1)*n,:]).dot(C.T) + (lag_range[m]==0)*np.diag(R) - S[m]*W[m])[Om[m]]**2) for m in ms])
 
-"""
-def f_l2_Hankel_nl(C,X,Pi,R,lag_range,Qs,idx_grp,co_obs,
-                   idx_a=None,idx_b=None,W=None):
-    "returns overall l2 Hankel reconstruction error"
 
-    kl = len(lag_range)
-    p,n = C.shape
-    idx_a = np.arange(p) if idx_a is None else idx_a
-    idx_b = idx_a if idx_b is None else idx_b
-    assert (len(idx_a), len(idx_b)) == Qs[0].shape
-
-    err = f_l2_inst(C,X[:n, :],R,Qs[0],idx_grp,co_obs,idx_a,idx_b)
-    for m in range(1,kl):
-        err += f_l2_block(C,X[m*n:(m+1)*n, :],Qs[m],idx_grp,co_obs,idx_a,idx_b,W)
-            
-    return err/(kl)
-"""    
 def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
     "Hankel reconstruction error on an individual Hankel block"
 
