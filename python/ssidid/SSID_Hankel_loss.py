@@ -3,37 +3,30 @@ import scipy as sp
 import matplotlib.pyplot as plt
 
 ###########################################################################
-# stochastic gradient descent: gradients w.r.t. C, R, cov(x_{t+m},x_t)
+# stochastic gradient descent: gradients w.r.t. C,R,A,B,X=cov(x_{t+m},x_t)
 ###########################################################################
 
-def run_bad(lag_range,n,y,Qs,
-            obs_scheme, W=None, 
+def run_bad(lag_range,n,y,Qs,obs_scheme, 
+            parametrization='nl',
+            W=None, 
             idx_a=None,idx_b=None,
             init='default',
-            alpha_C=0.001, b1_C=0.9, b2_C=0.99, e_C=1e-8, 
-            alpha_R=None, b1_R=None, b2_R=None, e_R=None, 
-            alpha_X=None, b1_X=None, b2_X=None, e_X=None, 
+            alpha=0.001, b1=0.9, b2=0.99, e=1e-8, 
             max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
             batch_size=1,
             verbose=False, mmap=False, data_path=None, pars_track=None):
 
-    alpha_R = alpha_C if alpha_R is None else alpha_R
-    alpha_X = alpha_C if alpha_X is None else alpha_X
+    
+    num_pars = 3 if parametrization=='nl' else 4
 
-    b1_R = b1_C if b1_R is None else b1_R
-    b1_X = b1_C if b1_X is None else b1_X
-
-    b2_R = b2_C if b2_R is None else b2_R
-    b2_X = b2_C if b2_X is None else b2_X
-
-    e_R = e_C if e_R is None else e_R
-    e_X = e_C if e_X is None else e_X
+    alpha = alpha * np.ones(num_pars) if np.asarray(alpha).size==1 else alpha
+    b1    =  b1   * np.ones(num_pars) if np.asarray(  b1 ).size==1 else b1
+    b2    =  b2   * np.ones(num_pars) if np.asarray(  b2 ).size==1 else b2
+    e     =   e   * np.ones(num_pars) if np.asarray(  e  ).size==1 else e
 
     T,p = y.shape 
     kl = len(lag_range)
     assert np.all(lag_range == np.sort(lag_range))
-
-    alpha_R = alpha if alpha_R is None else alpha_R
 
     if isinstance(init, dict):
         assert 'C' in init.keys()
@@ -49,6 +42,7 @@ def run_bad(lag_range,n,y,Qs,
 
     f,g,batch_draw,track_corrs,converged = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
+                                           parametrization='nl',
                                            y=y,Qs=Qs,
                                            idx_a=idx_a, idx_b=idx_b,
                                            obs_scheme=obs_scheme, W=W,
@@ -57,10 +51,8 @@ def run_bad(lag_range,n,y,Qs,
                                            max_iter=max_iter, eps_conv=eps_conv)
     if verbose:
         print('starting descent')    
-    pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,
-                                 alpha_C=alpha_C,b1_C=b1_C,b2_C=b2_C,e_C=e_C,
-                                 alpha_R=alpha_R,b1_R=b1_R,b2_R=b2_R,e_R=e_R,
-                                 alpha_X=alpha_X,b1_X=b1_X,b2_X=b2_X,e_X=e_X,
+    pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,num_pars=num_pars,kl=kl,
+                                 alpha=alpha,b1=b1,b2=b2,e=e,
                                  batch_draw=batch_draw,converged=converged,
                                  track_corrs=track_corrs,max_iter=max_iter,
                                  max_epoch_size=max_epoch_size,batch_size=batch_size,
@@ -72,7 +64,7 @@ def run_bad(lag_range,n,y,Qs,
 # decorations
 
 def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=None,
-                     max_iter=np.inf, eps_conv=0.99999,
+                     parametrization='nl', max_iter=np.inf, eps_conv=0.99999,
                      batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
@@ -110,21 +102,34 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
             i = obs_pops[np.digitize(t, obs_time)]
             return sub_pops[i]
 
-    def g(C, X, R, ts, m):
-        return  g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,m,
-            get_observed=get_observed,linear=False, W=W)
+    if parametrization=='nl':
 
-    def f(C,X,R):
-        return f_l2_Hankel_nl(C,X,R, y, lag_range=lag_range, ms=range(kl), 
-            get_observed=get_observed, 
-            idx_a=idx_a, idx_b=idx_b, W=W, ts = np.arange(T-kl_))
+        def g(pars, ts, ms):
+            return  g_l2_Hankel_sgd_nl(C=pars['C'],X=pars['X'],R=pars['R'],y=y,
+                lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
 
-    #def f(C,X,R):
-    #    return f_l2_Hankel_nl(C,X,None,R,lag_range,Qs,idx_grp,co_obs,
-    #            idx_a=idx_a,idx_b=idx_b,W=None)
+        def f(pars):
+            return f_l2_Hankel_nl(pars['C'],pars['X'],pars['R'],y,
+                lag_range=lag_range, ms=range(kl), 
+                get_observed=get_observed, 
+                idx_a=idx_a, idx_b=idx_b, W=W, ts = np.arange(T-kl_))
 
-    def track_corrs(C, A, Pi, X, R) :
-         return track_correlations(Qs, p, n, lag_range, C, A, Pi, X, R,  
+    elif parametrization=='ln':
+
+        def g(pars, ts, ms):
+            return  g_l2_Hankel_sgd_nl(C=pars['C'],A=pars['A'],B=pars['B'],
+                R=pars['R'],
+                y=y,
+                lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
+
+        def f(pars):
+            return f_l2_Hankel_nl(C=pars['C'],A=pars['A'],B=pars['B'],R=pars['R'], 
+                y=y,lag_range=lag_range, ms=range(kl), get_observed=get_observed,
+                idx_a=idx_a, idx_b=idx_b, W=W, ts = np.arange(T-kl_))
+
+
+    def track_corrs(pars) :
+         return track_correlations(Qs, p, n, lag_range, pars, 
                         idx_a, idx_b, mmap, data_path)
 
 
@@ -133,7 +138,7 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
 
     # set convergence criterion 
     if batch_size is None:
-        #print('bach sizes, stopping if loss < ' + str(eps_conv) + ' previous loss')
+        #print('bach sizes, stopping if loss <'+str(eps_conv)+' previous loss')
         def converged(t, fun):
             if t>= max_iter:
                 return True
@@ -160,8 +165,8 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
             ts = (np.random.permutation(np.arange(T - kl_)) , )
             ms = (lag_range, )   
             return ts, ms
-        def g_sgd(C, X, R, ts, ms, i):
-            return g(C, X, R, ts[i], ms[i])
+        def g_sgd(pars, ts, ms, i):
+            return g(pars, ts[i], ms[i])
 
 
     elif batch_size == 1:
@@ -170,8 +175,8 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
             ts = np.random.permutation(np.arange(T - kl_))
             ms = np.random.randint(0, kl, size=(len(ts),))         
             return ts, ms
-        def g_sgd(C, X, R, ts, ms, i):
-            return g(C, X, R, (ts[i],), (ms[i],))
+        def g_sgd(pars, ts, ms, i):
+            return g(pars, (ts[i],), (ms[i],))
 
 
     elif batch_size > 1:
@@ -182,8 +187,8 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
             return ([ts[i*batch_size:(i+1)*batch_size] for i in range(len(ts)//batch_size)],
                      ms)
 
-        def g_sgd(C, X, R, ts, ms, i):
-            return g(C, X, R, ts[i], (ms[i],))
+        def g_sgd(pars, ts, ms, i):
+            return g(pars, ts[i], (ms[i],))
 
     return batch_draw, g_sgd
 
@@ -191,10 +196,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
 
 # main optimiser
 
-def adam_main(f,g,pars_0,
-            alpha_C,b1_C,b2_C,e_C,
-            alpha_R,b1_R,b2_R,e_R,
-            alpha_X,b1_X,b2_X,e_X,
+def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,
             batch_draw,track_corrs,converged,
             max_iter,batch_size,max_epoch_size,
             verbose,pars_track):
@@ -202,16 +204,10 @@ def adam_main(f,g,pars_0,
 
     # initialise pars
     p, n = pars_0['C'].shape
-    kl   = pars_0['X'].shape[0]//n
-    C,X,R = init_adam(pars_0, p, n, kl)
-    A, Pi = None, None
+    pars = init_adam(pars_0, p, n, kl, num_pars)
 
     # setting up Adam
-    b1_C,b2_C,e_C,vC, b1_R,b2_R,e_R,vR, b1_X,b2_X,e_X,vX \
-    = pars_adam(batch_size,p,n,kl,b1_C,b2_C,e_C, 
-                                  b1_R,b2_R,e_R, 
-                                  b1_X,b2_X,e_X)
-    mC, mR, mX = np.zeros((p,n)), np.zeros(p), np.zeros((kl*n,n))
+    b1,b2,e,vp,mp = pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e)
     t_iter, t, ct_iter = 0, 0, 0 
     corrs  = np.zeros((kl, 12))
 
@@ -224,7 +220,7 @@ def adam_main(f,g,pars_0,
     # trace function values
     fun = np.empty(max_iter)    
 
-    corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
+    corrs[:,ct_iter] = track_corrs(pars) 
     ct_iter += 1
 
     while not converged(t_iter, fun):
@@ -235,25 +231,19 @@ def adam_main(f,g,pars_0,
             t += 1
 
             # get data point(s) and corresponding gradients: 
-
-
-            grad_C,grad_X,grad_R = g(C,X,R,ts,ms,idx_epoch)
-
-            C, mC, vC = adam_step(C,grad_C,mC,vC,alpha_C,b1_C,b2_C,e_C,t_iter+1)
-            X, mX, vX = adam_step(X,grad_X,mX,vX,alpha_X,b1_X,b2_X,e_X,t_iter+1)
-            R, mR, vR = adam_step(R,grad_R,mR,vR,alpha_R,b1_R,b2_R,e_R,t_iter+1)
-
+            grads = g(pars, ts, ms, idx_epoch)
+            pars = adam_step(pars,grads,mp,vp,alpha,b1,b2,e,t_iter+1)
 
         if t_iter < max_iter:          # really expensive!
-            fun[t_iter] = f(C,X,R)
+            fun[t_iter] = f(pars)
             if not pars_track is None:
-                pars_track(C,X,R,t_iter)
+                pars_track(pars,t_iter)
 
         if np.mod(t_iter,max_iter//10) == 0:
             if verbose:
                 print('finished %', 100*t_iter/max_iter+10)
                 print('f = ', fun[t_iter])
-            corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R) 
+            corrs[:,ct_iter] = track_corrs(pars) 
             ct_iter += 1
 
         t_iter += 1
@@ -261,39 +251,39 @@ def adam_main(f,g,pars_0,
     # final round over R (we before only updated R_ii just-in-time)
     #R = s_R(R, C, X[:n,:].reshape(n,n))
 
-    corrs[:,ct_iter] = track_corrs(C, A, Pi, X, R)
+    corrs[:,ct_iter] = track_corrs(pars)
     fun = fun[:t_iter]
 
     if verbose:
         print('total iterations: ', t)
 
-    pars_out = {'C' : C, 'X': X, 'R' : R }
-    pars_out['A'], pars_out['Pi'] = np.nan*np.ones((n,n)), np.nan*np.ones((n,n))
+    return pars, (fun,corrs)    
 
-    return pars_out, (fun,corrs)    
 
-def pars_adam(batch_size,p,n,kl,b1_C,b2_C,e_C, 
-                                    b1_R,b2_R,e_R, 
-                                    b1_X,b2_X,e_X):
+def pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e):
 
     if batch_size is None:
         print('using batch gradients - switching to plain gradient descent')
-        b1_C, b2_C, e_C, v_0_C = 0, 1.0, 0, np.ones((p,n))
-        b1_R, b2_R, e_R, v_0_R = 0, 1.0, 0, np.ones(p)
-        b1_X, b2_X, e_X, v_0_X = 0, 1.0, 0, np.ones((kl*n,n))
-    elif batch_size >= 1:
-        v_0_C, v_0_R, v_0_X = np.zeros((p,n)),np.ones(p),np.ones((kl*n,n))
-    else: 
+        b1, b2, e = np.zeros(num_pars), np.ones(num_pars), np.zeros(num_pars) 
+    elif not batch_size >= 1: 
         raise Exception('cannot handle selected batch size')
 
-    return b1_C,b2_C,e_C,v_0_C, b1_R,b2_R,e_R,v_0_R, b1_X,b2_X,e_X,v_0_X
+    if num_pars == 3:     # (C, X, R)
+        vp_0 = (np.ones((p,n)),  np.ones((kl*n,n)),  np.ones(p))
+        mp_0 = (np.zeros((p,n)), np.zeros((kl*n,n)), np.zeros(p))
+    elif num_pars == 4:   # (C, A, B, R)
+        vp_0 = (np.ones((p,n)),  np.ones((n,n)),  np.ones((n,n)),  np.ones(p))
+        mp_0 = (np.zeros((p,n)), np.zeros((n,n)), np.zeros((n,n)), np.zeros(p))
+
+    return b1,b2,e,vp_0,mp_0
 
 
 def adam_step(w,g,m,v,a,b1,b2,e,t):
-    m = (b1 * m + (1-b1) * g)
-    v = (b2 * v + (1-b2) * g**2)
-    mh,vh = adam_norm(m,v,b1,b2,t)
-    w -= a * mh / (np.sqrt(vh) + e)
+    for i in range(len(m)):
+        m[i] = (b1[i] * m[i] + (1-b1[i]) * g[i])
+        v[i] = (b2[i] * v[i] + (1-b2[i]) * g[i]**2)
+        mh[i],vh[i] = adam_norm(m[i],v[i],b1[i],b2[i],t)
+        w[i] -= a[i] * mh[i] / (np.sqrt(vh[i]) + e[i])
 
     return w, m, v
 
@@ -304,13 +294,21 @@ def adam_norm(m, v, b1, b2,t):
 
     return m,v
 
-def init_adam(pars_0, p, n, kl):
+def init_adam(pars_0, p, n, kl, num_pars):
 
-    C = pars_0['C'].copy()
-    R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
-    X = pars_0['X'].copy() if 'X' in pars_0.keys() else np.zeros(n*kl, n)
+    if num_pars == 3:
+        C = pars_0['C'].copy()
+        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
+        X = pars_0['X'].copy() if 'X' in pars_0.keys() else np.zeros((n*kl, n))
+        pars = {'C': C, 'X':X, 'R': R, 'A': None, 'B': None}
+    elif num_pars == 4:
+        C = pars_0['C'].copy()
+        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
+        A = pars_0['A'].copy() if 'A' in pars_0.keys() else np.zeros((n, n))
+        B = pars_0['B'].copy() if 'B' in pars_0.keys() else np.zeros((n, n))
+        pars = {'C': C, 'A': A, 'B': B, 'R': R, 'X': None}
 
-    return C,X,R
+    return pars
 
 def get_epoch_size(batch_size, p=None, a=None, max_epoch_size=np.inf):
 
@@ -616,9 +614,15 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
 ###########################################################################
 
 
-def track_correlations(Qs, p, n, lag_range, C, A, Pi, X, R,
+def track_correlations(Qs, p, n, lag_range, pars,
     idx_a=None, idx_b=None, mmap = False, data_path=None):
 
+
+    C, A, B, X, R = pars['C'],pars['A'], pars['B'], pars['X'], pars['R']
+    Pi = B.dot(B.T)
+
+    if X is None:
+        X = np.vstack([np.linalg.matrix_power(A,m) for m in lag_range]).dot(Pi)
     kl = len(lag_range)
     corrs = np.nan * np.ones(kl)
     if not Qs is None:
