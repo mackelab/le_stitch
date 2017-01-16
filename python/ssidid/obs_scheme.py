@@ -16,6 +16,7 @@ class ObservationScheme(object):
 		self._obs_time = np.array((T,)) if obs_time is None else self._argcheck_obs_time(obs_time)
 
 		self._mask = self._argcheck_mask(mask)
+		self._use_mask = False if mask is None else True # general: mask overrules scheme
 
 		self._p = p
 		self._T = T
@@ -197,6 +198,30 @@ class ObservationScheme(object):
 		self._obs_time = self._argcheck_obs_time(obs_time)
 		self.check_obs_scheme()
 
+	def gen_mask_from_scheme(self):
+		sub_pops,obs_pops,obs_time=self._sub_pops,self._obs_pops,self._obs_time
+		self._mask = np.zeros((self._T,self._p),dtype=bool)
+		self._mask[np.ix_(range(obs_time[0]), sub_pops[obs_pops[0]])] = True
+		for i in range(1,len(obs_time)):
+			ts = range(obs_time[i-1], obs_time[i])
+			self._mask[np.ix_(ts,sub_pops[obs_pops[i]])] = True
+
+	def gen_get_observed(self, use_mask=None):
+
+		use_mask = self._use_mask if use_mask is None else use_mask
+
+		if use_mask:
+			assert np.all(self._mask.shape == (self._T, self._p))
+			def get_observed(t):
+				return np.where(self._mask[t,:])[0]
+		else:
+			def get_observed(t):
+				i = self._obs_pops[np.digitize(t, self._obs_time)]
+				return self._sub_pops[i]
+
+		return get_observed
+
+
 	@property
 	def sub_pops(self):
 		return self._sub_pops
@@ -240,6 +265,17 @@ class ObservationScheme(object):
 	@mask.setter
 	def mask(self, mask):
 		self._mask = self._argcheck_mask(mask)
+
+	@property
+	def use_mask(self):
+		self._use_mask = True
+		return self._use_mask
+
+	@use_mask.setter
+	def use_mask(self, use_mask):
+		assert use_mask in (True, False)
+		self._use_mask = use_mask
+
 
 	@property
 	def p(self):
