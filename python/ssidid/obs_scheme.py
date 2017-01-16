@@ -221,6 +221,70 @@ class ObservationScheme(object):
 
 		return get_observed
 
+	def gen_get_idx_grp(self):
+
+		def get_idx_grp(t):
+			return self.obs_idx[np.searchsorted(self._obs_time,t,side='right')]
+
+		return get_idx_grp
+
+	def comp_coocurrence_weights(self, lag_range, sso=False, idx_a=None, idx_b=None):
+
+		kl_ = np.max(lag_range)+1
+
+		if sso: # 'serial subset ovservations' allow to work with variable subsets
+
+			assert not self._use_mask # sso assumes simple block-wise observations
+			if not (idx_a is None and idx_b is None):
+				print('ObservationScheme warning: ignoring arguments idx_a,idx_b if sso=True')
+
+			# could make this compute much faster if we assumed long stretches of
+			# time observing the same subpopulation, but the edge cases are tedious.
+			# Below version is simple, but takes care of switching variable subsets.
+			idx_grp,get_idx_grp = self.idx_grp, self.gen_get_idx_grp()
+			obs_time = self._obs_time
+			ng = len(idx_grp)
+			W = [np.zeros((ng,ng), dtype=int) for m in lag_range]
+			for m in range(len(lag_range)):            
+				m_ = lag_range[m]
+				for t in range(self._T-kl_):
+					is_, js_ = get_idx_grp(t+m_), get_idx_grp(t)
+					W[m][np.ix_(is_,js_)] += 1
+				W[m] = 1./np.maximum(W[m]-1, 1)
+
+		else: # we have to work in p x p observed space, but can subsample
+
+			p = self._p
+			idx_a = np.arange(p) if idx_a is None else np.sort(idx_a)
+			idx_b = np.arange(p) if idx_b is None else np.sort(idx_b)
+			pa, pb = len(idx_a), len(idx_b)
+
+			get_observed = self.gen_get_observed()
+			if pa<p:
+				def get_obs_sub_idx_a(t):
+					return np.in1d(idx_a, np.intersect1d(get_observed(t), idx_a))
+			else:
+				def get_obs_sub_idx_a(t):
+					return get_observed(t)
+
+			if pb<p:
+				def get_obs_sub_idx_b(t):
+					return np.in1d(idx_b, np.intersect1d(get_observed(t), idx_b))
+			else:
+				def get_obs_sub_idx_b(t):
+					return get_observed(t)
+
+			W = [np.zeros((pa,pb), dtype=int) for m in lag_range]
+			for m in range(len(lag_range)):
+				m_ = lag_range[m]
+				for t in range(self._T-kl_):
+					a, b = get_obs_sub_idx_a(t+m_), get_obs_sub_idx_b(t)
+					W[m][np.ix_(a,b)] += 1
+				W[m] = 1./np.maximum(W[m]-1, 1)
+
+		return W
+
+
 
 	@property
 	def sub_pops(self):
@@ -265,10 +329,10 @@ class ObservationScheme(object):
 	@mask.setter
 	def mask(self, mask):
 		self._mask = self._argcheck_mask(mask)
+		self._use_mask = True
 
 	@property
 	def use_mask(self):
-		self._use_mask = True
 		return self._use_mask
 
 	@use_mask.setter

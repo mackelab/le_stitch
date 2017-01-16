@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 # stochastic gradient descent: gradients w.r.t. C,R,A,B,X=cov(x_{t+m},x_t)
 ###########################################################################
 
-def run_bad(lag_range,n,y,Qs,obs_scheme, 
+def run_bad(lag_range,n,y,obs_scheme,
+            Qs=None, Om=None,
             parametrization='nl',
-            W=None, 
+            sso=False, W=None, 
             idx_a=None,idx_b=None,
             init='default',
             alpha=0.001, b1=0.9, b2=0.99, e=1e-8, 
@@ -16,9 +17,24 @@ def run_bad(lag_range,n,y,Qs,obs_scheme,
             batch_size=1,
             verbose=False, mmap=False, data_path=None, pars_track=None):
 
-    assert parametrization in ['nl', 'ln']
-    
+    assert parametrization in ['nl', 'ln']    
     num_pars = 3 if parametrization=='nl' else 4
+
+    if W is None:
+        W = obs_scheme.comp_coocurrence_weights(lag_range=lag_range, 
+                                                sso=sso,
+                                                idx_a=idx_a,
+                                                idx_b=idx_b) 
+
+    if Qs is None or Om is None:
+        Qs, Om = f_l2_Hankel_comp_Q_Om(n=n,y=y,lag_range=lag_range,
+                                obs_scheme=obs_scheme,idx_a=idx_a,idx_b=idx_b,W=W)
+
+
+    idx_a = np.arange(p) if idx_a is None else idx_a
+    idx_b = idx_a if idx_b is None else idx_b
+    assert np.all(idx_a == np.sort(idx_a))
+    assert np.all(idx_a == np.sort(idx_a))
 
     alpha = alpha * np.ones(num_pars) if np.asarray(alpha).size==1 else alpha
     b1    =  b1   * np.ones(num_pars) if np.asarray(  b1 ).size==1 else b1
@@ -44,7 +60,8 @@ def run_bad(lag_range,n,y,Qs,obs_scheme,
     f,g,batch_draw,track_corrs,converged = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
                                            parametrization=parametrization,
-                                           y=y,Qs=Qs,
+                                           sso=sso,
+                                           y=y,Qs=Qs,Om=Om,
                                            idx_a=idx_a, idx_b=idx_b,
                                            obs_scheme=obs_scheme, W=W,
                                            batch_size=batch_size,
@@ -80,13 +97,15 @@ def run_bad(lag_range,n,y,Qs,obs_scheme,
                     'X': X}
 
 
-    return pars_init, pars_est, traces
+    return pars_init, pars_est, traces, Qs, Om
 
 
 # decorations
 
-def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=None,
-                     parametrization='nl', max_iter=np.inf, eps_conv=0.99999,
+def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
+                     idx_a=None, idx_b=None, W=None,
+                     parametrization='nl', sso=False, 
+                     max_iter=np.inf, eps_conv=0.99999,
                      batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
@@ -100,39 +119,26 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
     kl = len(lag_range)
     kl_ = np.max(lag_range)+1
 
-    def co_observed(x, i):
-        for idx in obs_idx:
-            if x in idx and i in idx:
-                return True
-        return False        
-
-    num_idx_grps = len(idx_grp)
-    co_obs = []
-    for i in range(num_idx_grps):    
-        co_obs.append([idx_grp[x] for x in np.arange(len(idx_grp)) \
-            if co_observed(x,i)])
-        co_obs[i] = np.sort(np.hstack(co_obs[i]))
-
-    if not obs_scheme.mask is None:
-        def get_observed(t):
-            return np.where(obs_scheme.mask[t,:])[0]
-    elif obs_time is None or obs_pops is None or sub_pops is None:
-        def get_observed(t):
-            return range(p) 
+    if sso:
+        g_l2_nl = g_l2_Hankel_sgd_nl_sso 
+        g_l2_ln = None #g_l2_Hankel_sgd_ln_sso 
     else:
-        def get_observed(t):
-            i = obs_pops[np.digitize(t, obs_time)]
-            return sub_pops[i]
+        g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl, g_l2_Hankel_sgd_ln
 
     if parametrization=='nl':
 
+
+        #def g(pars, ts, ms):
+        #    return g_l2_Hankel_sgd_nl_sso(C=pars[0],X=pars[1],R=pars[2],y=y,
+        #        lag_range=lag_range,ts=ts,ms=ms,obs_scheme=obs_scheme,W=W)
+
         def g(pars, ts, ms):
-            return  g_l2_Hankel_sgd_nl(C=pars[0],X=pars[1],R=pars[2],y=y,
-                lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
+            return  g_l2_nl(C=pars[0],X=pars[1],R=pars[2],y=y,
+                lag_range=lag_range,ts=ts,ms=ms,obs_scheme=obs_scheme,W=W)
+
         def f(pars):
-            return f_l2_Hankel_nl(C=pars[0],X=pars[1],R=pars[2],y=y,
-                lag_range=lag_range, ms=range(kl),get_observed=get_observed, 
-                idx_a=idx_a,idx_b=idx_b,W=W,ts=np.arange(T-kl_))
+            return f_l2_Hankel_nl(C=pars[0],X=pars[1],R=pars[2],Qs=Qs,Om=Om,
+                lag_range=lag_range, ms=range(kl),idx_a=idx_a,idx_b=idx_b)
 
         def track_corrs(pars) :
             return track_correlations(C=pars[0],A=None,B=None,X=pars[1],R=pars[2],
@@ -143,16 +149,15 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
     elif parametrization=='ln':
 
         def g(pars, ts, ms):
-            return  g_l2_Hankel_sgd_ln(C=pars[0],A=pars[1],B=pars[2],R=pars[3], 
-                y=y,lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
+            return  g_l2_ln(C=pars[0],A=pars[1],B=pars[2],R=pars[3],y=y, 
+                lag_range=lag_range,ts=ts,ms=ms,obs_scheme=obs_scheme,W=W)
 
         def f(pars):
             X, Pi = np.zeros((kl_*n,n)), pars[2].dot(pars[2].T)
             for m in lag_range:
                 X[m*n:(m+1)*n,:] = np.linalg.matrix_power(pars[1],m).dot(Pi)                
-            return f_l2_Hankel_nl(C=pars[0],X=X,R=pars[3],
-                y=y,lag_range=lag_range,ms=range(kl),get_observed=get_observed,
-                idx_a=idx_a, idx_b=idx_b, W=W, ts=np.arange(T-kl_))
+            return f_l2_Hankel_nl(C=pars[0],X=X,R=pars[3],Qs=Qs,Om=Om,
+                lag_range=lag_range, ms=range(kl),idx_a=idx_a,idx_b=idx_b)
 
         def track_corrs(pars) :
             return track_correlations(C=pars[0],A=pars[1],B=pars[2],X=None,R=pars[3],
@@ -350,9 +355,11 @@ def get_epoch_size(batch_size, p=None, a=None, max_epoch_size=np.inf):
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
-def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,get_observed,W):
+def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
 
     p,n = C.shape
+
+    get_observed = obs_scheme.gen_get_observed()
 
     grad_C = np.zeros_like(C)
     grad_X = np.zeros_like(X)
@@ -367,18 +374,20 @@ def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,get_observed,W):
             b = get_observed(t)
             anb = np.intersect1d(a,b)
 
-            g_C_l2_vector_pair(grad_C,  m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
-            g_X_l2_vector_pair(grad_Xm, m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_C_l2_vector_pair_rw(grad_C,  m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair_rw(grad_Xm, m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
 
         if m_==0:
-            g_R_l2_Hankel_sgd(grad_R, C, Xm, R, y, ts, get_observed, W[m])
+            g_R_l2_Hankel_sgd_rw(grad_R, C, Xm, R, y, ts, get_observed, W[m])
 
     return grad_C, grad_X, grad_R
 
-def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,get_observed,W):
+def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
 
     p,n = C.shape
     kl_ = np.max(lag_range)+1 # d/dA often (but not always) needs all powers A^m
+
+    get_observed = obs_scheme.gen_get_observed()
 
     grad_C = np.zeros_like(C)
     grad_A = np.zeros_like(A)
@@ -405,23 +414,31 @@ def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,get_observed,W):
             b = get_observed(t)
             anb = np.intersect1d(a,b)
 
-            g_C_l2_vector_pair(grad_C,  m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
-            g_B_l2_vector_pair(grad_Bm, m_, C, Aexpm[m*n:(m+1)*n,:], Pi, R, a, b, anb, y[t], y[t+m_], W[m])
-            g_X_l2_vector_pair(grad_Xm, m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_C_l2_vector_pair_rw(grad_C,  m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_B_l2_vector_pair_rw(grad_Bm, m_, C, Aexpm[m*n:(m+1)*n,:], Pi, R, a, b, anb, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair_rw(grad_Xm, m_, C, Xm, R, a, b, anb, y[t], y[t+m_], W[m])
 
         grad_B += (grad_Bm + grad_Bm.T)
 
         g_A_l2_block(grad_A, grad_Xm.dot(Pi), Aexpm,m) # grad_Xm.dot(Pi) possibly too costly
 
         if m_==0:
-            g_R_l2_Hankel_sgd(grad_R, C, Xm, R, y, ts, get_observed, W[m])
+            g_R_l2_Hankel_sgd_rw(grad_R, C, Xm, R, y, ts, get_observed, W[m])
 
     grad_B = grad_B.dot(B)
 
     return grad_C, grad_A, grad_B, grad_R
 
+def g_A_l2_block(grad, dXmPi, Aexpm, m):
+    "returns l2 Hankel reconstr. gradient w.r.t. A for a single Hankel block"
 
-def g_C_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
+    n = Aexpm.shape[1]
+
+    for q in range(m):
+        grad += Aexpm[q*n:(q+1)*n,:].T.dot(dXmPi.dot(Aexpm[(m-1-q)*n:(m-q)*n,:].T))
+
+
+def g_C_l2_vector_pair_rw(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
 
     C___ = C.dot(Xm)   # mad-
     C_tr = C.dot(Xm.T) # ness        
@@ -440,15 +457,7 @@ def g_C_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
         grad[anb,:] += (R[anb]*Wm[anb,anb]).reshape(-1,1)*(C___[anb,:] + C_tr[anb,:])
            
 
-def g_A_l2_block(grad, dXmPi, Aexpm, m):
-    "returns l2 Hankel reconstr. gradient w.r.t. A for a single Hankel block"
-
-    n = Aexpm.shape[1]
-
-    for q in range(m):
-        grad += Aexpm[q*n:(q+1)*n,:].T.dot(dXmPi.dot(Aexpm[(m-1-q)*n:(m-q)*n,:].T))
-
-def g_B_l2_vector_pair(grad, m_, C, Am, Pi, R, a, b, anb, yp, yf, Wm):
+def g_B_l2_vector_pair_rw(grad, m_, C, Am, Pi, R, a, b, anb, yp, yf, Wm):
 
     for k in a:        
         CAm_k = C[k,:].dot(Am)
@@ -460,7 +469,7 @@ def g_B_l2_vector_pair(grad, m_, C, Am, Pi, R, a, b, anb, yp, yf, Wm):
     if m_ == 0:
         grad += C[anb,:].dot(Am).T.dot( (R[anb] * Wm[anb,anb]).reshape(-1,1)*C[anb,:]) 
 
-def g_X_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
+def g_X_l2_vector_pair_rw(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
 
     for k in a:        
         S_k = C[b,:].T.dot(C[b,:] * Wm[k,b].reshape(-1,1))
@@ -473,11 +482,116 @@ def g_X_l2_vector_pair(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
         grad += C[anb,:].T.dot( (R[anb] * Wm[anb,anb]).reshape(-1,1)*C[anb,:]) 
 
 
-def g_R_l2_Hankel_sgd(grad, C, X0, R, y, ts, get_observed, W0):
+def g_R_l2_Hankel_sgd_rw(grad, C, X0, R, y, ts, get_observed, W0):
 
     for t in ts:
         b = get_observed(t)         
         grad[b] += (R[b] + np.sum(C[b,:] * C[b,:].dot(X0.T),axis=1) - y[t,b]**2) * W0[b,b]
+
+
+
+
+
+
+
+
+def g_l2_Hankel_sgd_nl_sso(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
+
+    p,n = C.shape
+    grad_C = np.zeros_like(C)
+    grad_X = np.zeros_like(X)
+    grad_R = np.zeros_like(R)
+
+    get_idx_grp,idx_grp = obs_scheme.gen_get_idx_grp(), obs_scheme.idx_grp
+    #CCs = [ C[idx_grp[i],:].T.dot(C[idx_grp[i],:]) for i in range(len(idx_grp)) ] 
+
+    for m in ms:
+        m_ = lag_range[m]
+        Xm = X[m*n:(m+1)*n, :]
+        grad_Xm = grad_X[m*n:(m+1)*n, :]
+        for t in ts:
+            is_ = get_idx_grp(t+m_)
+            js_ = get_idx_grp(t)
+            inj = np.intersect1d(is_, js_)
+
+            g_C_l2_vector_pair_sso(grad_C,  m_, C, Xm, R, idx_grp, is_, js_, inj, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair_sso(grad_Xm, m_, C, Xm, R, idx_grp, is_, js_, inj, y[t], y[t+m_], W[m])
+
+            if m_ == 0:
+                g_R_l2_Hankel_sgd_sso(grad_R, C, Xm, R, idx_grp, inj, y[t], W[m])
+
+    return grad_C, grad_X, grad_R
+
+def g_C_l2_vector_pair_sso(grad, m_, C, Xm, R, idx_grp, is_, js_, inj, yp, yf, Wm):
+
+    p,n = C.shape
+
+    C___ = C.dot(Xm)   # mad-
+    C_tr = C.dot(Xm.T) # ness        
+
+    for i in is_:
+        a = idx_grp[i]
+        SC, Sy = np.zeros((n,n),dtype=C.dtype), np.zeros(n,dtype=C.dtype)
+        for j in js_:
+            b = idx_grp[j]        
+            SC += C_tr[b,:].T.dot(C_tr[b,:]) * Wm[i,j]
+            Sy += yp[b].dot(C_tr[b,:]) * Wm[i,j]
+        grad[a,:] += C[a,:].dot( SC ) - np.outer(yf[a], Sy)
+
+    for j in js_:
+        b = idx_grp[j]        
+        SC, Sy = np.zeros((n,n),dtype=C.dtype), np.zeros(n,dtype=C.dtype)
+        for i in is_:        
+            a = idx_grp[i]        
+            SC += C___[a,:].T.dot(C___[a,:]) * Wm[i,j]
+            Sy += yf[a].dot(C___[a,:]) * Wm[i,j]
+        grad[b,:] += C[b,:].dot( SC) - np.outer(yp[b], Sy)
+        
+    if m_ == 0:
+        for i in inj:
+            anb = idx_grp[i]
+            grad[anb,:] += (R[anb]*Wm[i,i]).reshape(-1,1) * (C___[anb,:] + C_tr[anb,:])
+
+def g_B_l2_vector_pair_sso(grad, m_, C, Am, Pi, R, idx_grp, is_, js_, inj, yp, yf, Wm):
+
+    p,n = C.shape
+    CAm = C.dot(Am)
+    for i in is_:
+        a = idx_grp[i]
+        SC, Sy = np.zeros_like(Pi), np.zeros(n,dtype=C.dtype)
+        for j in js_:
+            b = idx_grp[j]
+            SC += C[b,:].T.dot(C[b,:]) * Wm[i,j]
+            SY += yp[b].dot(C[b,:] * Wm[i,j])
+        grad += CAm[a,:].T.dot(CAm[a,:]).dot(Pi).dot(S)-np.outer(yf[a].dot(CAm[a,:]),Sy)
+
+    if m_ == 0:
+        for i in inj:
+            anb = idx_grp[i]
+            grad += CAm[anb,:].T.dot( (R[anb] * Wm[i,i]).reshape(-1,1) * C[anb,:] )
+
+def g_X_l2_vector_pair_sso(grad, m_, C, Xm, R, idx_grp, is_, js_, inj, yp, yf, Wm):
+
+    p,n = C.shape
+    for i in is_:
+        a = idx_grp[i]
+        SC, Sy = np.zeros((n,n),dtype=C.dtype), np.zeros(n,dtype=C.dtype)
+        for j in js_:
+            b = idx_grp[j]
+            SC += C[b,:].T.dot(C[b,:]) * Wm[i,j]
+            Sy += yp[b].dot(C[b,:]) * Wm[i,j]
+        grad += C[a,:].T.dot(C[a,:]).dot(Xm).dot(SC)-np.outer(yf[a].dot(C[a,:]),Sy)
+        
+    if m_ == 0:
+        for i in inj:
+            anb = idx_grp[i]
+            grad += C[anb,:].T.dot( (R[anb] * Wm[i,i]).reshape(-1,1) * C[anb,:] )
+
+def g_R_l2_Hankel_sgd_sso(grad, C, X0, R, idx_grp, inj, yp, W0):
+
+    for i in inj:
+        b = idx_grp[i]         
+        grad[b] += (R[b] + np.sum(C[b,:] * C[b,:].dot(X0.T),axis=1) - yp[b]**2) * W0[i,i]
 
 # evaluation of target loss function
 
@@ -485,28 +599,56 @@ def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
 
     return 0.
 
+def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W):
 
-def f_l2_Hankel_nl(C,X,R, y,lag_range,ms,get_observed, idx_a, idx_b, W, ts = None):
+    T,p = y.shape
+    kl_ = np.max(lag_range)+1
+    pa, pb = len(idx_a), len(idx_b)
+    get_observed = obs_scheme.gen_get_observed()
+    idx_grp = obs_scheme.idx_grp
+
+    Qs = [np.zeros((pa,pb), dtype=y.dtype) for m in range(len(lag_range))]
+    Om = [np.zeros((pa,pb), dtype=bool) for m in range(len(lag_range))]
+
+    for m in range(len(lag_range)):
+        m_ = lag_range[m]
+        for t in range(T-kl_):
+            a = np.intersect1d(get_observed(t+m_), idx_a)
+            b = np.intersect1d(get_observed(t),    idx_b)
+            a_Q = np.in1d(idx_a, a)
+            b_Q = np.in1d(idx_b, b)
+
+            Qs[m][np.ix_(a_Q, b_Q)] += np.outer(y[t+m_,a], y[t,b])
+            Om[m][np.ix_(a_Q, b_Q)] = True
+
+    if np.all(W[0].shape == (len(idx_grp), len(idx_grp))):
+        for m in range(len(lag_range)):
+            for i in range(len(idx_grp)):
+                for j in range(len(idx_grp)):
+                    Qs[m][np.ix_(idx_grp[i], idx_grp[j])] *= W[m][i,j]
+
+    elif np.all(W[0].shape == (p, p)):
+        for m in range(len(lag_range)):
+            Qs[m] = Qs[m] * W[m][np.ix_(idx_a,idx_b)]
+
+    else:
+        raise Exception('shape misfit for weights W[m] at time-lag m=0')
+
+    return Qs, Om    
+
+def f_l2_Hankel_nl(C,X,R,Qs,Om,lag_range,ms,idx_a,idx_b):
 
     p,n = C.shape
-    idx_a = np.arange(p) if idx_a is None else idx_a
-    idx_b = idx_a if idx_b is None else idx_b
-
-    S  = [np.zeros((p,p)) for m in range(len(lag_range))]
-    Om = [np.zeros((p,p), dtype=bool) for m in range(len(lag_range))]
+    L = 0
 
     for m in ms:
-        m_ = lag_range[m]
-        for t in ts:
+        CXC = C[idx_a,:].dot(X[m*n:(m+1)*n,:]).dot(C[idx_b,:].T)
+        if lag_range[m]==0:
+            idx_R = np.where(np.in1d(idx_b,idx_a))[0]
+            CXC[np.arange(len(idx_R)), idx_R] += R[idx_a]
+        L += np.sum( (CXC - Qs[m])[Om[m]]**2)
 
-            a, b = get_observed(t+m_), get_observed(t)
-            a = np.intersect1d(a, idx_a)
-            b = np.intersect1d(b, idx_b)
-
-            S[ m][np.ix_(a, b)] += np.outer(y[t+m_,a], y[t,b])
-            Om[m][np.ix_(a, b)] = True
-
-    return 0.5*np.sum([np.sum( (C.dot(X[m*n:(m+1)*n,:]).dot(C.T) + (lag_range[m]==0)*np.diag(R) - S[m]*W[m])[Om[m]]**2) for m in ms])
+    return 0.5 * L
 
 
 def f_l2_block(C,AmPi,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
@@ -589,7 +731,7 @@ def track_correlations(C,A,B,X,R,Qs, p, n, lag_range,
 
     return corrs
 
-def plot_slim(Qs,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
+def plot_slim(Qs,Om,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
 
     kl = len(lag_range)
     p,n = pars['C'].shape
@@ -608,9 +750,9 @@ def plot_slim(Qs,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
             Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, mode='r', shape=(pa,pb))
         else:
             Q = Qs[m]
-        plt.plot(Q.reshape(-1), Qrec.reshape(-1), '.')
+        plt.plot(Q[Om[m]].reshape(-1), Qrec[Om[m]].reshape(-1), '.')
         plt.title( ('m = ' + str(m_) + ', corr = ' + 
-        str(np.corrcoef( Qrec.reshape(-1), (Qs[m]).reshape(-1) )[0,1])))
+        str(np.corrcoef( Qrec[Om[m]].reshape(-1), (Qs[m][Om[m]]).reshape(-1) )[0,1])))
         if mmap:
             del Q
         plt.xlabel('true covs')
@@ -624,7 +766,7 @@ def plot_slim(Qs,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
     plt.show()
 
 
-def print_slim(Qs,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
+def print_slim(Qs,Om,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
 
     kl = len(lag_range)
     p,n = pars['C'].shape
@@ -642,6 +784,6 @@ def print_slim(Qs,lag_range,pars,idx_a,idx_b,traces,mmap,data_path):
         else:
             Q = Qs[m]
         print('m = ' + str(m_) + ', corr = ' + 
-        str(np.corrcoef( Qrec.reshape(-1), (Qs[m]).reshape(-1) )[0,1]))
+        str(np.corrcoef( Qrec[Om[m]].reshape(-1), (Qs[m][Om[m]]).reshape(-1) )[0,1]))
         if mmap:
             del Q

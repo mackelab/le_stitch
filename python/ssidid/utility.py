@@ -265,12 +265,18 @@ def comp_model_covariances(pars, lag_range,
 
 
 def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
-             mmap, chunksize, data_path, pa=None, pb=None, snr=(.75, 1.25),
+             mmap, chunksize, data_path, idx_a=None, idx_b=None, snr=(.75, 1.25),
              verbose=False, whiten=False):
 
     nr = n if nr is None else nr
     nc, nc_u = n - nr, (n - nr)//2
     assert nc_u * 2 == nc 
+
+    idx_a = np.arange(p) if idx_a is None else idx_a
+    idx_b = idx_a if idx_b is None else idx_b
+    assert np.all(idx_a == np.sort(idx_a))
+    assert np.all(idx_a == np.sort(idx_a))
+    pa, pb = len(idx_a), len(idx_b)
 
     kl = len(lag_range)
     kl_ = np.max(lag_range)+1
@@ -285,11 +291,14 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     pars_true['d'], pars_true['mu0'] = np.zeros(p), np.zeros(n), 
     pars_true['V0'] = pars_true['Pi'].copy()
 
-    pa = np.min((p,1000)) if pa is None else pa  
-    pb = np.min((p,1000)) if pb is None else pb  
-    idx_a = np.sort(np.random.choice(p, pa, replace=False))
-    idx_b = np.sort(np.random.choice(p, pb, replace=False))
 
+    if T == np.inf:
+        x,y = np.zeros((n,0)), np.zeros((p,0))
+    else:
+        x,y = draw_data(pars=pars_true, T=T, 
+                        mmap=mmap, chunksize=chunksize, data_path=data_path)
+
+    """
     if T == np.inf:
         x,y = np.zeros((n,0)), np.zeros((p,0))
     else:
@@ -314,8 +323,9 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
                                   mode='r', shape=(pa,pb))
             else:
                 Qs[m] = Q
+    """
 
-    return pars_true, x, y, Qs, idx_a, idx_b
+    return pars_true, x, y, idx_a, idx_b
 
 def gen_sys(p,n,lag_range,nr=None,ev_r=None,ev_c=None,snr=(.75, 1.25),
             calc_stats=True,return_masked=True, whiten=False,
