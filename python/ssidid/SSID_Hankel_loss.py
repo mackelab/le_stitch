@@ -16,6 +16,7 @@ def run_bad(lag_range,n,y,Qs,obs_scheme,
             batch_size=1,
             verbose=False, mmap=False, data_path=None, pars_track=None):
 
+    assert parametrization in ['nl', 'ln']
     
     num_pars = 3 if parametrization=='nl' else 4
 
@@ -42,7 +43,7 @@ def run_bad(lag_range,n,y,Qs,obs_scheme,
 
     f,g,batch_draw,track_corrs,converged = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
-                                           parametrization='nl',
+                                           parametrization=parametrization,
                                            y=y,Qs=Qs,
                                            idx_a=idx_a, idx_b=idx_b,
                                            obs_scheme=obs_scheme, W=W,
@@ -57,6 +58,27 @@ def run_bad(lag_range,n,y,Qs,obs_scheme,
                                  track_corrs=track_corrs,max_iter=max_iter,
                                  max_epoch_size=max_epoch_size,batch_size=batch_size,
                                  verbose=verbose,pars_track=pars_track)
+
+    if parametrization=='nl':
+
+        pars_est = {'C': pars_est[0], 
+                    'X': pars_est[1], 
+                    'R': pars_est[2], 
+                    'A': None, 'B': None}
+
+    elif parametrization=='ln':
+
+        X, Pi = np.zeros((len(lag_range)*n, n)), pars_est[2].dot(pars_est[2].T)
+        for m in lag_range:
+            X[m*n:(m+1)*n,:] = np.linalg.matrix_power(pars_est[1],m).dot(Pi)   
+
+        pars_est = {'C': pars_est[0], 
+                    'A': pars_est[1], 
+                    'B': pars_est[2], 
+                    'R': pars_est[3], 
+                    'Pi': Pi,
+                    'X': X}
+
 
     return pars_init, pars_est, traces
 
@@ -105,32 +127,37 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,obs_scheme,idx_a=None, idx_b=None, W=Non
     if parametrization=='nl':
 
         def g(pars, ts, ms):
-            return  g_l2_Hankel_sgd_nl(C=pars['C'],X=pars['X'],R=pars['R'],y=y,
+            return  g_l2_Hankel_sgd_nl(C=pars[0],X=pars[1],R=pars[2],y=y,
                 lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
-
         def f(pars):
-            return f_l2_Hankel_nl(pars['C'],pars['X'],pars['R'],y,
-                lag_range=lag_range, ms=range(kl), 
-                get_observed=get_observed, 
-                idx_a=idx_a, idx_b=idx_b, W=W, ts = np.arange(T-kl_))
+            return f_l2_Hankel_nl(C=pars[0],X=pars[1],R=pars[2],y=y,
+                lag_range=lag_range, ms=range(kl),get_observed=get_observed, 
+                idx_a=idx_a,idx_b=idx_b,W=W,ts=np.arange(T-kl_))
+
+        def track_corrs(pars) :
+            return track_correlations(C=pars[0],A=None,B=None,X=pars[1],R=pars[2],
+                            Qs=Qs, p=p, n=n, lag_range=lag_range,
+                            idx_a=idx_a, idx_b=idx_b, mmap=mmap, data_path=data_path)
+
 
     elif parametrization=='ln':
 
         def g(pars, ts, ms):
-            return  g_l2_Hankel_sgd_nl(C=pars['C'],A=pars['A'],B=pars['B'],
-                R=pars['R'],
-                y=y,
-                lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
+            return  g_l2_Hankel_sgd_ln(C=pars[0],A=pars[1],B=pars[2],R=pars[3], 
+                y=y,lag_range=lag_range,ts=ts,ms=ms,get_observed=get_observed,W=W)
 
         def f(pars):
-            return f_l2_Hankel_nl(C=pars['C'],A=pars['A'],B=pars['B'],R=pars['R'], 
-                y=y,lag_range=lag_range, ms=range(kl), get_observed=get_observed,
-                idx_a=idx_a, idx_b=idx_b, W=W, ts = np.arange(T-kl_))
+            X, Pi = np.zeros((kl_*n,n)), pars[2].dot(pars[2].T)
+            for m in lag_range:
+                X[m*n:(m+1)*n,:] = np.linalg.matrix_power(pars[1],m).dot(Pi)                
+            return f_l2_Hankel_nl(C=pars[0],X=X,R=pars[3],
+                y=y,lag_range=lag_range,ms=range(kl),get_observed=get_observed,
+                idx_a=idx_a, idx_b=idx_b, W=W, ts=np.arange(T-kl_))
 
-
-    def track_corrs(pars) :
-         return track_correlations(Qs, p, n, lag_range, pars, 
-                        idx_a, idx_b, mmap, data_path)
+        def track_corrs(pars) :
+            return track_correlations(C=pars[0],A=pars[1],B=pars[2],X=None,R=pars[3],
+                            Qs=Qs, p=p, n=n, lag_range=lag_range,
+                            idx_a=idx_a, idx_b=idx_b, mmap=mmap, data_path=data_path)
 
 
     # setting up the stochastic batch selection:
@@ -201,7 +228,6 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,
             max_iter,batch_size,max_epoch_size,
             verbose,pars_track):
 
-
     # initialise pars
     p, n = pars_0['C'].shape
     pars = init_adam(pars_0, p, n, kl, num_pars)
@@ -227,12 +253,12 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,
 
         ts, ms = batch_draw()        
         epoch_size = get_epoch_size(batch_size, p, ts, max_epoch_size)
+
         for idx_epoch in epoch_range(epoch_size):
             t += 1
 
-            # get data point(s) and corresponding gradients: 
             grads = g(pars, ts, ms, idx_epoch)
-            pars = adam_step(pars,grads,mp,vp,alpha,b1,b2,e,t_iter+1)
+            pars, mp, vp = adam_step(pars,grads,mp,vp,alpha,b1,b2,e,t_iter+1)
 
         if t_iter < max_iter:          # really expensive!
             fun[t_iter] = f(pars)
@@ -269,23 +295,26 @@ def pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e):
         raise Exception('cannot handle selected batch size')
 
     if num_pars == 3:     # (C, X, R)
-        vp_0 = (np.ones((p,n)),  np.ones((kl*n,n)),  np.ones(p))
-        mp_0 = (np.zeros((p,n)), np.zeros((kl*n,n)), np.zeros(p))
+        vp_0 = [np.ones((p,n)),  np.ones((kl*n,n)),  np.ones(p)]
+        mp_0 = [np.zeros((p,n)), np.zeros((kl*n,n)), np.zeros(p)]
     elif num_pars == 4:   # (C, A, B, R)
-        vp_0 = (np.ones((p,n)),  np.ones((n,n)),  np.ones((n,n)),  np.ones(p))
-        mp_0 = (np.zeros((p,n)), np.zeros((n,n)), np.zeros((n,n)), np.zeros(p))
+        vp_0 = [np.ones((p,n)),  np.ones((n,n)),  np.ones((n,n)),  np.ones(p)]
+        mp_0 = [np.zeros((p,n)), np.zeros((n,n)), np.zeros((n,n)), np.zeros(p)]
 
     return b1,b2,e,vp_0,mp_0
 
 
-def adam_step(w,g,m,v,a,b1,b2,e,t):
+def adam_step(pars,g,m,v,a,b1,b2,e,t):
     for i in range(len(m)):
+
         m[i] = (b1[i] * m[i] + (1-b1[i]) * g[i])
         v[i] = (b2[i] * v[i] + (1-b2[i]) * g[i]**2)
-        mh[i],vh[i] = adam_norm(m[i],v[i],b1[i],b2[i],t)
-        w[i] -= a[i] * mh[i] / (np.sqrt(vh[i]) + e[i])
 
-    return w, m, v
+        mh,vh = adam_norm(m[i],v[i],b1[i],b2[i],t)
+
+        pars[i] -= a[i] * mh / (np.sqrt(vh) + e[i])
+
+    return pars, m, v
 
 def adam_norm(m, v, b1, b2,t):
 
@@ -300,13 +329,13 @@ def init_adam(pars_0, p, n, kl, num_pars):
         C = pars_0['C'].copy()
         R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
         X = pars_0['X'].copy() if 'X' in pars_0.keys() else np.zeros((n*kl, n))
-        pars = {'C': C, 'X':X, 'R': R, 'A': None, 'B': None}
+        pars = [C,X,R]
     elif num_pars == 4:
         C = pars_0['C'].copy()
-        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
         A = pars_0['A'].copy() if 'A' in pars_0.keys() else np.zeros((n, n))
         B = pars_0['B'].copy() if 'B' in pars_0.keys() else np.zeros((n, n))
-        pars = {'C': C, 'A': A, 'B': B, 'R': R, 'X': None}
+        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
+        pars = [C,A,B,R]
 
     return pars
 
@@ -321,7 +350,7 @@ def get_epoch_size(batch_size, p=None, a=None, max_epoch_size=np.inf):
 
 # gradients (g_*) & solvers (s_*) for model parameters
 
-def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
+def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,get_observed,W):
 
     p,n = C.shape
 
@@ -346,7 +375,7 @@ def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,get_observed,linear=False, W=None
 
     return grad_C, grad_X, grad_R
 
-def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,get_observed,linear=False, W=None):
+def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,get_observed,W):
 
     p,n = C.shape
     kl_ = np.max(lag_range)+1 # d/dA often (but not always) needs all powers A^m
@@ -450,102 +479,12 @@ def g_R_l2_Hankel_sgd(grad, C, X0, R, y, ts, get_observed, W0):
         b = get_observed(t)         
         grad[b] += (R[b] + np.sum(C[b,:] * C[b,:].dot(X0.T),axis=1) - y[t,b]**2) * W0[b,b]
 
-
-# solving some parameters with others fixed (mostly only in fully observed case)
-
-def s_R_l2_Hankel_sgd(R, C, Pi, cov_y, idx_grp, co_obs):
-
-    if not cov_y is None:
-        for i in range(len(idx_grp)):
-            a,b = idx_grp[i], co_obs[i]
-            ab = np.intersect1d(a,b)
-
-            PiC = Pi.dot(C[ab,:].T)
-            for s in range(len(ab)):
-                R[ab[s]] = cov_y[ab[s], ab[s]] - C[ab[s],:].dot(PiC[:,s])
-            R[ab] = np.maximum(R[ab], 0)
-
-    return R
-
-def s_X_l2_Hankel_vec(C, R, Qs, lag_range, idx_grp, co_obs):
-    "solves min || C X C.T - Q || for X, using a naive vec() approach"
-
-    p,n = C.shape
-    kl = len(lag_range)
-
-    M = np.zeros((n**2, n**2))
-    c = np.zeros((n**2, kl))
-    for i in range(len(idx_grp)):
-        a,b = idx_grp[i], co_obs[i]
-        if not Qs[0] is None:
-            idx_R = np.where(np.in1d(a,b))[0]
-
-        M += np.kron(C[b,:].T.dot(C[b,:]), C[a,:].T.dot(C[a,:]))
-
-        if len(a) * len(b) * n**2 > 10e6: # size of variable Mab (see below)
-            for s in range(len(b)):
-                Mab = np.kron(C[b[s],:], C[a,:]).T
-                if not Qs[0] is None:
-                    tmpQ = Qs[0][a,b[s]].copy()
-                    tmpQ[idx_R[s]] -= R[b[s]]
-                    c[:,0] += Mab.dot(tmpQ)
-                for m_ in range(1,kl):
-                    c[:,m_] += Mab.dot(Qs[m_][a,b[s]])
-        else:  # switch to single row of cov mats (size < p * n^2)
-            Mab = np.kron(C[b,:], C[a,:]).T
-            if not Qs[0] is None:
-                tmpQ = Qs[0][np.ix_(a,b)].copy()
-                tmpQ[idx_R, np.arange(len(b))] -= R[b]
-                c[:,0] += Mab.dot(tmpQ.T.reshape(-1,))
-            for m_ in range(1,kl):
-                c[:,m_] +=  Mab.dot(Qs[m_][np.ix_(a,b)].T.reshape(-1,)) 
-
-    X = np.linalg.solve(M,c)
-    for m in range(kl):
-        X[:,m] = (X[:,m].reshape(n,n).T).reshape(-1,)
-
-    return X
-
-def s_X_l2_Hankel_fully_obs(C, R, Qs, lag_range, idx_grp, co_obs, max_size=1000):
-    "solves min || C X C.T - Q || for X in the fully observed case."
-
-    assert len(idx_grp) == 1
-    kl = len(lag_range)
-
-    p,n = C.shape
-    Cd = np.linalg.pinv(C)
-
-    X = np.zeros((n**2, kl))
-    p_range = np.arange(p)
-    if not Qs[0] is None:
-        if p > 1000:
-            print('extracting latent cov. matrix for time-lag m=', 0)
-
-        def f(idx_i, idx_j, i, j):
-            tmpQ = Qs[0][np.ix_(idx_i,idx_j)].copy()
-            if i == j: # indicates that idx_i == idx_j
-                tmpQ[np.diag_indices(len(idx_i))] -= R[idx_i]
-            return (Cd[:,idx_i].dot(tmpQ).dot(Cd[:,idx_j].T)).reshape(-1,)
-
-        X[:,0] = Cd[:,idx_i].dot(tmpQ).dot(Cd[:,idx_j].T)
-
-    for m_ in range(1,kl):
-        if p > 1000:
-            print('extracting latent cov. matrix for time-lag m=', m_)
-
-        def f(idx_i, idx_j, i, j):
-            return (Cd[:,idx_i].dot(Qs[m_][np.ix_(idx_i,idx_j)]).dot( \
-                Cd[:,idx_j].T)).reshape(-1,)
-
-        X[:,m_] += chunking_blocks(f, p_range, p_range, max_size)            
-
-    return X
-
 # evaluation of target loss function
 
 def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
 
     return 0.
+
 
 def f_l2_Hankel_nl(C,X,R, y,lag_range,ms,get_observed, idx_a, idx_b, W, ts = None):
 
@@ -614,12 +553,10 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
 ###########################################################################
 
 
-def track_correlations(Qs, p, n, lag_range, pars,
+def track_correlations(C,A,B,X,R,Qs, p, n, lag_range,
     idx_a=None, idx_b=None, mmap = False, data_path=None):
 
-
-    C, A, B, X, R = pars['C'],pars['A'], pars['B'], pars['X'], pars['R']
-    Pi = B.dot(B.T)
+    Pi = None if B is None else B.dot(B.T) 
 
     if X is None:
         X = np.vstack([np.linalg.matrix_power(A,m) for m in lag_range]).dot(Pi)
