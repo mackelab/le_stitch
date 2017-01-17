@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
+import time
 
 ###########################################################################
 # stochastic gradient descent: gradients w.r.t. C,R,A,B,X=cov(x_{t+m},x_t)
@@ -69,12 +70,15 @@ def run_bad(lag_range,n,y,obs_scheme,
                                            max_iter=max_iter, eps_conv=eps_conv)
     if verbose:
         print('starting descent')    
+
+    t_desc = time.time()
     pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,num_pars=num_pars,kl=kl,
                                  alpha=alpha,b1=b1,b2=b2,e=e,
                                  batch_draw=batch_draw,converged=converged,
                                  track_corrs=track_corrs,max_iter=max_iter,
                                  max_epoch_size=max_epoch_size,batch_size=batch_size,
                                  verbose=verbose,pars_track=pars_track)
+    t_desc = time.time() - t_desc
 
     if parametrization=='nl':
 
@@ -97,7 +101,7 @@ def run_bad(lag_range,n,y,obs_scheme,
                     'X': X}
 
 
-    return pars_init, pars_est, traces, Qs, Om
+    return pars_init, pars_est, traces, Qs, Om, t_desc
 
 
 # decorations
@@ -120,8 +124,7 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
     kl_ = np.max(lag_range)+1
 
     if sso:
-        g_l2_nl = g_l2_Hankel_sgd_nl_sso 
-        g_l2_ln = None #g_l2_Hankel_sgd_ln_sso 
+        g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl_sso, g_l2_Hankel_sgd_ln_sso 
     else:
         g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl, g_l2_Hankel_sgd_ln
 
@@ -358,12 +361,11 @@ def get_epoch_size(batch_size, p=None, a=None, max_epoch_size=np.inf):
 def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
 
     p,n = C.shape
-
-    get_observed = obs_scheme.gen_get_observed()
-
     grad_C = np.zeros_like(C)
     grad_X = np.zeros_like(X)
     grad_R = np.zeros_like(R)
+
+    get_observed = obs_scheme.gen_get_observed()
 
     for m in ms:
         m_ = lag_range[m]
@@ -437,7 +439,6 @@ def g_A_l2_block(grad, dXmPi, Aexpm, m):
     for q in range(m):
         grad += Aexpm[q*n:(q+1)*n,:].T.dot(dXmPi.dot(Aexpm[(m-1-q)*n:(m-q)*n,:].T))
 
-
 def g_C_l2_vector_pair_rw(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
 
     C___ = C.dot(Xm)   # mad-
@@ -456,7 +457,6 @@ def g_C_l2_vector_pair_rw(grad, m_, C, Xm, R, a, b, anb, yp, yf, Wm):
     if m_ == 0:      
         grad[anb,:] += (R[anb]*Wm[anb,anb]).reshape(-1,1)*(C___[anb,:] + C_tr[anb,:])
            
-
 def g_B_l2_vector_pair_rw(grad, m_, C, Am, Pi, R, a, b, anb, yp, yf, Wm):
 
     for k in a:        
@@ -493,7 +493,51 @@ def g_R_l2_Hankel_sgd_rw(grad, C, X0, R, y, ts, get_observed, W0):
 
 
 
+def g_l2_Hankel_sgd_ln_sso(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
 
+    p,n = C.shape
+    kl_ = np.max(lag_range)+1 # d/dA often (but not always) needs all powers A^m
+
+    get_idx_grp,idx_grp = obs_scheme.gen_get_idx_grp(), obs_scheme.idx_grp
+
+    grad_C = np.zeros_like(C)
+    grad_A = np.zeros_like(A)
+    grad_B = np.zeros_like(B)
+    grad_R = np.zeros_like(R)
+
+    Pi = B.dot(B.T)
+    Aexpm = np.zeros((kl_*n,n))
+    Aexpm[:n,:] = np.eye(n)
+    for m in range(1,kl_):
+        Aexpm[m*n:(m+1)*n,:] = A.dot(Aexpm[(m-1)*n:(m)*n,:])
+    grad_X = np.zeros_like(Aexpm, dtype=A.dtype)
+
+    for m in ms:
+
+        m_ = lag_range[m]
+        Xm = Aexpm[m*n:(m+1)*n,:].dot(Pi)
+
+        grad_Bm  = np.zeros_like(B)
+        grad_Xm = grad_X[m*n:(m+1)*n, :]
+
+        for t in ts:
+            is_ = get_idx_grp(t+m_)
+            js_ = get_idx_grp(t)
+            inj = np.intersect1d(is_, js_)
+
+            g_C_l2_vector_pair_sso(grad_C,  m_, C, Xm, R, idx_grp, is_, js_, inj, y[t], y[t+m_], W[m])
+            g_B_l2_vector_pair_sso(grad_Bm, m_, C, Aexpm[m*n:(m+1)*n,:], Pi, R, idx_grp, is_, js_, inj, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair_sso(grad_Xm, m_, C, Xm, R, idx_grp, is_, js_, inj, y[t], y[t+m_], W[m])
+            if m_==0:
+                g_R_l2_Hankel_sgd_sso(grad_R, C, Xm, R, idx_grp, inj, y[t], W[m])
+
+        grad_B += (grad_Bm + grad_Bm.T)
+
+        g_A_l2_block(grad_A, grad_Xm.dot(Pi), Aexpm,m) # grad_Xm.dot(Pi) possibly too costly
+
+    grad_B = grad_B.dot(B)
+
+    return grad_C, grad_A, grad_B, grad_R
 
 def g_l2_Hankel_sgd_nl_sso(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
 
@@ -562,8 +606,8 @@ def g_B_l2_vector_pair_sso(grad, m_, C, Am, Pi, R, idx_grp, is_, js_, inj, yp, y
         for j in js_:
             b = idx_grp[j]
             SC += C[b,:].T.dot(C[b,:]) * Wm[i,j]
-            SY += yp[b].dot(C[b,:] * Wm[i,j])
-        grad += CAm[a,:].T.dot(CAm[a,:]).dot(Pi).dot(S)-np.outer(yf[a].dot(CAm[a,:]),Sy)
+            Sy += yp[b].dot(C[b,:] * Wm[i,j])
+        grad += CAm[a,:].T.dot(CAm[a,:]).dot(Pi).dot(SC)-np.outer(yf[a].dot(CAm[a,:]),Sy)
 
     if m_ == 0:
         for i in inj:
@@ -599,7 +643,7 @@ def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
 
     return 0.
 
-def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W):
+def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W,ts=None,ms=None):
 
     T,p = y.shape
     kl_ = np.max(lag_range)+1
@@ -607,12 +651,15 @@ def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W):
     get_observed = obs_scheme.gen_get_observed()
     idx_grp = obs_scheme.idx_grp
 
+    ts = range(T-kl_) if ts is None else ts
+    ms = range(len(lag_range)) if ms is None else ms
+
     Qs = [np.zeros((pa,pb), dtype=y.dtype) for m in range(len(lag_range))]
     Om = [np.zeros((pa,pb), dtype=bool) for m in range(len(lag_range))]
 
-    for m in range(len(lag_range)):
+    for m in ms:
         m_ = lag_range[m]
-        for t in range(T-kl_):
+        for t in ts:
             a = np.intersect1d(get_observed(t+m_), idx_a)
             b = np.intersect1d(get_observed(t),    idx_b)
             a_Q = np.in1d(idx_a, a)
@@ -622,13 +669,13 @@ def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W):
             Om[m][np.ix_(a_Q, b_Q)] = True
 
     if np.all(W[0].shape == (len(idx_grp), len(idx_grp))):
-        for m in range(len(lag_range)):
+        for m in ms:
             for i in range(len(idx_grp)):
                 for j in range(len(idx_grp)):
                     Qs[m][np.ix_(idx_grp[i], idx_grp[j])] *= W[m][i,j]
 
     elif np.all(W[0].shape == (p, p)):
-        for m in range(len(lag_range)):
+        for m in ms:
             Qs[m] = Qs[m] * W[m][np.ix_(idx_a,idx_b)]
 
     else:
@@ -639,7 +686,7 @@ def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W):
 def f_l2_Hankel_nl(C,X,R,Qs,Om,lag_range,ms,idx_a,idx_b):
 
     p,n = C.shape
-    L = 0
+    L = 0.
 
     for m in ms:
         CXC = C[idx_a,:].dot(X[m*n:(m+1)*n,:]).dot(C[idx_b,:].T)
