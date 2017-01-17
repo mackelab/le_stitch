@@ -3,6 +3,7 @@ import scipy as sp
 from scipy import stats
 import matplotlib.pyplot as plt
 from numpy.lib.stride_tricks import as_strided
+from text import progprint_xrange
 
 ###########################################################################
 # Utility (general)

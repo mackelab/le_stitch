@@ -2,6 +2,8 @@ import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 import time
+from text import progprint_xrange
+
 
 ###########################################################################
 # stochastic gradient descent: gradients w.r.t. C,R,A,B,X=cov(x_{t+m},x_t)
