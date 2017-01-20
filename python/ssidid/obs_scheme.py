@@ -136,18 +136,6 @@ class ObservationScheme(object):
 		self.obs_idx, self.idx_grp = self._get_obs_index_groups()
 		self.overlaps, self.overlap_grp, self.idx_overlap = self._get_obs_index_overlaps()
 
-		def co_observed(x, i):
-			for idx in self.obs_idx:
-				if x in idx and i in idx:
-					return True
-			return False        
-
-		num_idx_grps, self.co_obs = len(self.idx_grp), []
-		for i in range(num_idx_grps):    
-			self.co_obs.append([self.idx_grp[x] for x in np.arange(len(self.idx_grp)) \
-				if co_observed(x,i)])
-			self.co_obs[i] = np.sort(np.hstack(self.co_obs[i]))
-		    
 
 	def _get_obs_index_groups(self):
 
@@ -172,7 +160,7 @@ class ObservationScheme(object):
 	        for j in np.unique(hsh[np.where(J[:,self._obs_pops[i]]==1)]):
 	            obs_idx[i].append(np.where(lbls==j)[0][0])            
 
-	    return obs_idx, idx_grp
+	    return np.asarray(obs_idx), np.asarray(idx_grp)
 
 	def _get_obs_index_overlaps(self):
 		num_idx_grps = len(self.idx_grp)
