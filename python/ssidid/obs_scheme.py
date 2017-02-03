@@ -135,7 +135,14 @@ class ObservationScheme(object):
 		    obs_pops = tuple(range(self.num_subpops))
 		self.obs_idx, self.idx_grp = self._get_obs_index_groups()
 		self.overlaps, self.overlap_grp, self.idx_overlap = self._get_obs_index_overlaps()
-
+		self.idx_time = []
+		for i in range(len(self.idx_grp)):
+			ts = [ range(self._obs_time[0]) ] if i in self.obs_idx[0] else []
+			for t in range(1,len(self.obs_time)):
+				if i in self.obs_idx[t]:
+					ts.append( range(self._obs_time[t-1], self.obs_time[t]) )
+			ts = np.hstack( [ np.asarray(ts_) for ts_ in ts] )
+			self.idx_time.append( ts )
 
 	def _get_obs_index_groups(self):
 
@@ -209,12 +216,31 @@ class ObservationScheme(object):
 
 		return get_observed
 
+
 	def gen_get_idx_grp(self):
 
 		def get_idx_grp(t):
 			return self.obs_idx[np.searchsorted(self._obs_time,t,side='right')]
 
 		return get_idx_grp
+
+
+	def gen_get_coobs_intervals(self, lag_range):
+
+		kl_ = np.max(lag_range) + 1
+		def get_coobs_intervals(i,j,m):
+
+			ts_i = np.zeros(self._T, dtype=bool)
+			tsm = self.idx_time[i]+m
+			cut_off = np.searchsorted(tsm[-kl_:],self._T-kl_+m,side='right')
+			ts_i[tsm[:-kl_+cut_off]] = True
+
+			ts_j = np.zeros(self._T, dtype=bool)
+			ts_j[self.idx_time[j]] = True
+
+			return (ts_i and ts_j)
+
+		return get_coobs_intervals
 
 	def comp_coocurrence_weights(self, lag_range, sso=False, idx_a=None, idx_b=None):
 

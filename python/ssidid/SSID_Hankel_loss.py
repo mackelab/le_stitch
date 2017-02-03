@@ -29,7 +29,7 @@ def run_bad(lag_range,n,y,obs_scheme,
                                                 idx_b=idx_b) 
 
     if Qs is None or Om is None:
-        Qs, Om = f_l2_Hankel_comp_Q_Om(n=n,y=y,lag_range=lag_range,
+        Qs, Om = f_l2_Hankel_comp_Q_Om(n=n,y=y,lag_range=lag_range,sso=sso,
                                 mmap=mmap,data_path=data_path,
                                 obs_scheme=obs_scheme,idx_a=idx_a,idx_b=idx_b,W=W)
 
@@ -723,13 +723,12 @@ def f_l2_inst(C,Pi,R,Q,idx_grp,co_obs,idx_a,idx_b,W=None):
 # utility, semi-scripts, plotting
 ###########################################################################
 
-def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W,
+def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W,sso=False,
                           mmap=False,data_path=None,ts=None,ms=None):
 
     T,p = y.shape
     kl_ = np.max(lag_range)+1
     pa, pb = len(idx_a), len(idx_b)
-    get_observed = obs_scheme.gen_get_observed()
     idx_grp = obs_scheme.idx_grp
 
     ts = range(T-kl_) if ts is None else ts
@@ -738,16 +737,33 @@ def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W,
     Qs = [np.zeros((pa,pb), dtype=y.dtype) for m in range(len(lag_range))]
     Om = [np.zeros((pa,pb), dtype=bool) for m in range(len(lag_range))]
 
-    for m in ms:
-        m_ = lag_range[m]
-        for t in ts:
-            a = np.intersect1d(get_observed(t+m_), idx_a)
-            b = np.intersect1d(get_observed(t),    idx_b)
-            a_Q = np.in1d(idx_a, a)
+    if sso: 
+        get_obs_idx = obs_scheme.gen_get_idx_grp()
+        get_coobs_intervals = obs_scheme.gen_get_coobs_intervals(lag_range)
+        idx_grp = obs_scheme.idx_grp
+        for j in range(len(idx_grp)):
+            b = np.intersect1d(idx_grp[j], idx_b)
             b_Q = np.in1d(idx_b, b)
+            for i in range(len(idx_grp)):
+                a = np.intersect1d(idx_grp[i], idx_a)
+                a_Q = np.in1d(idx_a, a)
+                for m in ms:
+                    if W[m][i,j] > 1:                    
+                        ts_mab = get_coobs_intervals(i,j,m)
+                        Qs[m][np.ix_(a_Q,b_Q)] += y[a,tsm_ab+lag_range[m]].T.dot(y[b,ts_mab])
 
-            Qs[m][np.ix_(a_Q, b_Q)] += np.outer(y[t+m_,a], y[t,b])
-            Om[m][np.ix_(a_Q, b_Q)] = True
+    else:
+        get_observed = obs_scheme.gen_get_observed()
+        for m in ms:
+            m_ = lag_range[m]
+            for t in ts:
+                a = np.intersect1d(get_observed(t+m_), idx_a)
+                b = np.intersect1d(get_observed(t),    idx_b)
+                a_Q = np.in1d(idx_a, a)
+                b_Q = np.in1d(idx_b, b)
+
+                Qs[m][np.ix_(a_Q, b_Q)] += np.outer(y[t+m_,a], y[t,b])
+                Om[m][np.ix_(a_Q, b_Q)] = True
 
     if np.all(W[0].shape == (len(idx_grp), len(idx_grp))):
         for m in ms:
@@ -797,7 +813,7 @@ def track_correlations(C,A,B,X,R,Qs, p, n, lag_range,
                 Qrec[np.ix_(idx_a_ab, idx_b_ab)] += np.diag(R[idx_ab])
             
             if mmap:
-                Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, mode='r', shape=(pa,pb))
+                Q = np.load(data_path+'Qs_'+str(m_)+'.npy')
             else:
                 Q = Qs[m]
                 
