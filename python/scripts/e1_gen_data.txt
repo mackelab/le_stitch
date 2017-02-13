@@ -1,0 +1,7 @@
+export PATH="/home/nonnenmacher/anaconda3/bin:$PATH"
+
+cd /home/nonnenmacher/stitching/code/le_stitch/python/dev/
+
+source activate py35
+
+python e1_gen_data.py
