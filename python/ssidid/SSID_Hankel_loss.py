@@ -14,7 +14,7 @@ def run_bad(lag_range,n,y,obs_scheme,
             sso=False, W=None, 
             idx_a=None,idx_b=None,
             init='default',
-            alpha=0.001, b1=0.9, b2=0.99, e=1e-8, 
+            alpha=0.001, b1=0.9, b2=0.99, e=1e-8, a_decay = 0.95, 
             max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
             batch_size=1,
             verbose=False, mmap=False, data_path=None, pars_track=None):
@@ -74,7 +74,7 @@ def run_bad(lag_range,n,y,obs_scheme,
 
     t_desc = time.time()
     pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,num_pars=num_pars,kl=kl,
-                                 alpha=alpha,b1=b1,b2=b2,e=e,
+                                 alpha=alpha,b1=b1,b2=b2,e=e, a_decay=a_decay,
                                  batch_draw=batch_draw,converged=converged,
                                  track_corrs=track_corrs,max_iter=max_iter,
                                  max_epoch_size=max_epoch_size,batch_size=batch_size,
@@ -238,7 +238,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
 
 # main optimiser
 
-def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,
+def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
             batch_draw,track_corrs,converged,
             max_iter,batch_size,max_epoch_size,
             verbose,pars_track):
@@ -288,6 +288,7 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,
             ct_iter += 1
 
         t_iter += 1
+        alpha *= a_decay
 
     # final round over R (we before only updated R_ii just-in-time)
     #R = s_R(R, C, X[:n,:].reshape(n,n))
@@ -389,7 +390,7 @@ def g_l2_Hankel_sgd_nl(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
         if m_==0:
             g_R_l2_Hankel_sgd_rw(grad_R, C, Xm, R, y, ts, get_observed, W[m])
 
-    return grad_C, grad_X, grad_R
+    return grad_C / len(ts), grad_X / len(ts), grad_R / len(ts)
 
 def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
 
@@ -436,7 +437,7 @@ def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
 
     grad_B = grad_B.dot(B)
 
-    return grad_C, grad_A, grad_B, grad_R
+    return grad_C / len(ts), grad_A / len(ts), grad_B / len(ts), grad_R / len(ts)
 
 def g_A_l2_block(grad, dXmPi, Aexpm, m):
     "returns l2 Hankel reconstr. gradient w.r.t. A for a single Hankel block"
@@ -552,7 +553,7 @@ def g_l2_Hankel_sgd_ln_sso(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
 
     grad_B = grad_B.dot(B)
 
-    return grad_C, grad_A, grad_B, grad_R
+    return grad_C / len(ts), grad_A / len(ts), grad_B / len(ts), grad_R / len(ts)
 
 
 def g_l2_Hankel_sgd_nl_sso(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
@@ -588,7 +589,7 @@ def g_l2_Hankel_sgd_nl_sso(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
             if m_ == 0:
                 g_R_l2_Hankel_sgd_sso(grad_R, C, R_CX0Cs, idx_grp, inj, y[t], W[m])
 
-    return grad_C, grad_X, grad_R
+    return grad_C / len(ts), grad_X / len(ts), grad_R / len(ts)
 
 def g_C_l2_vector_pair_sso(grad, m_, C, Xm, R, CCs, idx_grp, is_, js_, inj, yp, yf, Wm):
 
@@ -748,10 +749,10 @@ def f_l2_Hankel_comp_Q_Om(n,y,lag_range,obs_scheme,idx_a,idx_b,W,sso=False,
                 a = np.intersect1d(idx_grp[i], idx_a)
                 a_Q = np.in1d(idx_a, a)
                 for m in ms:
-                    if W[m][i,j] > 1:                    
-                        ts_mab = get_coobs_intervals(i,j,m)
-                        Qs[m][np.ix_(a_Q,b_Q)] += y[a,tsm_ab+lag_range[m]].T.dot(y[b,ts_mab])
-
+                    idx_coobs_ijm = get_coobs_intervals(j,i,m) # note ordering of j,i
+                    if len(idx_coobs_ijm) > 0:                    
+                        Qs[m][np.ix_(a_Q,b_Q)] = y[np.ix_(idx_coobs_ijm,a)].T.dot(y[np.ix_(idx_coobs_ijm-m,b)])
+                        Om[m][np.ix_(a_Q,b_Q)] = True
     else:
         get_observed = obs_scheme.gen_get_observed()
         for m in ms:

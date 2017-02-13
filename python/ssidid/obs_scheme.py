@@ -230,15 +230,15 @@ class ObservationScheme(object):
 		kl_ = np.max(lag_range) + 1
 		def get_coobs_intervals(i,j,m):
 
-			ts_i = np.zeros(self._T, dtype=bool)
-			tsm = self.idx_time[i]+m
-			cut_off = np.searchsorted(tsm[-kl_:],self._T-kl_+m,side='right')
-			ts_i[tsm[:-kl_+cut_off]] = True
+			tsi= self.idx_time[i]
+			cut_off = np.searchsorted(tsi[-kl_:],self._T-kl_,side='left')
+			tsi = tsi[:len(tsi)-kl_+cut_off]+m
 
-			ts_j = np.zeros(self._T, dtype=bool)
-			ts_j[self.idx_time[j]] = True
+			tsj = self.idx_time[j]
 
-			return (ts_i and ts_j)
+			idx_coocc = np.intersect1d(tsi, tsj, assume_unique=True)
+			
+			return idx_coocc
 
 		return get_coobs_intervals
 
