@@ -16,7 +16,7 @@ def run_bad(lag_range,n,y,obs_scheme,
             init='default',
             alpha=0.001, b1=0.9, b2=0.99, e=1e-8, a_decay = 0.95, 
             max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
-            batch_size=1,
+            batch_size=1,save_every=np.inf,
             verbose=False, mmap=False, data_path=None, pars_track=None):
 
     assert parametrization in ['nl', 'ln']    
@@ -32,6 +32,9 @@ def run_bad(lag_range,n,y,obs_scheme,
         Qs, Om = f_l2_Hankel_comp_Q_Om(n=n,y=y,lag_range=lag_range,sso=sso,
                                 mmap=mmap,data_path=data_path,
                                 obs_scheme=obs_scheme,idx_a=idx_a,idx_b=idx_b,W=W)
+
+    if not save_every == np.inf:
+        assert not data_path is None
 
     idx_a = np.arange(p) if idx_a is None else idx_a
     idx_b = idx_a if idx_b is None else idx_b
@@ -59,7 +62,7 @@ def run_bad(lag_range,n,y,obs_scheme,
              'R'  : np.zeros(p),
              'X'  : np.zeros(((kl)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
-    f,g,batch_draw,track_corrs,converged = l2_bad_sis_setup(
+    f,g,batch_draw,track_corrs,converged,save_interm = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
                                            parametrization=parametrization,
                                            sso=sso,
@@ -68,6 +71,7 @@ def run_bad(lag_range,n,y,obs_scheme,
                                            obs_scheme=obs_scheme, W=W,
                                            batch_size=batch_size,
                                            mmap=mmap, data_path=data_path,
+                                           save_every=save_every,
                                            max_iter=max_iter, eps_conv=eps_conv)
     if verbose:
         print('starting descent')    
@@ -76,8 +80,9 @@ def run_bad(lag_range,n,y,obs_scheme,
     pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,num_pars=num_pars,kl=kl,
                                  alpha=alpha,b1=b1,b2=b2,e=e, a_decay=a_decay,
                                  batch_draw=batch_draw,converged=converged,
-                                 track_corrs=track_corrs,max_iter=max_iter,
-                                 max_epoch_size=max_epoch_size,batch_size=batch_size,
+                                 track_corrs=track_corrs,save_interm=save_interm,
+                                 max_iter=max_iter,max_epoch_size=max_epoch_size,
+                                 batch_size=batch_size,
                                  verbose=verbose,pars_track=pars_track)
     t_desc = time.time() - t_desc
 
@@ -111,7 +116,7 @@ def run_bad(lag_range,n,y,obs_scheme,
 def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
                      idx_a=None, idx_b=None, W=None,
                      parametrization='nl', sso=False, 
-                     max_iter=np.inf, eps_conv=0.99999,
+                     max_iter=np.inf, eps_conv=0.99999, save_every=np.inf,
                      batch_size=None, mmap=False, data_path=None):
     "returns error function and gradient for use with gradient descent solvers"
 
@@ -124,6 +129,8 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
     T,p = y.shape
     kl = len(lag_range)
     kl_ = np.max(lag_range)+1
+
+    fn = 'p'+str(p)+'n'+str(n)+'T'+str(T)+'subpops'+str(len(sub_pops))
 
     if sso:
         g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl_sso, g_l2_Hankel_sgd_ln_sso 
@@ -156,6 +163,28 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
                             Qs=Qs, p=p, n=n, lag_range=lag_range,
                             idx_a=idx_a, idx_b=idx_b, mmap=mmap, data_path=data_path)
 
+        def save_interm(pars, t):
+
+            if np.mod(t, save_every) == 0:
+
+                try:
+                    print('saving intermediate results...')
+                    save_dict = {'T' : T,
+                                 'lag_range' : lag_range,
+                                 'C' : pars[0],
+                                 'X' : pars[1],
+                                 'R' : pars[2],
+                                 'mmap' : mmap,
+                                 'data_path' : data_path
+                                }
+
+                    np.savez(data_path +  fn + '_interm_i'+str(t), save_dict)
+
+                except:
+                    print('failed to save interm. results! continuing fit ...')
+
+
+
 
     elif parametrization=='ln':
 
@@ -174,6 +203,32 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
             return track_correlations(C=pars[0],A=pars[1],B=pars[2],X=None,R=pars[3],
                             Qs=Qs, p=p, n=n, lag_range=lag_range,
                             idx_a=idx_a, idx_b=idx_b, mmap=mmap, data_path=data_path)
+
+
+        def save_interm(pars, t):
+
+            if np.mod(t, save_every) == 0:
+
+                try:
+                    print('saving intermediate results...')
+                    save_dict = {'T' : T,
+                                 'lag_range' : lag_range,
+                                 'C' : pars[0],
+                                 'A' : pars[1],
+                                 'B' : pars[2],
+                                 'R' : pars[3],
+                                 'mmap' : mmap,
+                                 'data_path' : data_path
+                                }
+
+                    np.savez(data_path +  fn + '_interm_i'+str(t), save_dict)
+                    
+                except:
+                    print('failed to save interm. results! continuing fit ...')
+
+
+
+
 
     # setting up the stochastic batch selection:
     batch_draw, g_sgd = l2_sgd_draw(p, T, lag_range, batch_size, g)
@@ -194,7 +249,7 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
         def converged(t, fun):
             return True if t >= max_iter else False
 
-    return f,g_sgd,batch_draw,track_corrs,converged
+    return f,g_sgd,batch_draw,track_corrs,converged, save_interm
 
 def l2_sgd_draw(p, T, lag_range, batch_size, g):
     "returns sequence of indices for sets of neuron pairs for SGD"
@@ -239,7 +294,7 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
 # main optimiser
 
 def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
-            batch_draw,track_corrs,converged,
+            batch_draw,track_corrs,converged,save_interm,
             max_iter,batch_size,max_epoch_size,
             verbose,pars_track):
 
@@ -253,7 +308,7 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
     corrs  = np.zeros((kl, 12))
 
     def epoch_range(epoch_size):
-        if p > 10000:
+        if p > 1e4:
             return progprint_xrange(epoch_size, perline=100)
         else:
             return range(epoch_size)
@@ -279,16 +334,18 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
             fun[t_iter] = f(pars)
             if not pars_track is None:
                 pars_track(pars,t_iter)
-
+        if verbose and p > 1e4:
+            print('f = ', fun[t_iter])
         if np.mod(t_iter,max_iter//10) == 0:
-            if verbose:
-                print('finished %', 100*t_iter/max_iter+10)
-                print('f = ', fun[t_iter])
+            print('finished %', 100*t_iter/max_iter+10)
             corrs[:,ct_iter] = track_corrs(pars) 
             ct_iter += 1
 
         t_iter += 1
         alpha *= a_decay
+
+        save_interm(pars, t_iter)
+
 
     # final round over R (we before only updated R_ii just-in-time)
     #R = s_R(R, C, X[:n,:].reshape(n,n))

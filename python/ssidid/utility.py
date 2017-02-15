@@ -273,10 +273,11 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     nc, nc_u = n - nr, (n - nr)//2
     assert nc_u * 2 == nc 
 
+
     idx_a = np.arange(p) if idx_a is None else idx_a
     idx_b = idx_a if idx_b is None else idx_b
     assert np.all(idx_a == np.sort(idx_a))
-    assert np.all(idx_a == np.sort(idx_a))
+    assert np.all(idx_b == np.sort(idx_b))
     pa, pb = len(idx_a), len(idx_b)
 
     kl = len(lag_range)
