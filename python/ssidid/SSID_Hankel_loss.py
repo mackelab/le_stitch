@@ -338,6 +338,7 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
             print('f = ', fun[t_iter])
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter+10)
+            print('f = ', fun[t_iter])
             corrs[:,ct_iter] = track_corrs(pars) 
             ct_iter += 1
 
@@ -571,9 +572,8 @@ def g_l2_Hankel_sgd_ln_sso(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
     Pi = B.dot(B.T)
 
     # pre-compute
-    ts_ = ts if len(ts)>1 else ts[0]
-    inst_is_ = np.unique(get_idx_grp(ts_))
-    all_is_  = np.union1d(np.unique([get_idx_grp(ts_+m) for m in ms]), inst_is_)
+    inst_is_ = np.unique(np.hstack(get_idx_grp(ts)))
+    all_is_  = np.union1d(np.unique([np.hstack(get_idx_grp(ts+m)) for m in ms]), inst_is_)
     CCs, R_CX0Cs = [], []
     for i in range(len(idx_grp)):
         CCs.append( C[idx_grp[i],:].T.dot(C[idx_grp[i],:]) if i in all_is_ else None) 
@@ -623,9 +623,8 @@ def g_l2_Hankel_sgd_nl_sso(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
     get_idx_grp,idx_grp = obs_scheme.gen_get_idx_grp(), obs_scheme.idx_grp
 
     # pre-compute
-    ts_ = ts if len(ts)>1 else ts[0]
-    inst_is_ = np.unique(get_idx_grp(ts_))
-    all_is_  = np.union1d(np.unique([get_idx_grp(ts_+m) for m in ms]), inst_is_)
+    inst_is_ = np.unique(np.hstack(get_idx_grp(ts)))
+    all_is_  = np.union1d(np.unique([np.hstack(get_idx_grp(ts+m)) for m in ms]), inst_is_)
     CCs, R_CX0Cs = [], []
     for i in range(len(idx_grp)):
         CCs.append( C[idx_grp[i],:].T.dot(C[idx_grp[i],:]) if i in all_is_ else None) 
