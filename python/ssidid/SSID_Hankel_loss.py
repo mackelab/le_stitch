@@ -13,10 +13,10 @@ def run_bad(lag_range,n,y,obs_scheme,
             parametrization='nl',
             sso=False, W=None, 
             idx_a=None,idx_b=None,
-            init='default',
+            pars_init='default', aux_init=None,
             alpha=0.001, b1=0.9, b2=0.99, e=1e-8, a_decay = 0.95, 
             max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
-            batch_size=1,save_every=np.inf,
+            batch_size=1,save_every=np.inf,return_aux=False,
             verbose=False, mmap=False, data_path=None, pars_track=None):
 
     assert parametrization in ['nl', 'ln']    
@@ -50,11 +50,11 @@ def run_bad(lag_range,n,y,obs_scheme,
     kl = len(lag_range)
     assert np.all(lag_range == np.sort(lag_range))
 
-    if isinstance(init, dict):
-        assert 'C' in init.keys()
-        pars_init = init.copy()
+    if isinstance(pars_init, dict):
+        assert 'C' in pars_init.keys()
+        pars_init = pars_init.copy()
 
-    if init =='default':
+    if pars_init =='default':
         pars_init = {'A'  : np.diag(np.linspace(0.89, 0.91, n)),
              'Pi' : np.eye(n),
              'B'  : np.eye(n), 
@@ -71,19 +71,21 @@ def run_bad(lag_range,n,y,obs_scheme,
                                            obs_scheme=obs_scheme, W=W,
                                            batch_size=batch_size,
                                            mmap=mmap, data_path=data_path,
-                                           save_every=save_every,
+                                           save_every=save_every, 
                                            max_iter=max_iter, eps_conv=eps_conv)
     if verbose:
         print('starting descent')    
 
     t_desc = time.time()
-    pars_est, traces = adam_main(f=f,g=g,pars_0=pars_init,num_pars=num_pars,kl=kl,
+    pars_est, traces = adam_main(f=f,g=g,kl=kl,num_pars=num_pars,
+                                 pars_init=pars_init,aux_init=aux_init, 
                                  alpha=alpha,b1=b1,b2=b2,e=e, a_decay=a_decay,
                                  batch_draw=batch_draw,converged=converged,
                                  track_corrs=track_corrs,save_interm=save_interm,
                                  max_iter=max_iter,max_epoch_size=max_epoch_size,
-                                 batch_size=batch_size,
+                                 batch_size=batch_size,return_aux=return_aux,
                                  verbose=verbose,pars_track=pars_track)
+
     t_desc = time.time() - t_desc
 
     if parametrization=='nl':
@@ -227,9 +229,6 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
                     print('failed to save interm. results! continuing fit ...')
 
 
-
-
-
     # setting up the stochastic batch selection:
     batch_draw, g_sgd = l2_sgd_draw(p, T, lag_range, batch_size, g)
 
@@ -293,14 +292,14 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
 
 # main optimiser
 
-def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
+def adam_main(f,g,pars_init,aux_init,num_pars,kl,alpha,b1,b2,e,a_decay,
             batch_draw,track_corrs,converged,save_interm,
-            max_iter,batch_size,max_epoch_size,
+            return_aux,max_iter,batch_size,max_epoch_size,
             verbose,pars_track):
 
     # initialise pars
-    p, n = pars_0['C'].shape
-    pars = init_adam(pars_0, p, n, kl, num_pars)
+    p, n = pars_init['C'].shape
+    pars = init_adam(pars_init, p, n, kl, num_pars)
 
     # setting up Adam
     b1,b2,e,vp,mp = pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e)
@@ -338,6 +337,7 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
             print('f = ', fun[t_iter])
         if np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter+10)
+            print('f = ', fun[t_iter])
             corrs[:,ct_iter] = track_corrs(pars) 
             ct_iter += 1
 
@@ -356,7 +356,8 @@ def adam_main(f,g,pars_0,num_pars,kl,alpha,b1,b2,e,a_decay,
     if verbose:
         print('total iterations: ', t)
 
-    return pars, (fun,corrs)    
+    traces = (fun,corrs,(mp,vp)) if return_aux else (fun,corrs)
+    return pars, traces    
 
 
 def pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e):
@@ -571,9 +572,8 @@ def g_l2_Hankel_sgd_ln_sso(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
     Pi = B.dot(B.T)
 
     # pre-compute
-    ts_ = ts if len(ts)>1 else ts[0]
-    inst_is_ = np.unique(get_idx_grp(ts_))
-    all_is_  = np.union1d(np.unique([get_idx_grp(ts_+m) for m in ms]), inst_is_)
+    inst_is_ = np.unique(np.hstack(get_idx_grp(ts)))
+    all_is_  = np.union1d(np.unique([np.hstack(get_idx_grp(ts+m)) for m in ms]), inst_is_)
     CCs, R_CX0Cs = [], []
     for i in range(len(idx_grp)):
         CCs.append( C[idx_grp[i],:].T.dot(C[idx_grp[i],:]) if i in all_is_ else None) 
@@ -623,9 +623,8 @@ def g_l2_Hankel_sgd_nl_sso(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
     get_idx_grp,idx_grp = obs_scheme.gen_get_idx_grp(), obs_scheme.idx_grp
 
     # pre-compute
-    ts_ = ts if len(ts)>1 else ts[0]
-    inst_is_ = np.unique(get_idx_grp(ts_))
-    all_is_  = np.union1d(np.unique([get_idx_grp(ts_+m) for m in ms]), inst_is_)
+    inst_is_ = np.unique(np.hstack(get_idx_grp(ts)))
+    all_is_  = np.union1d(np.unique([np.hstack(get_idx_grp(ts+m)) for m in ms]), inst_is_)
     CCs, R_CX0Cs = [], []
     for i in range(len(idx_grp)):
         CCs.append( C[idx_grp[i],:].T.dot(C[idx_grp[i],:]) if i in all_is_ else None) 
