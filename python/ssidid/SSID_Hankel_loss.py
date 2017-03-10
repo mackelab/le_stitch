@@ -134,7 +134,9 @@ def l2_bad_sis_setup(lag_range,T,n,y,Qs,Om,obs_scheme,
 
     fn = 'p'+str(p)+'n'+str(n)+'T'+str(T)+'subpops'+str(len(sub_pops))
 
-    if sso:
+    if sso and obs_scheme.use_mask and len(idx_grp) == 1:
+        g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl_rnd, g_l2_Hankel_sgd_ln_rnd
+    elif sso:
         g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl_sso, g_l2_Hankel_sgd_ln_sso 
     else:
         g_l2_nl, g_l2_ln = g_l2_Hankel_sgd_nl, g_l2_Hankel_sgd_ln
@@ -555,6 +557,133 @@ def g_R_l2_Hankel_sgd_rw(grad, C, X0, R, y, ts, get_observed, W0):
     for t in ts:
         b = get_observed(t)         
         grad[b] += (R[b] + np.sum(C[b,:] * C[b,:].dot(X0.T),axis=1) - y[t,b]**2) * W0[b,b]
+
+
+
+
+
+
+
+def g_l2_Hankel_sgd_nl_rnd(C,X,R,y,lag_range,ts,ms,obs_scheme,W):
+
+    p,n = C.shape
+    grad_C = np.zeros_like(C)
+    grad_X = np.zeros_like(X)
+    grad_R = np.zeros_like(R)
+
+    get_observed = obs_scheme.gen_get_observed()
+
+    CC = C.T.dot(C)
+
+    for m in ms:
+        m_ = lag_range[m]
+        Xm = X[m*n:(m+1)*n, :]
+        grad_Xm = grad_X[m*n:(m+1)*n, :]
+        for t in ts:
+            a = get_observed(t+m_)
+            b = get_observed(t)
+            anb = np.intersect1d(a,b)
+
+            CC = C[b,:].T.dot(C[b,:])
+
+            g_C_l2_vector_pair_rnd(grad_C,  m_, C, Xm, R, CC, a, b, anb, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair_rnd(grad_Xm, m_, C, Xm, R, CC, a, b, anb, y[t], y[t+m_], W[m])
+
+        if m_==0:
+            g_R_l2_Hankel_sgd_rnd(grad_R, C, Xm, R, y, ts, get_observed, W[m])
+
+    return grad_C / len(ts), grad_X / len(ts), grad_R / len(ts)
+
+def g_l2_Hankel_sgd_ln_rnd(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
+
+    p,n = C.shape
+    kl_ = np.max(lag_range)+1 # d/dA often (but not always) needs all powers A^m
+
+    get_observed = obs_scheme.gen_get_observed()
+
+    grad_C = np.zeros_like(C)
+    grad_A = np.zeros_like(A)
+    grad_B = np.zeros_like(B)
+    grad_R = np.zeros_like(R)
+
+    Pi = B.dot(B.T)
+    Aexpm = np.zeros((kl_*n,n))
+    Aexpm[:n,:] = np.eye(n)
+    for m in range(1,kl_):
+        Aexpm[m*n:(m+1)*n,:] = A.dot(Aexpm[(m-1)*n:(m)*n,:])
+    grad_X = np.zeros_like(Aexpm, dtype=A.dtype)
+
+    for m in ms:
+
+        m_ = lag_range[m]
+        Xm = Aexpm[m*n:(m+1)*n,:].dot(Pi)
+
+        grad_Bm  = np.zeros_like(B)
+        grad_Xm = grad_X[m*n:(m+1)*n, :]
+
+        for t in ts:
+            a = get_observed(t+m_)
+            b = get_observed(t)
+            anb = np.intersect1d(a,b)
+
+            CC = C[b,:].T.dot(C[b,:])
+
+            g_C_l2_vector_pair_rnd(grad_C,  m_, C, Xm, R, CC, a, b, anb, y[t], y[t+m_], W[m])
+            g_B_l2_vector_pair_rnd(grad_Bm, m_, C, Aexpm[m*n:(m+1)*n,:], Pi, R, CC, a, b, anb, y[t], y[t+m_], W[m])
+            g_X_l2_vector_pair_rnd(grad_Xm, m_, C, Xm, R, CC, a, b, anb, y[t], y[t+m_], W[m])
+
+        grad_B += (grad_Bm + grad_Bm.T)
+
+        g_A_l2_block(grad_A, grad_Xm.dot(Pi), Aexpm,m) # grad_Xm.dot(Pi) possibly too costly
+
+        if m_==0:
+            g_R_l2_Hankel_sgd_rnd(grad_R, C, Xm, R, y, ts, get_observed, W[m])
+
+    grad_B = grad_B.dot(B)
+
+    return grad_C / len(ts), grad_A / len(ts), grad_B / len(ts), grad_R / len(ts)
+
+
+def g_C_l2_vector_pair_rnd(grad, m_, C, Xm, R, CC, a, b, anb, yp, yf, Wm):
+
+    SC = CC * Wm[0,0]
+    Sy = yp[b].dot(C[b,:]) * Wm[0,0]
+    grad[a,:] += C[a,:].dot( Xm.dot(SC).dot(Xm.T) ) - np.outer(yf[a], Sy.dot(Xm.T))
+
+    Sy = yf[a].dot(C[a,:]) * Wm[0,0]
+    grad[b,:] += C[b,:].dot( Xm.T.dot(SC).dot(Xm) ) - np.outer(yp[b], Sy.dot(Xm))
+        
+    if m_ == 0:
+        grad[anb,:] += (R[anb]*Wm[0,0]).reshape(-1,1) * (C[anb,:].dot(Xm+Xm.T))
+           
+def g_B_l2_vector_pair_rnd(grad, m_, C, Am, Pi, R, CC, a, b, anb, yp, yf, Wm):
+
+    p,n = C.shape
+    SC = CC * Wm[0,0]
+    Sy = yp[b].dot(C[b,:] * Wm[0,0])
+    grad += Am.T.dot(CC).dot(Am).dot(Pi).dot(SC)-np.outer(yf[a].dot(C[a,:]).dot(Am),Sy)
+
+    if m_ == 0:
+        grad += C[anb,:].dot(Am).T.dot( (R[anb] * Wm[0,0]).reshape(-1,1) * C[anb,:] )
+
+def g_X_l2_vector_pair_rnd(grad, m_, C, Xm, R, CC, a, b, anb, yp, yf, Wm):
+
+    p,n = C.shape
+    SC = CC * Wm[0,0]
+    Sy = yp[b].dot(C[b,:]) * Wm[0,0]
+    grad += CC.dot(Xm).dot(SC)-np.outer(yf[a].dot(C[a,:]),Sy)
+        
+    if m_ == 0:
+        grad += C[anb,:].T.dot( (R[anb] * Wm[0,0]).reshape(-1,1) * C[anb,:] )
+
+def g_R_l2_Hankel_sgd_rnd(grad, C, X0, R, y, ts, get_observed, W0):
+
+    for t in ts:
+        b = get_observed(t)         
+        grad[b] += (R[b] + np.sum(C[b,:] * C[b,:].dot(X0.T),axis=1) - y[t,b]**2) * W0[0,0]
+
+
+
 
 
 def g_l2_Hankel_sgd_ln_sso(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
