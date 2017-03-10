@@ -81,7 +81,7 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 		_, pars_est, traces_, _, _, _, t = run_bad(
 			lag_range=lag_range,n=n,y=y, idx_a=idx_a,
 			idx_b=idx_b,
-			obs_scheme=obs_scheme,init=pars_est,
+			obs_scheme=obs_scheme,pars_init=pars_est,
 			parametrization=parametrization, sso=sso,
 			Qs=Qs, Om=Om, W=W,
 			alpha=a,b1=b1,b2=b2,e=e,a_decay=a_decay,max_iter=max_iter,
