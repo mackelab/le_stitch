@@ -22,7 +22,7 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 				pars_est, pars_true, n, 
 				sso, obs_scheme, lag_range, idx_a, idx_b,
 				y, Qs, Om, W, parametrizations,
-				traces=[[], [], []], ts = []):
+				traces=[[], [], []], ts = [], verbose=True):
 
 
 
@@ -44,7 +44,6 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 					'X'  : np.zeros((len(lag_range)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))} 
 
 
-	verbose = True
 	assert len(alphas) == len(b1s)
 	assert len(alphas) == len(a_decays) 
 	assert len(alphas) == len(batch_sizes) 

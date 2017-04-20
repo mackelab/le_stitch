@@ -337,7 +337,7 @@ def adam_main(f,g,pars_init,aux_init,num_pars,kl,alpha,b1,b2,e,a_decay,
                 pars_track(pars,t_iter)
         if verbose and p > 1e4:
             print('f = ', fun[t_iter])
-        if np.mod(t_iter,max_iter//10) == 0:
+        if verbose and np.mod(t_iter,max_iter//10) == 0:
             print('finished %', 100*t_iter/max_iter+10)
             print('f = ', fun[t_iter])
             corrs[:,ct_iter] = track_corrs(pars) 
