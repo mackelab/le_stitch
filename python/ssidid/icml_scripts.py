@@ -64,7 +64,9 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 		print('parametrization:', parametrization)
 		if parametrization == 'ln':
 			if pars_est['B'] is None:
-				pars_est['B'] = np.linalg.cholesky(pars_est['Pi'])
+				pars_est['Pi'] = (pars_est['Pi'] + pars_est['Pi'].T) / 2
+				l = np.min( (np.real(np.linalg.eigvals(pars_est['Pi'])).min(), 0) )
+				pars_est['B'] = np.linalg.cholesky(pars_est['Pi'] + (1e-10 - l) * np.eye(n))
 			if pars_est['A'] is None:
 				pars_est['A'] = np.linalg.lstsq(pars_est['X'][:(len(lag_range)-1)*n,:], pars_est['X'][n:len(lag_range)*n,:])[0]
 
