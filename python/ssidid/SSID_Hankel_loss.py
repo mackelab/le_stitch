@@ -101,7 +101,8 @@ def run_bad(lag_range,n,y,obs_scheme,
 
         X, Pi = np.zeros((len(lag_range)*n, n)), pars_est[2].dot(pars_est[2].T)
         for m in lag_range:
-            X[m*n:(m+1)*n,:] = np.linalg.matrix_power(pars_est[1],m).dot(Pi)   
+            m_ = lag_range[m]
+            X[m*n:(m+1)*n,:] = np.linalg.matrix_power(pars_est[1],m_).dot(Pi)   
 
         pars_est = {'C': pars_est[0], 
                     'A': pars_est[1], 
