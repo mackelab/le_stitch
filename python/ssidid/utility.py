@@ -267,7 +267,7 @@ def comp_model_covariances(pars, lag_range,
 
 def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
              mmap, chunksize, data_path, idx_a=None, idx_b=None, snr=(.75, 1.25),
-             verbose=False, whiten=False):
+             verbose=False, whiten=False,dtype=np.float):
 
     nr = n if nr is None else nr
     nc, nc_u = n - nr, (n - nr)//2
@@ -289,25 +289,27 @@ def gen_data(p,n,lag_range,T,nr,eig_m_r, eig_M_r, eig_m_c, eig_M_c,
     pars_true,Qs,_ = gen_sys(p=p,n=n,lag_range=lag_range, nr=nr,ev_r=ev_r,ev_c=ev_c,
                              snr=snr, calc_stats=T==np.inf,return_masked=False,
                              mmap=mmap,chunksize=chunksize,data_path=data_path,
-                             whiten=whiten)
-    pars_true['d'], pars_true['mu0'] = np.zeros(p), np.zeros(n), 
+                             whiten=whiten,dtype=dtype)
+    pars_true['d'], pars_true['mu0'] = np.zeros(p,dtype=dtype), np.zeros(n,dtype=dtype), 
     pars_true['V0'] = pars_true['Pi'].copy()
 
 
     if T == np.inf:
-        x,y = np.zeros((n,0)), np.zeros((p,0))
+        x,y = None, None
     else:
         x,y = draw_data(pars=pars_true, T=T, 
-                        mmap=mmap, chunksize=chunksize, data_path=data_path)
+                        mmap=mmap, chunksize=chunksize, data_path=data_path,
+                        dtype=dtype)
 
     return pars_true, x, y, idx_a, idx_b
 
 def gen_sys(p,n,lag_range,nr=None,ev_r=None,ev_c=None,snr=(.75, 1.25),
             calc_stats=True,return_masked=True, whiten=False,
-            mmap=False, chunksize=None,data_path='../fits'):
+            mmap=False, chunksize=None,data_path='../fits',dtype=np.float32):
 
     kl = len(lag_range)
-    pars_true = gen_pars(p,n,nr=nr,ev_r=ev_r,ev_c=ev_c,snr=snr,whiten=whiten)
+    pars_true = gen_pars(p,n,nr=nr,ev_r=ev_r,ev_c=ev_c,snr=snr,
+                         whiten=whiten,dtype=dtype)
     if calc_stats:
         Qs_full = comp_model_covariances(pars_true, lag_range, mmap=mmap, 
             chunksize=chunksize,data_path=data_path)
@@ -326,7 +328,7 @@ def gen_sys(p,n,lag_range,nr=None,ev_r=None,ev_c=None,snr=(.75, 1.25),
 
 
 def gen_pars(p,n, nr=None, ev_r = None, ev_c = None, 
-             snr = (.75, 1.25), whiten=False):
+             snr = (.75, 1.25), whiten=False,dtype=np.float32):
     "draws parameters for an LDS"
 
     # generate dynamics matrix A
@@ -389,10 +391,17 @@ def gen_pars(p,n, nr=None, ev_r = None, ev_c = None,
     except:
         B = np.nan * np.ones((n,n))
         
-    return { 'A': A, 'B': B, 'Q': Q, 'Pi': Pi, 'C': C, 'R': R }
+    return { 'A': np.asarray(A,dtype=dtype), 
+             'B': np.asarray(B,dtype=dtype), 
+             'Q': np.asarray(Q,dtype=dtype), 
+             'Pi': np.asarray(Pi,dtype=dtype), 
+             'C': np.asarray(C,dtype=dtype), 
+             'R': np.asarray(R,dtype=dtype) }
 
 
-def draw_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
+def draw_data(pars,T, 
+              mmap=False, chunksize=None, data_path='../fits/',
+              dtype=np.float):
     "cythonise me!"
 
     p,n = pars['C'].shape
@@ -407,7 +416,7 @@ def draw_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
 
     # start with noise terms
     L = np.linalg.cholesky(pars['Q'])
-    x = np.random.normal(size=(T,n))
+    x = np.asarray(np.random.normal(size=(T,n)), dtype=dtype)
     x = x.dot(L.T)
 
     # step thourhg latent dynamics
@@ -419,20 +428,20 @@ def draw_data(pars,T, mmap=False, chunksize=None, data_path='../fits/'):
     # do emissions
     L = np.sqrt(pars['R'])
     if mmap:
-        y = np.memmap(data_path+'y', dtype=np.float, mode='w+', shape=(T,p))
+        y = np.memmap(data_path+'y', dtype=dtype, mode='w+', shape=(T,p))
     else:
-        y = np.empty(shape=(T,p))
+        y = np.empty(shape=(T,p),dtype=dtype)
 
     for i in chunk_range(max_i):
         idx_i = range(i*chunksize, np.minimum((i+1)*chunksize, p)) 
-        y[:,idx_i] = np.random.normal(size=(T, len(idx_i)))*np.atleast_2d(L[idx_i]) \
+        y[:,idx_i] = np.asarray(np.random.normal(size=(T, len(idx_i))),dtype=dtype)*np.atleast_2d(L[idx_i]) \
                     + x.dot(pars['C'][idx_i,:].T)
         if mmap:
             del y # releases RAM, forces flush to disk
-            y = np.memmap(data_path+'y', dtype=np.float, mode='r+', shape=(T,p))
+            y = np.memmap(data_path+'y', dtype=dtype, mode='r+', shape=(T,p))
     if mmap:
         del y # releases RAM, forces flush to disk
-        y = np.memmap(data_path+'y', dtype=np.float, mode='r', shape=(T,p))
+        y = np.memmap(data_path+'y', dtype=dtype, mode='r', shape=(T,p))
 
     return x, y
 

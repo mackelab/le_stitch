@@ -22,7 +22,7 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 				pars_est, pars_true, n, 
 				sso, obs_scheme, lag_range, idx_a, idx_b,
 				y, Qs, Om, W, parametrizations,
-				traces=[[], [], []], ts = [], verbose=True):
+				traces=[[], [], []], ts = [], verbose=True, dtype=np.float):
 
 
 
@@ -32,16 +32,16 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 	if pars_est =='default':
 
 
-		A = np.diag(np.linspace(0.89, 0.91, n)) if parametrizations[0]=='ln' else None
-		B = np.eye(n) if parametrizations[0]=='ln' else None
-		Pi = np.eye(n) if parametrizations[0]=='ln' else None
+		A = np.diag(np.linspace(0.89, 0.91, n),dtype=dtype) if parametrizations[0]=='ln' else None
+		B = np.eye(n,dtype=dtype) if parametrizations[0]=='ln' else None
+		Pi = np.eye(n,dtype=dtype) if parametrizations[0]=='ln' else None
 
 		pars_est = {'A'  : A,
 					'Pi' : B,
 					'B'  : Pi,
-					'C'  : np.random.normal(size=(p,n)),
-					'R'  : np.zeros(p),
-					'X'  : np.zeros((len(lag_range)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))} 
+					'C'  : np.asarray(np.random.normal(size=(p,n)), dtype=np.float32),
+					'R'  : np.zeros(p,dtype=dtype),
+					'X'  : np.zeros((len(lag_range)*n, n),dtype=dtype)} #pars_ssid['C'].dot(np.linalg.inv(M))} 
 
 
 	assert len(alphas) == len(b1s)
@@ -87,7 +87,7 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 			Qs=Qs, Om=Om, W=W,
 			alpha=a,b1=b1,b2=b2,e=e,a_decay=a_decay,max_iter=max_iter,
 			batch_size=batch_size,verbose=verbose, max_epoch_size=max_zip_size,
-			pars_track=pars_track)
+			pars_track=pars_track,dtype=dtype)
 		traces[0].append(traces_[0])
 		traces[1].append(traces_[1])
 		traces[2].append(proj_errors.copy())

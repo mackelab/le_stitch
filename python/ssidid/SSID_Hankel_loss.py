@@ -17,7 +17,8 @@ def run_bad(lag_range,n,y,obs_scheme,
             alpha=0.001, b1=0.9, b2=0.99, e=1e-8, a_decay = 0.95, 
             max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
             batch_size=1,save_every=np.inf,return_aux=False,
-            verbose=False, mmap=False, data_path=None, pars_track=None):
+            verbose=False, mmap=False, data_path=None, pars_track=None,
+            dtype=np.float):
 
     assert parametrization in ['nl', 'ln']    
     num_pars = 3 if parametrization=='nl' else 4
@@ -56,11 +57,11 @@ def run_bad(lag_range,n,y,obs_scheme,
 
     if pars_init =='default':
         pars_init = {'A'  : np.diag(np.linspace(0.89, 0.91, n)),
-             'Pi' : np.eye(n),
-             'B'  : np.eye(n), 
-             'C'  : np.random.normal(size=(p,n)),
-             'R'  : np.zeros(p),
-             'X'  : np.zeros(((kl)*n, n))} #pars_ssid['C'].dot(np.linalg.inv(M))}   
+             'Pi' : np.eye(n,dtype=dtype),
+             'B'  : np.eye(n,dtype=dtype), 
+             'C'  : np.random.normal(size=(p,n),dtype=dtype),
+             'R'  : np.zeros(p,dtype=dtype),
+             'X'  : np.zeros(((kl)*n, n),dtype=dtype)} #pars_ssid['C'].dot(np.linalg.inv(M))}   
 
     f,g,batch_draw,track_corrs,converged,save_interm = l2_bad_sis_setup(
                                            lag_range=lag_range,n=n,T=T,
@@ -298,14 +299,14 @@ def l2_sgd_draw(p, T, lag_range, batch_size, g):
 def adam_main(f,g,pars_init,aux_init,num_pars,kl,alpha,b1,b2,e,a_decay,
             batch_draw,track_corrs,converged,save_interm,
             return_aux,max_iter,batch_size,max_epoch_size,
-            verbose,pars_track):
+            verbose,pars_track,dtype=np.float):
 
     # initialise pars
     p, n = pars_init['C'].shape
     pars = init_adam(pars_init, p, n, kl, num_pars)
 
     # setting up Adam
-    b1,b2,e,vp,mp = pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e)
+    b1,b2,e,vp,mp = pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e,dtype)
     t_iter, t, ct_iter = 0, 0, 0 
     corrs  = np.zeros((kl, 12))
 
@@ -363,20 +364,32 @@ def adam_main(f,g,pars_init,aux_init,num_pars,kl,alpha,b1,b2,e,a_decay,
     return pars, traces    
 
 
-def pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e):
+def pars_adam(batch_size,p,n,kl,num_pars,b1,b2,e,dtype=np.float):
 
     if batch_size is None:
         print('using batch gradients - switching to plain gradient descent')
-        b1, b2, e = np.zeros(num_pars), np.ones(num_pars), np.zeros(num_pars) 
+        b1 = np.zeros(num_pars,dtype=dtype)
+        b2 = np.ones(num_pars, dtype=dtype) 
+        e  = np.zeros(num_pars,dtype=dtype) 
     elif not batch_size >= 1: 
         raise Exception('cannot handle selected batch size')
 
     if num_pars == 3:     # (C, X, R)
-        vp_0 = [np.ones((p,n)),  np.ones((kl*n,n)),  np.ones(p)]
-        mp_0 = [np.zeros((p,n)), np.zeros((kl*n,n)), np.zeros(p)]
+        vp_0 = [np.ones((p,n),dtype=dtype),  
+                np.ones((kl*n,n),dtype=dtype),  
+                np.ones(p,dtype=dtype)]
+        mp_0 = [np.zeros((p,n),dtype=dtype), 
+                np.zeros((kl*n,n),dtype=dtype), 
+                np.zeros(p,dtype=dtype)]
     elif num_pars == 4:   # (C, A, B, R)
-        vp_0 = [np.ones((p,n)),  np.ones((n,n)),  np.ones((n,n)),  np.ones(p)]
-        mp_0 = [np.zeros((p,n)), np.zeros((n,n)), np.zeros((n,n)), np.zeros(p)]
+        vp_0 = [np.ones((p,n),dtype=dtype),  
+                np.ones((n,n),dtype=dtype),  
+                np.ones((n,n),dtype=dtype),  
+                np.ones(p,dtype=dtype)]
+        mp_0 = [np.zeros((p,n),dtype=dtype), 
+                np.zeros((n,n),dtype=dtype), 
+                np.zeros((n,n),dtype=dtype), 
+                np.zeros(p,dtype=dtype)]
 
     return b1,b2,e,vp_0,mp_0
 
@@ -402,16 +415,17 @@ def adam_norm(m, v, b1, b2,t):
 
 def init_adam(pars_0, p, n, kl, num_pars):
 
+    dtype = pars_0['C'].dtype
     if num_pars == 3:
         C = pars_0['C'].copy()
-        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
-        X = pars_0['X'].copy() if 'X' in pars_0.keys() else np.zeros((n*kl, n))
+        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p,dtype=dtype)
+        X = pars_0['X'].copy() if 'X' in pars_0.keys() else np.zeros((n*kl, n),dtype=dtype)
         pars = [C,X,R]
     elif num_pars == 4:
         C = pars_0['C'].copy()
-        A = pars_0['A'].copy() if 'A' in pars_0.keys() else np.zeros((n, n))
-        B = pars_0['B'].copy() if 'B' in pars_0.keys() else np.zeros((n, n))
-        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p)
+        A = pars_0['A'].copy() if 'A' in pars_0.keys() else np.zeros((n, n),dtype=dtype)
+        B = pars_0['B'].copy() if 'B' in pars_0.keys() else np.zeros((n, n),dtype=dtype)
+        R = pars_0['R'].copy() if 'R' in pars_0.keys() else np.zeros(p,dtype=dtype)
         pars = [C,A,B,R]
 
     return pars
@@ -466,11 +480,11 @@ def g_l2_Hankel_sgd_ln(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
     grad_R = np.zeros_like(R)
 
     Pi = B.dot(B.T)
-    Aexpm = np.zeros((kl_*n,n))
-    Aexpm[:n,:] = np.eye(n)
+    Aexpm = np.zeros((kl_*n,n),dtype=A.dtype)
+    Aexpm[:n,:] = np.eye(n,dtype=A.dtype)
     for m in range(1,kl_):
         Aexpm[m*n:(m+1)*n,:] = A.dot(Aexpm[(m-1)*n:(m)*n,:])
-    grad_X = np.zeros_like(Aexpm, dtype=A.dtype)
+    grad_X = np.zeros_like(Aexpm)
 
     for m in ms:
 
@@ -709,11 +723,11 @@ def g_l2_Hankel_sgd_ln_sso(C,A,B,R,y,lag_range,ts,ms,obs_scheme,W):
         CCs.append( C[idx_grp[i],:].T.dot(C[idx_grp[i],:]) if i in all_is_ else None) 
         R_CX0Cs.append(R[idx_grp[i]] + np.sum(C[idx_grp[i],:] * C[idx_grp[i],:].dot(Pi),axis=1) if i in inst_is_ else None)
 
-    Aexpm = np.zeros((kl_*n,n))
+    Aexpm = np.zeros((kl_*n,n), dtype=A.dtype)
     Aexpm[:n,:] = np.eye(n)
     for m in range(1,kl_):
         Aexpm[m*n:(m+1)*n,:] = A.dot(Aexpm[(m-1)*n:(m)*n,:])
-    grad_X = np.zeros_like(Aexpm, dtype=A.dtype)
+    grad_X = np.zeros_like(Aexpm)
 
     for m in ms:
 
