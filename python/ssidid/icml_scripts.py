@@ -28,6 +28,8 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 
 	T,p = y.shape
 
+	return_aux = False # currently unused; 
+	aux_init = None    # allowing to provide / keep ADAM moment and scaling auxiliary parameters
 
 	if pars_est =='default':
 
@@ -87,7 +89,8 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 			Qs=Qs, Om=Om, W=W,
 			alpha=a,b1=b1,b2=b2,e=e,a_decay=a_decay,max_iter=max_iter,
 			batch_size=batch_size,verbose=verbose, max_epoch_size=max_zip_size,
-			pars_track=pars_track,dtype=dtype)
+			pars_track=pars_track,dtype=dtype,
+			return_aux=return_aux,aux_init=aux_init)
 		traces[0].append(traces_[0])
 		traces[1].append(traces_[1])
 		traces[2].append(proj_errors.copy())
