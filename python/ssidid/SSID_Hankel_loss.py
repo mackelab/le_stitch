@@ -8,17 +8,17 @@ from ssidid import progprint_xrange
 # stochastic gradient descent: gradients w.r.t. C,R,A,B,X=cov(x_{t+m},x_t)
 ###########################################################################
 
-def run_bad(lag_range,n,y,obs_scheme,
-            Qs=None, Om=None,
-            parametrization='nl',
-            sso=False, W=None, 
-            idx_a=None,idx_b=None,
-            pars_init='default', aux_init=None,
-            alpha=0.001, b1=0.9, b2=0.99, e=1e-8, a_decay = 0.95, 
-            max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
-            batch_size=1,save_every=np.inf,return_aux=False,
-            verbose=False, mmap=False, data_path=None, pars_track=None,
-            dtype=np.float):
+def main(lag_range,n,y,obs_scheme,
+         Qs=None, Om=None,
+         parametrization='nl',
+         sso=False, W=None, 
+         idx_a=None,idx_b=None,
+         pars_init='default', aux_init=None,
+         alpha=0.001, b1=0.9, b2=0.99, e=1e-8, a_decay = 0.95, 
+         max_iter=100, max_epoch_size=np.inf, eps_conv=0.99999,
+         batch_size=1,save_every=np.inf,return_aux=False,
+         verbose=False, mmap=False, data_path=None, pars_track=None,
+         dtype=np.float):
 
     assert parametrization in ['nl', 'ln']    
     num_pars = 3 if parametrization=='nl' else 4
