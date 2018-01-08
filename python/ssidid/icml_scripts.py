@@ -77,7 +77,7 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 		a_decay = a_decays[i]
 
 
-		proj_errors = np.zeros((max_iter,n+1))
+		proj_errors = np.zeros((max_iter,np.min((n, pars_true['C'].shape[1]))+1))
 		def pars_track(pars,t): 
 		    C = pars[0]
 		    proj_errors[t] = np.hstack((0, principal_angle(pars_true['C'], C)))
