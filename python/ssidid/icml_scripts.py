@@ -23,24 +23,24 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 				sso, obs_scheme, lag_range, idx_a, idx_b,
 				y, Qs, Om, W, parametrizations,
 				traces=[[], [], []], ts = [], verbose=True, dtype=np.float):
-    """ Wrapper function for fitting LDS to data with the S3ID algorithm 
+	""" Wrapper function for fitting LDS to data with the S3ID algorithm 
 
-    Fits LDS in multiple stages, commonly seperated by different batch sizes.
+	Fits LDS in multiple stages, commonly seperated by different batch sizes.
 
-    Parameters
-    ----------
-    alphas : list or array
-    	ADAM parameters per fitting stage
-    b1s :  list or array
-    	ADAM parameters per fitting stage
-    a_decays : list or array
-    	ADAM parameters per fitting stage
-    batch_sizes : list or array
-    	batch sizes per fitting stage
-    max_zip_sizes : list or array
-    	epoch length per fitting stage
-    max_iters : list or array
-    	maximum iterations length per fitting stage
+	Parameters
+	----------
+	alphas : list or array
+		ADAM parameters per fitting stage
+	b1s :  list or array
+		ADAM parameters per fitting stage
+	a_decays : list or array
+		ADAM parameters per fitting stage
+	batch_sizes : list or array
+		batch sizes per fitting stage
+	max_zip_sizes : list or array
+		epoch length per fitting stage
+	max_iters : list or array
+		maximum iterations length per fitting stage
 	pars_est :  str or dict
 		'default' for standard parameter estimat initialiation
 	pars_true : dict
@@ -73,15 +73,15 @@ def run_default(alphas, b1s, a_decays, batch_sizes, max_zip_sizes, max_iters,
 	dtype : numpy datatype 
 		datatype for numpy arrays
 
-    Output
-    ----------
-    pars_est : dict
-    	parameter estimate
-    traces : list 
-    	list of fit diagnostics (loss & correlation of covariances over time)
-    ts : list
-    	list of computation times
-    """
+	Output
+	----------
+	pars_est : dict
+		parameter estimate
+	traces : list 
+		list of fit diagnostics (loss & correlation of covariances over time)
+	ts : list
+		list of computation times
+	"""
 	T,p = y.shape
 
 	return_aux = False # currently unused; 
