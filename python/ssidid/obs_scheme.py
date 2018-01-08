@@ -2,7 +2,6 @@
 import numpy as np
 
 class ObservationScheme(object):
-
 	def __init__(self, p, T, 
 				sub_pops=None, 
 				obs_pops=None, 
@@ -10,13 +9,60 @@ class ObservationScheme(object):
 				obs_idx=None,
 				idx_grp=None,
 				mask=None):
+		""" Initialize an observation scheme. 
 
-		self._sub_pops = (np.arange(p),) if sub_pops is None else self._argcheck_sub_pops(sub_pops)
-		self._obs_pops = np.array((0,)) if obs_pops is None else self._argcheck_obs_pops(obs_pops)
-		self._obs_time = np.array((T,)) if obs_time is None else self._argcheck_obs_time(obs_time)
+		Storage and handling of partial observation schemes. 
 
+		Observation schemes are assumed to be divided into time intervals.
+		In each time interval, a single subpopulation is observed. 
+		Subpopulations may overlap. 
+
+		For very complex observation schemes, use the 'mask' argument.
+		The 'mask' argument negates most of the functionality of this class.
+
+		Parameters
+		----------
+		p : int
+			observed dimensionality (= total system size)
+		T : int 
+			total observation length  
+		sub_pops: tuple of arrays 
+			index arrays for subpopulations. Need to cover range(0,p)
+			Example: sub_pops = (np.arange(0, 10), np.arange(5, p)) if p >= 10
+		obs_pops: array
+			index array of observed subpopulation at each time timerval. 
+			Example: obs_pops = np.array([0, 1, 0]) 
+		obs_time: array
+			array of observation scheme time intervals.
+			By convention, i-th entry gives *end* of i-th time interval. 
+			Example: obs_time = np.array([T//4, T//2, T]) 
+	    obs_idx : list of arrays
+	        optional; index groups observed at each given time interval.
+	    idx_grp : list of arrays
+	        optional; arrays of index group memberships, one per index group  
+	    mask : array
+	    	optional; T-by-p boolean array of mask values.
+	    	User-provided masks will overwrite the observation scheme defined 
+	    	by obs_pops and obs_time !
+		"""
+		if sub_pops is None:
+			self._sub_pops = (np.arange(p),)  
+		else: 
+			self._sub_pops = self._argcheck_sub_pops(sub_pops)
+
+		if obs_pops is None:
+			self._obs_pops = np.array((0,))
+		else:  
+			self._obs_pops = self._argcheck_obs_pops(obs_pops)
+
+		if obs_time is None:
+			self._obs_time = np.array((T,))
+		else: 
+			self._obs_time = self._argcheck_obs_time(obs_time)
+
+		# general: mask completely overrules blocked observation scheme !
 		self._mask = self._argcheck_mask(mask)
-		self._use_mask = False if mask is None else True # general: mask overrules scheme
+		self._use_mask = False if mask is None else True
 
 		self._p = p
 		self._T = T
@@ -61,8 +107,11 @@ class ObservationScheme(object):
 		return mask
 
 	def check_obs_scheme(self):
-		" Checks the internal validity of provided observation schemes "
+		""" Internal routine to check validity of provided observation schemes
 
+		Executed upon most changes to the ObservationScheme instance. 
+		Will raise an exception if scheme turns invalid. 
+		"""
 		# check sub_pops
 		idx_union = np.sort(self._sub_pops[0])
 		i = 1
@@ -84,7 +133,7 @@ class ObservationScheme(object):
 							'the periods of observation for any '
 							'subpopulation. Hence the last entry of obs_time '
 							'has to be the full recording length. The last '
-							'entry of obs_time before is '), self._obs_time[-1])
+							'entry of obs_time before is '),self._obs_time[-1])
 
 		if np.any(np.diff(self._obs_time)<1):
 			raise Exception(('lengths of observation have to be at least 1. '
@@ -99,7 +148,7 @@ class ObservationScheme(object):
 							'two arrays have to match. They do not. '
 							'no. of subpop. switch points and no. of '
 							'subpopulations ovserved up to switch points '
-							'are '), (self._obs_time.size, self._obs_pops.size))
+							'are '), (self._obs_time.size,self._obs_pops.size))
 
 		idx_pops = np.sort(np.unique(self._obs_pops))
 		if not np.min(idx_pops)==0:
@@ -126,15 +175,16 @@ class ObservationScheme(object):
 
 
 	def comp_subpop_stats(self):
-		"computes a collection of helpful index sets for the stitching context"
-
+		""" Computes collection of helpful index sets for stitching contexts
+		"""
 		sub_pops = self._sub_pops
 		obs_pops = self._obs_pops
 
 		if obs_pops is None:
 		    obs_pops = tuple(range(self.num_subpops))
 		self.obs_idx, self.idx_grp = self._get_obs_index_groups()
-		self.overlaps, self.overlap_grp, self.idx_overlap = self._get_obs_index_overlaps()
+		self.overlaps, self.overlap_grp, self.idx_overlap = \
+			self._get_obs_index_overlaps()
 		self.idx_time = []
 		for i in range(len(self.idx_grp)):
 			ts = [ range(self._obs_time[0]) ] if i in self.obs_idx[0] else []
@@ -189,11 +239,27 @@ class ObservationScheme(object):
 		return overlaps, overlap_grp, idx_overlap	    
 
 	def set_schedule(self, obs_pops, obs_time):
+		""" Sets observation schedule. 
+
+		Parameters
+		----------
+		obs_pops: array
+			index array of observed subpopulation at each time timerval. 
+			Example: obs_pops = np.array([0, 1, 0]) 
+		obs_time: array
+			array of observation scheme time intervals.
+			By convention, i-th entry gives *end* of i-th time interval. 
+			Example: obs_time = np.array([T//4, T//2, T]) 
+	    """		
 		self._obs_pops = self._argcheck_obs_pops(obs_pops)
 		self._obs_time = self._argcheck_obs_time(obs_time)
 		self.check_obs_scheme()
 
 	def gen_mask_from_scheme(self):
+		""" Generates boolean mask for non-observed data points
+
+		Use with caution if p*T is very large!
+		"""		
 		sub_pops,obs_pops,obs_time=self._sub_pops,self._obs_pops,self._obs_time
 		self._mask = np.zeros((self._T,self._p),dtype=bool)
 		self._mask[np.ix_(range(obs_time[0]), sub_pops[obs_pops[0]])] = True
@@ -202,7 +268,18 @@ class ObservationScheme(object):
 			self._mask[np.ix_(ts,sub_pops[obs_pops[i]])] = True
 
 	def gen_get_observed(self, use_mask=None):
+		""" Returns observation index function
 
+		Observation index function returns for any time point t which
+		variables were observed. 
+
+		Parameters
+		----------
+		use_mask: boolean or None
+			if True, will use self.mask to determine observed variables,
+			if False, will use obs_pops and obs_time. 
+			if None, will use use_mask=self._use_mask instead 
+		"""		
 		use_mask = self._use_mask if use_mask is None else use_mask
 
 		if use_mask:
@@ -216,17 +293,28 @@ class ObservationScheme(object):
 
 		return get_observed
 
-
 	def gen_get_idx_grp(self):
+		""" Returns observation fate group function
 
+		Observation fate group function returns for any time point t which
+		index (or 'fate' groups) were observed. 
+		"""		
 		def get_idx_grp(t):
 			return self.obs_idx[np.searchsorted(self._obs_time,t,side='right')]
 
 		return get_idx_grp
 
-
 	def gen_get_coobs_intervals(self, lag_range):
+		""" Returns coobservation index function
 
+		Coobservation index function returns for any pair of variables i,j and
+		time-lag m over which time intervals they were co-observed.
+
+		Parameters
+		----------
+		time_lags: array
+			array with (non-negative) time-lags m to consider
+		"""		
 		kl_ = np.max(lag_range) + 1
 		def get_coobs_intervals(i,j,m):
 
@@ -242,19 +330,42 @@ class ObservationScheme(object):
 
 		return get_coobs_intervals
 
-	def comp_coocurrence_weights(self, lag_range, sso=False, idx_a=None, idx_b=None):
+	def comp_coocurrence_weights(self, lag_range, sso=False, 
+		idx_a=None, idx_b=None):
+		""" Returns co-ocurence weights
 
+		Co-ocurrence weights are inverse co-occurence counts. 
+		They are used to normalize pair-wise covariances. 
+
+		Parameters
+		----------
+		time_lags: array
+			array with (non-negative) time-lags m to consider
+		sso: boolean
+			if True, uses partial observation scheme information
+			if False, uses observation mask (potentially **much** slower)
+		idx_a, idx_b : arrays
+			index arrays for which pairs of variables weights are computed.
+			Only used if sso=False 		
+
+		Output:
+		----------
+		W: list
+			list of arrays, one per time-lag m in lag_range
+			If sso=True, W[m] will be of shape len(idx_grp)-by-len(idx_grp). 
+			If sso=False, W[m] will be len(idx_a)-by-(len(idx_b) or p-by-p.
+		"""		
 		kl_ = np.max(lag_range)+1
 
-		if sso: # 'serial subset ovservations' allow to work with variable subsets
+		if sso: # serial subset ovservations allow to work with var. subsets
 
-			assert not self._use_mask # sso assumes simple block-wise observations
+			assert not self._use_mask # assumes simple block-wise observations
 			if not (idx_a is None and idx_b is None):
-				print('ObservationScheme warning: ignoring arguments idx_a,idx_b if sso=True')
+				print('warning: ignoring arguments idx_a,idx_b if sso=True')
 
-			# could make this compute much faster if we assumed long stretches of
-			# time observing the same subpopulation, but the edge cases are tedious.
-			# Below version is simple, but takes care of switching variable subsets.
+			# could make this compute faster if we assumed long stretches of
+			# observing the same subpopulation, but edge cases are tedious.
+			# Below version is simple, takes care of switching variable subsets
 			idx_grp,get_idx_grp = self.idx_grp, self.gen_get_idx_grp()
 			obs_time = self._obs_time
 			ng = len(idx_grp)
@@ -276,14 +387,14 @@ class ObservationScheme(object):
 			get_observed = self.gen_get_observed()
 			if pa<p:
 				def get_obs_sub_idx_a(t):
-					return np.in1d(idx_a, np.intersect1d(get_observed(t), idx_a))
+					return np.in1d(idx_a,np.intersect1d(get_observed(t),idx_a))
 			else:
 				def get_obs_sub_idx_a(t):
 					return get_observed(t)
 
 			if pb<p:
 				def get_obs_sub_idx_b(t):
-					return np.in1d(idx_b, np.intersect1d(get_observed(t), idx_b))
+					return np.in1d(idx_b,np.intersect1d(get_observed(t),idx_b))
 			else:
 				def get_obs_sub_idx_b(t):
 					return get_observed(t)
@@ -297,8 +408,6 @@ class ObservationScheme(object):
 				W[m] = 1./np.maximum(W[m]-1, 1)
 
 		return W
-
-
 
 	@property
 	def sub_pops(self):
