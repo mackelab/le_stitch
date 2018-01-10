@@ -1,3 +1,5 @@
+import numpy as np
+
 # evaluation of target loss functions
 
 def f_blank(C,A,Pi,R,lag_range,Qs,idx_grp,co_obs,idx_a,idx_b):
