@@ -350,8 +350,8 @@ class ObservationScheme(object):
 
 		Output:
 		----------
-		W: list
-			list of arrays, one per time-lag m in lag_range
+		W: list of arrays
+			One array per time-lag m in lag_range.
 			If sso=True, W[m] will be of shape len(idx_grp)-by-len(idx_grp). 
 			If sso=False, W[m] will be len(idx_a)-by-(len(idx_b) or p-by-p.
 		"""		

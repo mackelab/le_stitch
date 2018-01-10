@@ -4,8 +4,7 @@ import scipy as sp
 import glob, os, psutil, time
 from scipy import linalg as la
 
-from ssidid.SSID_Hankel_loss import main, print_slim
-from ssidid import ObservationScheme
+from ssidid import main, print_slim, ObservationScheme
 
 
 

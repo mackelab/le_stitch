@@ -129,6 +129,104 @@ def comp_model_covariances(pars, lag_range, mmap=False, chunksize=None,
     return Qs
 
 
+def comp_data_covariances(n,y,lag_range,obs_scheme,idx_a,idx_b,W,sso=False,
+                          mmap=False,data_path=None,ts=None,ms=None):
+    """" returns list of time-lagged covariances 
+    cov(y_t+m, y_t) for  m = 1, ..., k+l-1"
+
+    Parameters
+    ----------
+    n : int
+        latent dimensionality
+    y : array
+        T-by-p array of observed activity 
+    lag_range : array or list 
+        array of time-lags for time-lagged covariances. Can be non-contiguous.
+    idx_a, idx_b : arrays
+        index arrays for pairwise time-lagged covariances. Subsets of range(p).
+    W : list of arrays 
+        co-ocurrence weight matrices, one per time-lag
+    sso : boolean 
+        if True, using multiple partial observation scheme
+    mmap : boolean
+        whether or not to use memory maps for result storage
+    data_path : str
+        path for result storage in case mmap = True
+    ts : array or None
+        indices for time points to use from y. Subset of range(T)
+    ms : array or None
+        indices of time-lags to use. Subset of range(len(lag_range))
+
+    Output
+    ----------
+    Qs : list of arrays
+        time-lagged covariance matrices
+    Om : list of arrays
+        boolean masks for co-observed variables (one per time-lag)    
+    """
+    T,p = y.shape
+    kl_ = np.max(lag_range)+1
+    pa, pb = len(idx_a), len(idx_b)
+    idx_grp = obs_scheme.idx_grp
+
+    ts = range(T-kl_) if ts is None else ts
+    ms = range(len(lag_range)) if ms is None else ms
+
+    Qs = [np.zeros((pa,pb), dtype=y.dtype) for m in range(len(lag_range))]
+    Om = [np.zeros((pa,pb), dtype=bool) for m in range(len(lag_range))]
+
+    if sso: 
+        get_obs_idx = obs_scheme.gen_get_idx_grp()
+        get_coobs_intervals = obs_scheme.gen_get_coobs_intervals(lag_range)
+        idx_grp = obs_scheme.idx_grp
+        for j in range(len(idx_grp)):
+            b = np.intersect1d(idx_grp[j], idx_b)
+            b_Q = np.in1d(idx_b, b)
+            for i in range(len(idx_grp)):
+                a = np.intersect1d(idx_grp[i], idx_a)
+                a_Q = np.in1d(idx_a, a)
+                for m in ms:
+                    idx_coobs_ijm = get_coobs_intervals(j,i,m) # note ordering of j,i
+                    if len(idx_coobs_ijm) > 0:                    
+                        Qs[m][np.ix_(a_Q,b_Q)] = y[np.ix_(idx_coobs_ijm,a)].T.dot(y[np.ix_(idx_coobs_ijm-m,b)])
+                        Om[m][np.ix_(a_Q,b_Q)] = True
+    else:
+        get_observed = obs_scheme.gen_get_observed()
+        for m in ms:
+            m_ = lag_range[m]
+            for t in ts:
+                a = np.intersect1d(get_observed(t+m_), idx_a)
+                b = np.intersect1d(get_observed(t),    idx_b)
+                a_Q = np.in1d(idx_a, a)
+                b_Q = np.in1d(idx_b, b)
+
+                Qs[m][np.ix_(a_Q, b_Q)] += np.outer(y[t+m_,a], y[t,b])
+                Om[m][np.ix_(a_Q, b_Q)] = True
+
+    if np.all(W[0].shape == (len(idx_grp), len(idx_grp))):
+        for m in ms:
+            for i in range(len(idx_grp)):
+                for j in range(len(idx_grp)):
+
+                    a = np.in1d(idx_a, np.intersect1d(idx_grp[i], idx_a))
+                    b = np.in1d(idx_b, np.intersect1d(idx_grp[j], idx_b))
+
+                    Qs[m][np.ix_(a, b)] *= W[m][i,j]
+
+    elif np.all(W[0].shape == (p, p)):
+        for m in ms:
+            Qs[m] = Qs[m] * W[m][np.ix_(idx_a,idx_b)]
+
+    else:
+        raise Exception('shape misfit for weights W[m] at time-lag m=0')
+
+    if mmap: # probably computing the Qs is costly
+        for m in range(len(lag_range)):
+            np.save(data_path+'Qs_'+str(lag_range[m]), Qs[m])
+
+    return Qs, Om
+
+
 def gen_data(p, n, lag_range, T, nr ,eig_m_r, eig_M_r, eig_m_c, eig_M_c, 
              mmap, chunksize, data_path, idx_a=None, idx_b=None, 
              snr=(.75, 1.25), verbose=False, whiten=False, dtype=np.float):
@@ -514,7 +612,7 @@ def get_obs_index_groups(obs_scheme,p):
 
     Index or 'fate' groups are non-overlapping groups of observed variables
     that are always jointly observed (or jointly unobserved), allowing to
-    treat them jointly within a partial observation scheme. 
+    treat them jointly within a multiple partial observation scheme. 
 
     Parameters
     ----------
@@ -655,3 +753,65 @@ def comp_subpop_index_mats(sub_pops,idx_grp,overlap_grp,idx_overlap):
         Om, Ovw, Ovc = None, None, None
     
     return Om, Ovw, Ovc
+
+
+###########################################################################
+# Visualization
+###########################################################################
+
+def plot_slim(Qs, Om, lag_range, pars, idx_a, idx_b, traces, mmap, data_path):
+
+    kl = len(lag_range)
+    p,n = pars['C'].shape
+    pa, pb = idx_a.size, idx_b.size
+    idx_ab = np.intersect1d(idx_a, idx_b)
+    idx_a_ab = np.where(np.in1d(idx_a, idx_ab))[0]
+    idx_b_ab = np.where(np.in1d(idx_b, idx_ab))[0]
+    plt.figure(figsize=(20,10*np.ceil( (kl)/2)))
+    for m in range(kl):
+        m_ = lag_range[m] 
+        Qrec = pars['C'][idx_a,:].dot(pars['X'][m*n:(m+1)*n, :]).dot(pars['C'][idx_b,:].T) 
+        if m_ == 0:
+            Qrec[np.ix_(idx_a_ab, idx_b_ab)] += np.diag(pars['R'][idx_ab])
+        plt.subplot(np.ceil( (kl)/2 ), 2, m+1, adjustable='box-forced')
+        if mmap:
+            Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, mode='r', shape=(pa,pb))
+        else:
+            Q = Qs[m]
+        plt.plot(Q[Om[m]].reshape(-1), Qrec[Om[m]].reshape(-1), '.')
+        plt.title( ('m = ' + str(m_) + ', corr = ' + 
+        str(np.corrcoef( Qrec[Om[m]].reshape(-1), (Qs[m][Om[m]]).reshape(-1) )[0,1])))
+        if mmap:
+            del Q
+        plt.xlabel('true covs')
+        plt.ylabel('est. covs')
+    plt.show()
+    plt.figure(figsize=(20,10))
+    plt.plot(traces[0])
+    plt.xlabel('iteration count')
+    plt.ylabel('target loss')
+    plt.title('loss function vs. iterations')
+    plt.show()
+
+
+def print_slim(Qs, Om, lag_range, pars, idx_a, idx_b, traces, mmap, data_path):
+
+    kl = len(lag_range)
+    p,n = pars['C'].shape
+    pa, pb = idx_a.size, idx_b.size
+    idx_ab = np.intersect1d(idx_a, idx_b)
+    idx_a_ab = np.where(np.in1d(idx_a, idx_ab))[0]
+    idx_b_ab = np.where(np.in1d(idx_b, idx_ab))[0]
+    for m in range(kl): 
+        m_ = lag_range[m] 
+        Qrec = pars['C'][idx_a,:].dot(pars['X'][m*n:(m+1)*n, :]).dot(pars['C'][idx_b,:].T) 
+        if m_ == 0:
+            Qrec[np.ix_(idx_a_ab, idx_b_ab)] += np.diag(pars['R'][idx_ab])
+        if mmap:
+            Q = np.memmap(data_path+'Qs_'+str(m_), dtype=np.float, mode='r', shape=(pa,pb))
+        else:
+            Q = Qs[m]
+        print('m = ' + str(m_) + ', corr = ' + 
+        str(np.corrcoef( Qrec[Om[m]].reshape(-1), (Qs[m][Om[m]]).reshape(-1) )[0,1]))
+        if mmap:
+            del Q
